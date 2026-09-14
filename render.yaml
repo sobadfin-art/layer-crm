@@ -11,7 +11,14 @@ services:
     # développement vs production") — volontairement contourné ici puisque ce
     # déploiement Render gratuit EST un environnement de démo/recette, pas une
     # vraie mise en production avec de vraies données client.
-    buildCommand: "cd backend && npm install && npm run migrate && ALLOW_SEED=true npm run seed && cd ../frontend && npm install && npm run build"
+    # --include=dev sur le frontend : NODE_ENV=production (défini plus bas) est
+    # déjà actif pendant CETTE étape de build sur Render, or npm saute par
+    # défaut les devDependencies quand NODE_ENV=production — ce qui a fait
+    # échouer le tout premier déploiement ("vite: not found", vite étant une
+    # devDependency, un outil de build, jamais utile à l'exécution). On force
+    # donc leur installation explicitement, uniquement pour construire le
+    # frontend ; le backend n'a besoin d'aucune devDependency pour tourner.
+    buildCommand: "cd backend && npm install && npm run migrate && ALLOW_SEED=true npm run seed && cd ../frontend && npm install --include=dev && npm run build"
     startCommand: "cd backend && npm start"
     healthCheckPath: /api/health
     envVars:
