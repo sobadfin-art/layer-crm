@@ -3,13 +3,15 @@ services:
     name: moken-crm
     runtime: node
     plan: free
-    buildCommand: "cd backend && npm install && cd ../frontend && npm install && npm run build"
+    # Migrations + seed intégrées au build (pas en preDeployCommand) : cette
+    # commande n'est pas supportée sur la formule gratuite des services web
+    # Render ("pre-deploy command is not supported for free tier services").
     # ALLOW_SEED=true : seed.js refuse par défaut de tourner si NODE_ENV=production
     # (garde-fou anti comptes de démo en vraie prod, cf. README "Environnement de
     # développement vs production") — volontairement contourné ici puisque ce
     # déploiement Render gratuit EST un environnement de démo/recette, pas une
     # vraie mise en production avec de vraies données client.
-    preDeployCommand: "cd backend && npm run migrate && ALLOW_SEED=true npm run seed"
+    buildCommand: "cd backend && npm install && npm run migrate && ALLOW_SEED=true npm run seed && cd ../frontend && npm install && npm run build"
     startCommand: "cd backend && npm start"
     healthCheckPath: /api/health
     envVars:
