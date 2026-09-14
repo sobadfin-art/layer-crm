@@ -1,0 +1,1337 @@
+{
+  "greenwood": {
+    "model": "Green Wood",
+    "variants": [
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/5104-home_default/green-wood.jpg",
+        "productUrl": "https://www.mokenvision.com/en/green-wood/820-1343-green-wood-3760314196512.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/3048-home_default/green-wood.jpg",
+        "productUrl": "https://www.mokenvision.com/en/green-wood/455-917-green-wood-3760314196475.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/3046-home_default/green-wood.jpg",
+        "productUrl": "https://www.mokenvision.com/en/green-wood/454-916-green-wood-3760314196499.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4239-home_default/green-wood.jpg",
+        "productUrl": "https://www.mokenvision.com/en/green-wood/599-919-green-wood-3760314196505.html"
+      },
+      {
+        "color": "crystal",
+        "imageUrl": "https://www.mokenvision.com/3050-home_default/green-wood.jpg",
+        "productUrl": "https://www.mokenvision.com/en/green-wood/456-918-green-wood-3760314196482.html"
+      }
+    ]
+  },
+  "woody": {
+    "model": "Woody",
+    "variants": [
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/5460-home_default/woody.jpg",
+        "productUrl": "https://www.mokenvision.com/en/woody/600-1163-woody-3760314196468.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/5458-home_default/woody.jpg",
+        "productUrl": "https://www.mokenvision.com/en/woody/66-1158-woody-3760314196444.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/5446-home_default/woody.jpg",
+        "productUrl": "https://www.mokenvision.com/en/woody/894-1400-woody-3760314197250.html"
+      }
+    ]
+  },
+  "bigbrend": {
+    "model": "Big Brend",
+    "variants": [
+      {
+        "color": "yellow",
+        "imageUrl": "https://www.mokenvision.com/4212-home_default/the-brend.jpg",
+        "productUrl": "https://www.mokenvision.com/en/the-brend/394-860-the-brend-3760314194501.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/2887-home_default/the-brend.jpg",
+        "productUrl": "https://www.mokenvision.com/en/the-brend/395-861-the-brend-3760314194471.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/2889-home_default/the-brend.jpg",
+        "productUrl": "https://www.mokenvision.com/en/the-brend/396-862-the-brend-3760314194488.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/2881-home_default/the-brend.jpg",
+        "productUrl": "https://www.mokenvision.com/en/the-brend/393-859-the-brend-3760314194495.html"
+      }
+    ]
+  },
+  "abbys": {
+    "model": "Abbys",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4927-home_default/ronda.jpg",
+        "productUrl": "https://www.mokenvision.com/en/abbys/796-1301-ronda-3760314197502.html"
+      },
+      {
+        "color": "pink",
+        "imageUrl": "https://www.mokenvision.com/4931-home_default/ronda.jpg",
+        "productUrl": "https://www.mokenvision.com/en/abbys/798-1305-ronda-3760314197496.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4929-home_default/ronda.jpg",
+        "productUrl": "https://www.mokenvision.com/en/abbys/797-1303-ronda-3760314197519.html"
+      }
+    ]
+  },
+  "bake": {
+    "model": "Bake",
+    "variants": [
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/2892-home_default/bake.jpg",
+        "productUrl": "https://www.mokenvision.com/en/bake/398-857-bake-3760314191708.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/2891-home_default/bake.jpg",
+        "productUrl": "https://www.mokenvision.com/en/bake/397-856-bake-3760314191692.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4202-home_default/bake.jpg",
+        "productUrl": "https://www.mokenvision.com/en/bake/671-858-bake-3760314195034.html"
+      },
+      {
+        "color": "multicolor",
+        "imageUrl": "https://www.mokenvision.com/4200-home_default/bake.jpg",
+        "productUrl": "https://www.mokenvision.com/en/bake/226-854-bake-3760314194457.html"
+      }
+    ]
+  },
+  "april": {
+    "model": "April",
+    "variants": [
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4959-home_default/monique.jpg",
+        "productUrl": "https://www.mokenvision.com/en/april/803-1314-monique-3760314197649.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4957-home_default/monique.jpg",
+        "productUrl": "https://www.mokenvision.com/en/april/802-1312-monique-3760314197656.html"
+      },
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/4960-home_default/monique.jpg",
+        "productUrl": "https://www.mokenvision.com/en/april/804-1316-monique-3760314197663.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/5100-home_default/monique.jpg",
+        "productUrl": "https://www.mokenvision.com/en/april/692-850-monique-3760314195072.html"
+      },
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/4129-home_default/monique.jpg",
+        "productUrl": "https://www.mokenvision.com/en/april/695-853-monique-3760314195058.html"
+      }
+    ]
+  },
+  "allround": {
+    "model": "Allround",
+    "variants": [
+      {
+        "color": "yellow",
+        "imageUrl": "https://www.mokenvision.com/4191-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/allround/399-1157-allround-3760314191685.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/3908-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/allround/645-840-allround-3760314195027.html"
+      },
+      {
+        "color": "multicolor",
+        "imageUrl": "https://www.mokenvision.com/4188-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/allround/98-838-allround-3760314194464.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/2283-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/allround/96-837-allround-1000005893002.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/2285-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/allround/95-836-allround-1000005892982.html"
+      }
+    ]
+  },
+  "ivy": {
+    "model": "Ivy",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/3501-home_default/ivy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ivy/562-941-ivy-3760314194006.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/3504-home_default/ivy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ivy/568-943-ivy-3760314194020.html"
+      },
+      {
+        "color": "pink",
+        "imageUrl": "https://www.mokenvision.com/4281-home_default/ivy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ivy/656-946-ivy-3760314195195.html"
+      },
+      {
+        "color": "beige",
+        "imageUrl": "https://www.mokenvision.com/4963-home_default/ivy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ivy/800-1308-ivy-3760314197687.html"
+      }
+    ]
+  },
+  "dane": {
+    "model": "Dane",
+    "variants": [
+      {
+        "color": "crystal",
+        "imageUrl": "https://www.mokenvision.com/4228-home_default/dane.jpg",
+        "productUrl": "https://www.mokenvision.com/en/dane/564-883-dane-3760314193870.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/3499-home_default/dane.jpg",
+        "productUrl": "https://www.mokenvision.com/en/dane/565-884-dane-3760314193887.html"
+      }
+    ]
+  },
+  "otis": {
+    "model": "Otis",
+    "variants": [
+      {
+        "color": "crystal",
+        "imageUrl": "https://www.mokenvision.com/4404-home_default/otis.jpg",
+        "productUrl": "https://www.mokenvision.com/en/otis/574-1059-otis-3760314193818.html"
+      },
+      {
+        "color": "crystal",
+        "imageUrl": "https://www.mokenvision.com/4408-home_default/otis.jpg",
+        "productUrl": "https://www.mokenvision.com/en/otis/360-1056-otis-3760314191609.html"
+      }
+    ]
+  },
+  "grade": {
+    "model": "Grade",
+    "variants": [
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/4238-home_default/grade.jpg",
+        "productUrl": "https://www.mokenvision.com/en/grade/578-914-grade-3760314193856.html"
+      }
+    ]
+  },
+  "lisa": {
+    "model": "Lisa",
+    "variants": [
+      {
+        "color": "beige",
+        "imageUrl": "https://www.mokenvision.com/3544-home_default/lisa.jpg",
+        "productUrl": "https://www.mokenvision.com/en/lisa/580-989-lisa-3760314193948.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/3548-home_default/lisa.jpg",
+        "productUrl": "https://www.mokenvision.com/en/lisa/581-990-lisa-3760314193764.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4328-home_default/lisa.jpg",
+        "productUrl": "https://www.mokenvision.com/en/lisa/650-992-lisa-3760314195232.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/3059-home_default/lisa.jpg",
+        "productUrl": "https://www.mokenvision.com/en/lisa/460-986-lisa-3760314192132.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/3061-home_default/lisa.jpg",
+        "productUrl": "https://www.mokenvision.com/en/lisa/461-987-lisa-3760314192149.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/3063-home_default/lisa.jpg",
+        "productUrl": "https://www.mokenvision.com/en/lisa/463-988-lisa-3760314192156.html"
+      }
+    ]
+  },
+  "zenith": {
+    "model": "Zenith",
+    "variants": [
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4469-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/zenith/583-1147-zenith-3760314193979.html"
+      },
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/4473-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/zenith/584-1148-zenith-3760314193986.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4467-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/zenith/585-1149-zenith-3760314193993.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/3943-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/zenith/652-1150-zenith-3760314195201.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/3947-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/zenith/653-1151-zenith-3760314195218.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4921-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/zenith/793-1295-zenith-3760314197694.html"
+      },
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/4471-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/zenith/466-503-zenith-3760314192170.html"
+      },
+      {
+        "color": "yellow",
+        "imageUrl": "https://www.mokenvision.com/4465-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/zenith/464-1145-zenith-3760314192163.html"
+      }
+    ]
+  },
+  "ronda": {
+    "model": "Ronda",
+    "variants": [
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/3600-home_default/ronda.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ronda/594-1078-ronda-3760314194143.html"
+      }
+    ]
+  },
+  "snake": {
+    "model": "Snake",
+    "variants": [
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4445-home_default/snake.jpg",
+        "productUrl": "https://www.mokenvision.com/en/snake/596-1105-snake-3760314194150.html"
+      },
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/4454-home_default/snake.jpg",
+        "productUrl": "https://www.mokenvision.com/en/snake/362-1103-snake-3760314192033.html"
+      }
+    ]
+  },
+  "luma": {
+    "model": "Luma",
+    "variants": [
+      {
+        "color": "pink",
+        "imageUrl": "https://www.mokenvision.com/4337-home_default/luma.jpg",
+        "productUrl": "https://www.mokenvision.com/en/luma/590-999-luma-3760314194099.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/3102-home_default/luma.jpg",
+        "productUrl": "https://www.mokenvision.com/en/luma/485-998-luma-3760314192538.html"
+      }
+    ]
+  },
+  "hank": {
+    "model": "Hank",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/3901-home_default/hank.jpg",
+        "productUrl": "https://www.mokenvision.com/en/hank/643-923-hank-3760314195324.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/3033-home_default/hank.jpg",
+        "productUrl": "https://www.mokenvision.com/en/hank/494-922-hank-3760314192835.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/2556-home_default/hank.jpg",
+        "productUrl": "https://www.mokenvision.com/en/hank/249-920-hank-3760314190619.html"
+      }
+    ]
+  },
+  "muddy": {
+    "model": "Muddy",
+    "variants": [
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4493-home_default/muddy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/muddy/570-1041-muddy-3760314194372.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4500-home_default/muddy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/muddy/563-1040-muddy-3760314194365.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4498-home_default/muddy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/muddy/572-1043-muddy-3760314194396.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4495-home_default/muddy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/muddy/571-1042-muddy-3760314194389.html"
+      }
+    ]
+  },
+  "monique": {
+    "model": "Monique",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4378-home_default/monique.jpg",
+        "productUrl": "https://www.mokenvision.com/en/monique/657-1031-monique-3760314195171.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4373-home_default/monique.jpg",
+        "productUrl": "https://www.mokenvision.com/en/monique/469-1029-monique-3760314192651.html"
+      },
+      {
+        "color": "red",
+        "imageUrl": "https://www.mokenvision.com/4371-home_default/monique.jpg",
+        "productUrl": "https://www.mokenvision.com/en/monique/467-1028-monique-3760314192668.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/2869-home_default/monique.jpg",
+        "productUrl": "https://www.mokenvision.com/en/monique/389-1025-monique-3760314191784.html"
+      }
+    ]
+  },
+  "krafter": {
+    "model": "Krafter",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/5106-home_default/green-wood.jpg",
+        "productUrl": "https://www.mokenvision.com/en/krafter/676-957-green-wood-3760314195706.html"
+      },
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/5107-home_default/green-wood.jpg",
+        "productUrl": "https://www.mokenvision.com/en/krafter/677-958-green-wood-3760314195690.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4287-home_default/green-wood.jpg",
+        "productUrl": "https://www.mokenvision.com/en/krafter/678-959-green-wood-3760314195683.html"
+      }
+    ]
+  },
+  "quincy": {
+    "model": "Quincy",
+    "variants": [
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4067-home_default/miles.jpg",
+        "productUrl": "https://www.mokenvision.com/en/quincy/680-1066-miles-3760314195614.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4071-home_default/miles.jpg",
+        "productUrl": "https://www.mokenvision.com/en/quincy/681-1067-miles-3760314195621.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/5109-home_default/miles.jpg",
+        "productUrl": "https://www.mokenvision.com/en/quincy/682-1068-miles-3760314195638.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/5103-home_default/miles.jpg",
+        "productUrl": "https://www.mokenvision.com/en/quincy/683-1069-miles-3760314195607.html"
+      }
+    ]
+  },
+  "keala": {
+    "model": "Keala",
+    "variants": [
+      {
+        "color": "purple",
+        "imageUrl": "https://www.mokenvision.com/4289-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/keala/684-954-zenith-3760314195577.html"
+      },
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/4291-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/keala/685-955-zenith-3760314195584.html"
+      },
+      {
+        "color": "beige",
+        "imageUrl": "https://www.mokenvision.com/4293-home_default/zenith.jpg",
+        "productUrl": "https://www.mokenvision.com/en/keala/686-956-zenith-3760314195591.html"
+      }
+    ]
+  },
+  "karlton": {
+    "model": "Karlton",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/5098-home_default/grade.jpg",
+        "productUrl": "https://www.mokenvision.com/en/karlton/687-952-grade-3760314195102.html"
+      },
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/5099-home_default/grade.jpg",
+        "productUrl": "https://www.mokenvision.com/en/karlton/688-953-grade-3760314195560.html"
+      }
+    ]
+  },
+  "minirob": {
+    "model": "Mini Rob",
+    "variants": [
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/4180-home_default/enzoo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/mini-rob/709-1021-enzoo-3760314194990.html"
+      }
+    ]
+  },
+  "minirockett": {
+    "model": "Mini Rockett",
+    "variants": [
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4349-home_default/mini-rockett.jpg",
+        "productUrl": "https://www.mokenvision.com/en/mini-rockett/531-1023-mini-rockett-3760314193221.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4350-home_default/mini-rockett.jpg",
+        "productUrl": "https://www.mokenvision.com/en/mini-rockett/532-1024-mini-rockett-3760314193238.html"
+      }
+    ]
+  },
+  "rover": {
+    "model": "Rover",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/5225-home_default/rover.jpg",
+        "productUrl": "https://www.mokenvision.com/en/montagne/868-1385-rover-3760314191661.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/5223-home_default/rover.jpg",
+        "productUrl": "https://www.mokenvision.com/en/montagne/869-1386-rover-3760314191654.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/2451-home_default/rover.jpg",
+        "productUrl": "https://www.mokenvision.com/en/montagne/106-1084-rover-1000005893118.html"
+      }
+    ]
+  },
+  "werris": {
+    "model": "Werris",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4462-home_default/werris.jpg",
+        "productUrl": "https://www.mokenvision.com/en/werris/219-1136-werris-3760314194402.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4460-home_default/werris.jpg",
+        "productUrl": "https://www.mokenvision.com/en/werris/221-1137-werris-1000006341892.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/2250-home_default/werris.jpg",
+        "productUrl": "https://www.mokenvision.com/en/werris/223-1138-werris-1000006341922.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/2249-home_default/werris.jpg",
+        "productUrl": "https://www.mokenvision.com/en/werris/225-1139-werris-1000006341908.html"
+      }
+    ]
+  },
+  "cosmos": {
+    "model": "COSMOS",
+    "variants": [
+      {
+        "color": null,
+        "imageUrl": "https://www.mokenvision.com/4665-home_default/skyfoil.jpg",
+        "productUrl": "https://www.mokenvision.com/en/black-friday/737-skyfoil-3760314196406.html"
+      }
+    ]
+  },
+  "walter": {
+    "model": "Walter",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4487-home_default/walter.jpg",
+        "productUrl": "https://www.mokenvision.com/en/walter/408-1127-walter-3760314192217.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4485-home_default/walter.jpg",
+        "productUrl": "https://www.mokenvision.com/en/walter/412-1129-walter-3760314192224.html"
+      },
+      {
+        "color": "beige",
+        "imageUrl": "https://www.mokenvision.com/4617-home_default/walter.jpg",
+        "productUrl": "https://www.mokenvision.com/en/walter/670-1131-walter-3760314194631.html"
+      },
+      {
+        "color": "beige",
+        "imageUrl": "https://www.mokenvision.com/4980-home_default/walter.jpg",
+        "productUrl": "https://www.mokenvision.com/en/walter/745-1208-walter-3760314196215.html"
+      }
+    ]
+  },
+  "santoblk": {
+    "model": "Santo BLK",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4436-home_default/santo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/santo/507-1093-santo-3760314193603.html"
+      }
+    ]
+  },
+  "santo": {
+    "model": "Santo",
+    "variants": [
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/4537-home_default/santo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/santo/668-1094-santo-3760314194617.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4533-home_default/santo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/santo/669-1095-santo-3760314194624.html"
+      }
+    ]
+  },
+  "skyfoil": {
+    "model": "Skyfoil",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4441-home_default/skyfoil.jpg",
+        "productUrl": "https://www.mokenvision.com/en/skyfoil/107-1096-skyfoil-1000005893163.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4439-home_default/skyfoil.jpg",
+        "productUrl": "https://www.mokenvision.com/en/skyfoil/108-1097-skyfoil-1000005893149.html"
+      },
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/2284-home_default/skyfoil.jpg",
+        "productUrl": "https://www.mokenvision.com/en/skyfoil/109-1098-skyfoil-1000005893156.html"
+      },
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/2579-home_default/skyfoil.jpg",
+        "productUrl": "https://www.mokenvision.com/en/skyfoil/274-1100-skyfoil-3760314190237.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4443-home_default/skyfoil.jpg",
+        "productUrl": "https://www.mokenvision.com/en/skyfoil/275-1101-skyfoil-3760314190220.html"
+      }
+    ]
+  },
+  "strato": {
+    "model": "Strato",
+    "variants": [
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4458-home_default/strato.jpg",
+        "productUrl": "https://www.mokenvision.com/en/strato/512-1112-strato-3760314194211.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4984-home_default/strato.jpg",
+        "productUrl": "https://www.mokenvision.com/en/strato/809-1325-strato-3760314197151.html"
+      },
+      {
+        "color": "purple",
+        "imageUrl": "https://www.mokenvision.com/4985-home_default/strato.jpg",
+        "productUrl": "https://www.mokenvision.com/en/strato/811-1329-strato-3760314197144.html"
+      },
+      {
+        "color": "white",
+        "imageUrl": "https://www.mokenvision.com/4986-home_default/strato.jpg",
+        "productUrl": "https://www.mokenvision.com/en/strato/812-1328-strato-3760314197137.html"
+      }
+    ]
+  },
+  "bruce": {
+    "model": "Bruce",
+    "variants": [
+      {
+        "color": "white",
+        "imageUrl": "https://www.mokenvision.com/4989-home_default/walter.jpg",
+        "productUrl": "https://www.mokenvision.com/en/bruce/753-1220-walter-3760314196185.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/5043-home_default/walter.jpg",
+        "productUrl": "https://www.mokenvision.com/en/bruce/754-1222-walter-3760314196154.html"
+      },
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/5261-home_default/walter.jpg",
+        "productUrl": "https://www.mokenvision.com/en/bruce/755-1224-walter-3760314196178.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4995-home_default/walter.jpg",
+        "productUrl": "https://www.mokenvision.com/en/bruce/756-1226-walter-3760314196161.html"
+      }
+    ]
+  },
+  "jones": {
+    "model": "Jones",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4856-home_default/miles.jpg",
+        "productUrl": "https://www.mokenvision.com/en/jones/762-1237-miles-3760314197618.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4858-home_default/miles.jpg",
+        "productUrl": "https://www.mokenvision.com/en/jones/763-1239-miles-3760314197601.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4860-home_default/miles.jpg",
+        "productUrl": "https://www.mokenvision.com/en/jones/764-1241-miles-3760314197595.html"
+      }
+    ]
+  },
+  "daneii": {
+    "model": "Dane II",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4862-home_default/dane.jpg",
+        "productUrl": "https://www.mokenvision.com/en/dane/765-1243-dane-3760314197632.html"
+      },
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/4864-home_default/dane.jpg",
+        "productUrl": "https://www.mokenvision.com/en/dane/766-1245-dane-3760314197625.html"
+      }
+    ]
+  },
+  "milo": {
+    "model": "Milo",
+    "variants": [
+      {
+        "color": "crystal",
+        "imageUrl": "https://www.mokenvision.com/4870-home_default/leon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/milo/769-1251-leon-3760314197441.html"
+      }
+    ]
+  },
+  "leonnie": {
+    "model": "Leonnie",
+    "variants": [
+      {
+        "color": "crystal",
+        "imageUrl": "https://www.mokenvision.com/4872-home_default/leon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/leonie/771-1253-leon-3760314197540.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4902-home_default/leon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/leonie/772-1255-leon-3760314197533.html"
+      },
+      {
+        "color": "yellow",
+        "imageUrl": "https://www.mokenvision.com/4901-home_default/leon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/leonie/773-1257-leon-3760314197526.html"
+      }
+    ]
+  },
+  "tommy": {
+    "model": "Tommy",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4880-home_default/big-dude.jpg",
+        "productUrl": "https://www.mokenvision.com/en/tommy/776-1263-big-dude-3760314197557.html"
+      },
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/4884-home_default/big-dude.jpg",
+        "productUrl": "https://www.mokenvision.com/en/tommy/778-1265-big-dude-3760314197588.html"
+      }
+    ]
+  },
+  "darcy": {
+    "model": "Darcy",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4890-home_default/big-dude.jpg",
+        "productUrl": "https://www.mokenvision.com/en/darcy/781-1270-big-dude-3760314197311.html"
+      }
+    ]
+  },
+  "filton": {
+    "model": "Filton",
+    "variants": [
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4903-home_default/milton.jpg",
+        "productUrl": "https://www.mokenvision.com/en/filton/787-1284-milton-3760314197328.html"
+      },
+      {
+        "color": "grey",
+        "imageUrl": "https://www.mokenvision.com/4907-home_default/milton.jpg",
+        "productUrl": "https://www.mokenvision.com/en/filton/788-1286-milton-3760314197342.html"
+      }
+    ]
+  },
+  "kallan": {
+    "model": "Kallan",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4920-home_default/milton.jpg",
+        "productUrl": "https://www.mokenvision.com/en/kallan/792-1293-milton-3760314197373.html"
+      }
+    ]
+  },
+  "miles": {
+    "model": "Miles",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4923-home_default/miles.jpg",
+        "productUrl": "https://www.mokenvision.com/en/miles/794-1297-miles-3760314197717.html"
+      },
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/2799-home_default/miles.jpg",
+        "productUrl": "https://www.mokenvision.com/en/miles/364-1005-miles-3760314192019.html"
+      }
+    ]
+  },
+  "ivik": {
+    "model": "Ivik",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/5051-home_default/enzo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ivik/828-1358-enzo-3760314196994.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/5053-home_default/enzo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ivik/829-1360-enzo-3760314197007.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/5055-home_default/enzo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ivik/830-1361-enzo-3760314196970.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/5057-home_default/enzo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ivik/831-1363-enzo-3760314196987.html"
+      }
+    ]
+  },
+  "roverii": {
+    "model": "Rover II",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4430-home_default/skyfoil.jpg",
+        "productUrl": "https://www.mokenvision.com/en/montagne/702-1087-skyfoil-3760314195737.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4426-home_default/skyfoil.jpg",
+        "productUrl": "https://www.mokenvision.com/en/montagne/703-1088-skyfoil-3760314195744.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4424-home_default/skyfoil.jpg",
+        "productUrl": "https://www.mokenvision.com/en/montagne/705-1090-skyfoil-3760314195768.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4428-home_default/skyfoil.jpg",
+        "productUrl": "https://www.mokenvision.com/en/montagne/704-1089-skyfoil-3760314195751.html"
+      }
+    ]
+  },
+  "maikan": {
+    "model": "Maikan",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/5233-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/maikan/832-1365-allround-3760314197038.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/5234-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/maikan/833-1367-allround-3760314197045.html"
+      },
+      {
+        "color": "pink",
+        "imageUrl": "https://www.mokenvision.com/5236-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/maikan/834-1369-allround-3760314197021.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/5238-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/maikan/835-1371-allround-3760314197052.html"
+      }
+    ]
+  },
+  "roundy": {
+    "model": "Roundy",
+    "variants": [
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/5161-home_default/roundy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/roundy/837-1375-roundy-3760314197113.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/5163-home_default/roundy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/roundy/838-1377-roundy-3760314197106.html"
+      }
+    ]
+  },
+  "piouii": {
+    "model": "Piou II",
+    "variants": [
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/5165-home_default/piou.jpg",
+        "productUrl": "https://www.mokenvision.com/en/piou/839-1379-piou-3760314197076.html"
+      }
+    ]
+  },
+  "largeleon": {
+    "model": "Large Leon",
+    "variants": [
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/3001-home_default/large-leon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/large-leon/451-971-large-leon-3760314192774.html"
+      }
+    ]
+  },
+  "leon": {
+    "model": "Leon",
+    "variants": [
+      {
+        "color": "crystal",
+        "imageUrl": "https://www.mokenvision.com/4314-home_default/leon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/leon/450-981-leon-3760314192781.html"
+      },
+      {
+        "color": "crystal",
+        "imageUrl": "https://www.mokenvision.com/2320-home_default/leon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/leon/63-977-leon-3760314190053.html"
+      }
+    ]
+  },
+  "monroe": {
+    "model": "Monroe",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4381-home_default/monroe.jpg",
+        "productUrl": "https://www.mokenvision.com/en/monroe/470-1037-monroe-3760314192200.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/2572-home_default/monroe.jpg",
+        "productUrl": "https://www.mokenvision.com/en/monroe/265-1034-monroe-3760314190428.html"
+      }
+    ]
+  },
+  "littleleon": {
+    "model": "Little Leon",
+    "variants": [
+      {
+        "color": "crystal",
+        "imageUrl": "https://www.mokenvision.com/4483-home_default/little-leon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/little-leon/445-994-little-leon-3760314192811.html"
+      },
+      {
+        "color": "crystal",
+        "imageUrl": "https://www.mokenvision.com/4484-home_default/little-leon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/little-leon/447-995-little-leon-3760314192798.html"
+      }
+    ]
+  },
+  "sofia": {
+    "model": "Sofia",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4456-home_default/sofia.jpg",
+        "productUrl": "https://www.mokenvision.com/en/sofia/474-1107-sofia-3760314192637.html"
+      }
+    ]
+  },
+  "anita": {
+    "model": "Anita",
+    "variants": [
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/3098-home_default/anita.jpg",
+        "productUrl": "https://www.mokenvision.com/en/anita/483-845-anita-3760314192576.html"
+      },
+      {
+        "color": "yellow",
+        "imageUrl": "https://www.mokenvision.com/3096-home_default/anita.jpg",
+        "productUrl": "https://www.mokenvision.com/en/anita/482-869-anita-3760314192569.html"
+      }
+    ]
+  },
+  "purplehaze": {
+    "model": "Purple Haze",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/2315-home_default/purple-haze.jpg",
+        "productUrl": "https://www.mokenvision.com/en/purple-haze/69-1065-purple-haze-1000004496235.html"
+      }
+    ]
+  },
+  "enzo": {
+    "model": "Enzo",
+    "variants": [
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4477-home_default/enzo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/enzo/60-903-enzo-3760314194426.html"
+      }
+    ]
+  },
+  "twindrop": {
+    "model": "Twindrop",
+    "variants": [
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/2295-home_default/twindrop.jpg",
+        "productUrl": "https://www.mokenvision.com/en/twindrop/87-1121-twindrop-1000005892913.html"
+      }
+    ]
+  },
+  "hawkinscovers": {
+    "model": "Hawkins covers",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/1643-home_default/hawkins-covers.jpg",
+        "productUrl": "https://www.mokenvision.com/en/sunglasses-collection/152-1388-hawkins-covers-1000006573170.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/1647-home_default/hawkins-covers.jpg",
+        "productUrl": "https://www.mokenvision.com/en/sunglasses-collection/153-306-hawkins-covers-1000006573132.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4808-home_default/hawkins-covers.jpg",
+        "productUrl": "https://www.mokenvision.com/en/sunglasses-collection/779-1266-hawkins-covers-1000006573149.html"
+      }
+    ]
+  },
+  "tracks": {
+    "model": "Tracks",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/5222-home_default/tracks.jpg",
+        "productUrl": "https://www.mokenvision.com/en/tracks/870-1387-tracks-3760314191678.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/2576-home_default/tracks.jpg",
+        "productUrl": "https://www.mokenvision.com/en/tracks/270-1120-tracks-3760314190275.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/2573-home_default/tracks.jpg",
+        "productUrl": "https://www.mokenvision.com/en/tracks/267-1118-tracks-3760314190299.html"
+      }
+    ]
+  },
+  "brend": {
+    "model": "Brend",
+    "variants": [
+      {
+        "color": null,
+        "imageUrl": "https://www.mokenvision.com/5268-home_default/the-brend.jpg",
+        "productUrl": "https://www.mokenvision.com/en/the-brend/874-the-brend-3760314191739.html"
+      }
+    ]
+  },
+  "emma": {
+    "model": "Emma",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/3088-home_default/emma.jpg",
+        "productUrl": "https://www.mokenvision.com/en/emma/478-899-emma-3760314192606.html"
+      }
+    ]
+  },
+  "lyndon": {
+    "model": "Lyndon",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/2856-home_default/lyndon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/lyndon/384-1004-lyndon-3760314191845.html"
+      }
+    ]
+  },
+  "one": {
+    "model": "ONE",
+    "variants": [
+      {
+        "color": "purple",
+        "imageUrl": "https://www.mokenvision.com/4396-home_default/one.jpg",
+        "productUrl": "https://www.mokenvision.com/en/one/525-1051-one-3760314193146.html"
+      },
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/4392-home_default/one.jpg",
+        "productUrl": "https://www.mokenvision.com/en/one/524-1050-one-3760314193160.html"
+      },
+      {
+        "color": "gold",
+        "imageUrl": "https://www.mokenvision.com/4388-home_default/one.jpg",
+        "productUrl": "https://www.mokenvision.com/en/one/523-1049-one-3760314193184.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4386-home_default/one.jpg",
+        "productUrl": "https://www.mokenvision.com/en/one/522-1048-one-3760314193207.html"
+      }
+    ]
+  },
+  "finnflatpeak": {
+    "model": "Finn Flat Peak",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4563-home_default/brendan-baseball.jpg",
+        "productUrl": "https://www.mokenvision.com/en/caps/726-1190-brendan-baseball-3760314194747.html"
+      },
+      {
+        "color": "beige",
+        "imageUrl": "https://www.mokenvision.com/4569-home_default/brendan-baseball.jpg",
+        "productUrl": "https://www.mokenvision.com/en/caps/727-1192-brendan-baseball-3760314194730.html"
+      }
+    ]
+  },
+  "robrunners": {
+    "model": "Rob Runners",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4559-home_default/brendan-baseball.jpg",
+        "productUrl": "https://www.mokenvision.com/en/caps/725-1188-brendan-baseball-3760314194723.html"
+      }
+    ]
+  },
+  "tedtrucker": {
+    "model": "Ted Trucker",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4555-home_default/brendan-baseball.jpg",
+        "productUrl": "https://www.mokenvision.com/en/caps/724-1187-brendan-baseball-3760314194716.html"
+      }
+    ]
+  },
+  "brendanbaseball": {
+    "model": "Brendan Baseball",
+    "variants": [
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4551-home_default/brendan-baseball.jpg",
+        "productUrl": "https://www.mokenvision.com/en/caps/723-1189-brendan-baseball-3760314194686.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/4547-home_default/brendan-baseball.jpg",
+        "productUrl": "https://www.mokenvision.com/en/caps/722-1184-brendan-baseball-3760314194693.html"
+      },
+      {
+        "color": "beige",
+        "imageUrl": "https://www.mokenvision.com/5377-home_default/brendan-baseball.jpg",
+        "productUrl": "https://www.mokenvision.com/en/caps/721-1182-brendan-baseball-3760314194709.html"
+      }
+    ]
+  },
+  "writerii": {
+    "model": "Writer II",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/2559-home_default/writer-ii.jpg",
+        "productUrl": "https://www.mokenvision.com/en/writer-ii/252-1143-writer-ii-3760314190589.html"
+      }
+    ]
+  },
+  "two": {
+    "model": "TWO",
+    "variants": [
+      {
+        "color": "beige",
+        "imageUrl": "https://www.mokenvision.com/4401-home_default/two.jpg",
+        "productUrl": "https://www.mokenvision.com/en/two/527-1124-two-3760314193115.html"
+      },
+      {
+        "color": "white",
+        "imageUrl": "https://www.mokenvision.com/4399-home_default/two.jpg",
+        "productUrl": "https://www.mokenvision.com/en/two/529-1126-two-3760314193092.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4398-home_default/two.jpg",
+        "productUrl": "https://www.mokenvision.com/en/two/526-1123-two-3760314193122.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4400-home_default/two.jpg",
+        "productUrl": "https://www.mokenvision.com/en/two/528-1125-two-3760314193108.html"
+      }
+    ]
+  },
+  "lina": {
+    "model": "Lina",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4321-home_default/lina.jpg",
+        "productUrl": "https://www.mokenvision.com/en/lina/504-985-lina-3760314194303.html"
+      },
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/4324-home_default/lina.jpg",
+        "productUrl": "https://www.mokenvision.com/en/lina/501-984-lina-3760314194280.html"
+      }
+    ]
+  },
+  "iron": {
+    "model": "Iron",
+    "variants": [
+      {
+        "color": null,
+        "imageUrl": "https://www.mokenvision.com/2450-home_default/iron.jpg",
+        "productUrl": "https://www.mokenvision.com/en/home/39-iron-1000005892685.html"
+      }
+    ]
+  },
+  "edgar": {
+    "model": "Edgar",
+    "variants": [
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/2340-home_default/edgar.jpg",
+        "productUrl": "https://www.mokenvision.com/en/edgar/42-895-edgar-1000004496211.html"
+      }
+    ]
+  },
+  "dune": {
+    "model": "Dune",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/2373-home_default/dune.jpg",
+        "productUrl": "https://www.mokenvision.com/en/dune/83-891-dune-1000005892579.html"
+      }
+    ]
+  },
+  "baker": {
+    "model": "Baker",
+    "variants": [
+      {
+        "color": null,
+        "imageUrl": "https://www.mokenvision.com/1964-home_default/baker.jpg",
+        "productUrl": "https://www.mokenvision.com/en/baker/179-baker-1000004496129.html"
+      }
+    ]
+  },
+  "andy": {
+    "model": "Andy",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/5102-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/andy/701-843-allround-3760314195270.html"
+      },
+      {
+        "color": "beige",
+        "imageUrl": "https://www.mokenvision.com/4149-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/andy/700-842-allround-3760314195287.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4145-home_default/allround.jpg",
+        "productUrl": "https://www.mokenvision.com/en/andy/699-841-allround-3760314195263.html"
+      }
+    ]
+  },
+  "izis": {
+    "model": "Izis",
+    "variants": [
+      {
+        "color": "orange",
+        "imageUrl": "https://www.mokenvision.com/3110-home_default/izis.jpg",
+        "productUrl": "https://www.mokenvision.com/en/izis/490-947-izis-3760314192118.html"
+      }
+    ]
+  }
+}

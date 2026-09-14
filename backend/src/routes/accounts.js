@@ -1,0 +1,495 @@
+import { Router } from "express";
+import { z } from "zod";
+import { query } from "../lib/db.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
+import { ROLES } from "../lib/roles.js";
+import { TYPOLOGIES, sectorForTypology } from "../lib/typology.js";
+import { REGIMES_FISCAUX, defaultRegimeFiscalForCountry } from "../lib/taxRegime.js";
+import { getManagedRepUserIds } from "../lib/managedReps.js";
+import { toCamel, toCamelList } from "../lib/serialize.js";
+import { logAudit } from "../lib/audit.js";
+import {
+  accountsScopeClause,
+  canAccessAccount,
+  canReassignAccount,
+  canArchiveAccount,
+} from "../lib/scope.js";
+
+export const accountsRouter = Router();
+
+const ACCOUNTS_MODULE_ROLES = [
+  ROLES.REPRESENTANT,
+  ROLES.MASTER_REP,
+  ROLES.FRONT_DESK,
+  ROLES.DIRECTEUR,
+  ROLES.ADMINISTRATEUR,
+];
+
+// L'administrateur a un accès lecture/écriture complet à la fiche client, au
+// même niveau que le front desk (cf. docs/cahier-des-charges-import-fiches-
+// client.md section 2) — à l'exception explicite du pipeline commercial : la
+// route dédiée ci-dessous exclut ce rôle malgré sa présence dans
+// ACCOUNTS_MODULE_ROLES. Les commandes (orders.js) restent, elles, un module
+// entièrement séparé jamais ouvert à ADMINISTRATEUR.
+const PIPELINE_ROLES = ACCOUNTS_MODULE_ROLES.filter((r) => r !== ROLES.ADMINISTRATEUR);
+
+const addressFields = {
+  billingStreet: z.string().optional().nullable(),
+  billingZip: z.string().optional().nullable(),
+  billingCity: z.string().optional().nullable(),
+  shippingStreet: z.string().optional().nullable(),
+  shippingZip: z.string().optional().nullable(),
+  shippingCity: z.string().optional().nullable(),
+};
+
+const contactFields = {
+  contactName: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  phoneCountryCode: z.string().optional().nullable(),
+  mobile: z.string().optional().nullable(),
+  mobileCountryCode: z.string().optional().nullable(),
+  email: z.string().email().optional().nullable(),
+};
+
+const financialFields = {
+  taxId: z.string().optional().nullable(),
+  vatNumber: z.string().optional().nullable(),
+  iban: z.string().optional().nullable(),
+  bic: z.string().optional().nullable(),
+  dolibarrCodeClient: z.string().optional().nullable(), // rapprochement Dolibarr (Lot 4)
+  sepaMandateStatus: z
+    .enum(["NON_RENSEIGNE", "EN_ATTENTE", "VALIDE", "REVOQUE"])
+    .optional(),
+  // Régime fiscal (base du calcul de TVA export Dolibarr) — indépendant de la
+  // typologie commerciale, qui reste un champ marketing distinct. Défaut
+  // dérivé du pays à la création (jamais RECARGO_EQUIVALENCIA), toujours
+  // modifiable manuellement cas par cas — voir lib/taxRegime.js.
+  regimeFiscal: z.enum(REGIMES_FISCAUX).optional(),
+};
+
+const createSchema = z.object({
+  type: z.enum(["CLIENT", "PROSPECT"]),
+  name: z.string().min(1),
+  // "Nom alternatif" dans l'export Dolibarr — nom du magasin, distinct du nom
+  // de l'enseigne (cf. docs/cahier-des-charges-import-fiches-client.md).
+  storeName: z.string().optional().nullable(),
+  countryCode: z.string().length(2),
+  typology: z.enum(TYPOLOGIES),
+  ownerRepId: z.string().uuid().optional(),
+  masterRepId: z.string().uuid().optional().nullable(),
+  ...addressFields,
+  ...contactFields,
+  ...financialFields,
+});
+
+const updateSchema = createSchema.partial().extend({
+  // le type et la typologie restent modifiables indépendamment de la création
+});
+
+async function resolveCountryId(countryCode) {
+  const { rows } = await query("SELECT id FROM countries WHERE code = $1", [
+    countryCode.toUpperCase(),
+  ]);
+  return rows[0]?.id || null;
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/accounts — liste, filtrée selon le rôle (cf. lib/scope.js)
+// ---------------------------------------------------------------------------
+accountsRouter.get(
+  "/",
+  requireAuth,
+  requireRole(...ACCOUNTS_MODULE_ROLES),
+  async (req, res) => {
+    const { where, params } = accountsScopeClause(req.user);
+    const clauses = [where];
+    // Par défaut, les comptes archivés n'encombrent pas la liste courante —
+    // toujours consultables explicitement via ?status=ARCHIVE (hypothèse
+    // d'ergonomie, aucune donnée n'est jamais supprimée). ?status= accepte une
+    // valeur unique ou une liste séparée par virgules.
+    if (req.query.status) {
+      const statuses = String(req.query.status).split(",");
+      params.push(statuses);
+      clauses.push(`a.status::text = ANY($${params.length}::text[])`);
+    } else {
+      clauses.push(`a.status != 'ARCHIVE'`);
+    }
+    // Nom du représentant propriétaire joint pour l'affichage (utile
+    // notamment au Master Rep, qui voit les comptes de plusieurs représentants
+    // de son équipe en plus des siens propres — cf. accountsScopeClause —
+    // et doit pouvoir distinguer qui possède quoi dans la liste).
+    const { rows } = await query(
+      `SELECT a.*, c.code AS country_code, c.name AS country_name, c.tax_id_label,
+              owner_u.first_name AS owner_rep_first_name, owner_u.last_name AS owner_rep_last_name
+       FROM accounts a
+       JOIN countries c ON c.id = a.country_id
+       LEFT JOIN users owner_u ON owner_u.id = a.owner_rep_id
+       WHERE ${clauses.join(" AND ")}
+       ORDER BY a.created_at DESC`,
+      params
+    );
+    res.json(toCamelList(rows));
+  }
+);
+
+// ---------------------------------------------------------------------------
+// GET /api/accounts/:id
+// ---------------------------------------------------------------------------
+accountsRouter.get(
+  "/:id",
+  requireAuth,
+  requireRole(...ACCOUNTS_MODULE_ROLES),
+  async (req, res) => {
+    const { rows } = await query(
+      `SELECT a.*, c.code AS country_code, c.name AS country_name, c.tax_id_label,
+              owner_u.first_name AS owner_rep_first_name, owner_u.last_name AS owner_rep_last_name
+       FROM accounts a
+       JOIN countries c ON c.id = a.country_id
+       LEFT JOIN users owner_u ON owner_u.id = a.owner_rep_id
+       WHERE a.id = $1`,
+      [req.params.id]
+    );
+    const account = rows[0];
+    if (!account) return res.status(404).json({ error: "Compte introuvable." });
+    if (!canAccessAccount(req.user, account)) {
+      return res.status(403).json({ error: "Accès refusé à ce compte." });
+    }
+    res.json(toCamel(account));
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/accounts — création
+// ---------------------------------------------------------------------------
+accountsRouter.post(
+  "/",
+  requireAuth,
+  requireRole(...ACCOUNTS_MODULE_ROLES),
+  async (req, res) => {
+    const parsed = createSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+    const data = parsed.data;
+
+    const countryId = await resolveCountryId(data.countryCode);
+    if (!countryId) {
+      return res.status(400).json({ error: `Pays inconnu : ${data.countryCode}` });
+    }
+
+    let ownerRepId;
+    let masterRepId = null;
+
+    if (req.user.role === ROLES.REPRESENTANT) {
+      // Un représentant est automatiquement propriétaire de ce qu'il crée,
+      // et ne peut jamais s'affecter un masterRep lui-même (cf. section 3).
+      ownerRepId = req.user.id;
+    } else if (req.user.role === ROLES.MASTER_REP) {
+      // Règle confirmée : le Master Rep choisit un représentant de son équipe
+      // (champ obligatoire dans l'UI, mais côté API on accepte son absence) ;
+      // s'il n'en désigne aucun, le compte lui reste directement rattaché —
+      // jamais de compte orphelin sans ownerRep.
+      if (data.ownerRepId) {
+        const managed = await getManagedRepUserIds(req.user.id);
+        if (!managed.includes(data.ownerRepId)) {
+          return res.status(403).json({
+            error: "Ce représentant ne vous est pas affecté.",
+          });
+        }
+        ownerRepId = data.ownerRepId;
+        masterRepId = req.user.id;
+      } else {
+        ownerRepId = req.user.id;
+        masterRepId = null;
+      }
+    } else {
+      // FRONT_DESK, DIRECTEUR
+      if (!data.ownerRepId) {
+        return res.status(400).json({ error: "ownerRepId requis." });
+      }
+      ownerRepId = data.ownerRepId;
+      masterRepId = data.masterRepId ?? null;
+    }
+
+    const sector = sectorForTypology(data.typology);
+    // Régime fiscal : dérivé du pays par défaut (jamais RECARGO_EQUIVALENCIA
+    // automatiquement), mais toujours écrasable manuellement dès la création.
+    const regimeFiscal = data.regimeFiscal ?? defaultRegimeFiscalForCountry(data.countryCode.toUpperCase());
+
+    const { rows } = await query(
+      `INSERT INTO accounts (
+        type, name, store_name, country_id, typology, sector,
+        billing_street, billing_zip, billing_city,
+        shipping_street, shipping_zip, shipping_city,
+        contact_name, phone, phone_country_code, mobile, mobile_country_code, email,
+        tax_id, vat_number, iban, bic, sepa_mandate_status, regime_fiscal,
+        pipeline_stage, owner_rep_id, master_rep_id
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9,
+        $10, $11, $12,
+        $13, $14, $15, $16, $17, $18,
+        $19, $20, $21, $22, $23, $24,
+        'Nouveau', $25, $26
+      ) RETURNING *`,
+      [
+        data.type,
+        data.name,
+        data.storeName ?? null,
+        countryId,
+        data.typology,
+        sector,
+        data.billingStreet ?? null,
+        data.billingZip ?? null,
+        data.billingCity ?? null,
+        data.shippingStreet ?? null,
+        data.shippingZip ?? null,
+        data.shippingCity ?? null,
+        data.contactName ?? null,
+        data.phone ?? null,
+        data.phoneCountryCode ?? null,
+        data.mobile ?? null,
+        data.mobileCountryCode ?? null,
+        data.email ?? null,
+        data.taxId ?? null,
+        data.vatNumber ?? null,
+        data.iban ?? null,
+        data.bic ?? null,
+        data.sepaMandateStatus ?? "NON_RENSEIGNE",
+        regimeFiscal,
+        ownerRepId,
+        masterRepId,
+      ]
+    );
+
+    await logAudit({
+      userId: req.user.id,
+      action: "ACCOUNT_CREATED",
+      entity: "accounts",
+      entityId: rows[0].id,
+      details: { name: rows[0].name, type: rows[0].type, regimeFiscal: rows[0].regime_fiscal },
+    });
+
+    res.status(201).json(toCamel(rows[0]));
+  }
+);
+
+// ---------------------------------------------------------------------------
+// PATCH /api/accounts/:id — mise à jour
+// ---------------------------------------------------------------------------
+accountsRouter.patch(
+  "/:id",
+  requireAuth,
+  requireRole(...ACCOUNTS_MODULE_ROLES),
+  async (req, res) => {
+    const parsed = updateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+    const data = parsed.data;
+
+    const { rows: existingRows } = await query("SELECT * FROM accounts WHERE id = $1", [
+      req.params.id,
+    ]);
+    const existing = existingRows[0];
+    if (!existing) return res.status(404).json({ error: "Compte introuvable." });
+    if (!canAccessAccount(req.user, existing)) {
+      return res.status(403).json({ error: "Accès refusé à ce compte." });
+    }
+
+    if (
+      (data.ownerRepId !== undefined || data.masterRepId !== undefined) &&
+      !canReassignAccount(req.user.role)
+    ) {
+      return res.status(403).json({
+        error: "Seuls le front desk et le directeur peuvent réaffecter un compte.",
+      });
+    }
+
+    const sets = [];
+    const params = [];
+    let i = 1;
+
+    const simpleFields = [
+      "type",
+      "name",
+      "storeName",
+      "ownerRepId",
+      "masterRepId",
+      ...Object.keys(addressFields),
+      ...Object.keys(contactFields),
+      ...Object.keys(financialFields),
+    ];
+    const columnFor = (f) => f.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
+    for (const field of simpleFields) {
+      if (data[field] !== undefined) {
+        sets.push(`${columnFor(field)} = $${i++}`);
+        params.push(data[field]);
+      }
+    }
+
+    if (data.typology !== undefined) {
+      sets.push(`typology = $${i++}`);
+      params.push(data.typology);
+      sets.push(`sector = $${i++}`);
+      params.push(sectorForTypology(data.typology));
+    }
+
+    if (data.countryCode !== undefined) {
+      const countryId = await resolveCountryId(data.countryCode);
+      if (!countryId) {
+        return res.status(400).json({ error: `Pays inconnu : ${data.countryCode}` });
+      }
+      sets.push(`country_id = $${i++}`);
+      params.push(countryId);
+      // Règle définitive confirmée : changer le pays d'un compte existant ne
+      // doit JAMAIS recalculer regime_fiscal automatiquement. defaultRegimeFiscalForCountry()
+      // ne sert qu'à la création (POST, plus haut). Si le régime doit changer suite à un
+      // changement de pays, c'est un choix manuel via `regimeFiscal` dans le même PATCH ou un
+      // PATCH séparé — volontairement pas de logique automatique ici.
+    }
+
+    if (sets.length === 0) {
+      return res.status(400).json({ error: "Aucun champ à mettre à jour." });
+    }
+
+    sets.push(`updated_at = now()`);
+    params.push(req.params.id);
+
+    const { rows } = await query(
+      `UPDATE accounts SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`,
+      params
+    );
+
+    await logAudit({
+      userId: req.user.id,
+      action: "ACCOUNT_UPDATED",
+      entity: "accounts",
+      entityId: req.params.id,
+      details: { fields: Object.keys(data) },
+    });
+
+    res.json(toCamel(rows[0]));
+  }
+);
+
+// ---------------------------------------------------------------------------
+// PATCH /api/accounts/:id/pipeline — changement de statut pipeline
+// ---------------------------------------------------------------------------
+const PIPELINE_STAGES = [
+  "Nouveau",
+  "Contacté",
+  "RDV prévu",
+  "Devis en cours",
+  "Négociation",
+  "Gagné",
+  "Perdu",
+];
+
+accountsRouter.patch(
+  "/:id/pipeline",
+  requireAuth,
+  requireRole(...PIPELINE_ROLES),
+  async (req, res) => {
+    const schema = z.object({ stage: z.enum(PIPELINE_STAGES) });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Statut de pipeline invalide." });
+    }
+
+    const { rows: existingRows } = await query("SELECT * FROM accounts WHERE id = $1", [
+      req.params.id,
+    ]);
+    const existing = existingRows[0];
+    if (!existing) return res.status(404).json({ error: "Compte introuvable." });
+    if (!canAccessAccount(req.user, existing)) {
+      return res.status(403).json({ error: "Accès refusé à ce compte." });
+    }
+
+    const { stage } = parsed.data;
+    const wonDate = stage === "Gagné" ? new Date() : existing.won_date;
+    const lostDate = stage === "Perdu" ? new Date() : existing.lost_date;
+
+    const { rows } = await query(
+      `UPDATE accounts
+       SET pipeline_stage = $1, won_date = $2, lost_date = $3, updated_at = now()
+       WHERE id = $4
+       RETURNING *`,
+      [stage, wonDate, lostDate, req.params.id]
+    );
+
+    await logAudit({
+      userId: req.user.id,
+      action: "ACCOUNT_PIPELINE_CHANGED",
+      entity: "accounts",
+      entityId: req.params.id,
+      details: { from: existing.pipeline_stage, to: stage },
+    });
+
+    res.json(toCamel(rows[0]));
+  }
+);
+
+// ---------------------------------------------------------------------------
+// PATCH /api/accounts/:id/status — cycle de vie confirmé : ACTIF -> INACTIF ->
+// ARCHIVE. Jamais de suppression de compte ni de son historique. ACTIF<->INACTIF
+// est une bascule opérationnelle ouverte à tout rôle ayant accès au compte ;
+// l'archivage (INACTIF -> ARCHIVE, terminal) est réservé front desk/directeur.
+// ---------------------------------------------------------------------------
+const STATUS_TRANSITIONS = {
+  ACTIF: ["INACTIF"],
+  INACTIF: ["ACTIF", "ARCHIVE"],
+  ARCHIVE: [], // terminal — aucune sortie possible, jamais de suppression.
+};
+
+accountsRouter.patch(
+  "/:id/status",
+  requireAuth,
+  requireRole(...ACCOUNTS_MODULE_ROLES),
+  async (req, res) => {
+    const schema = z.object({ status: z.enum(["ACTIF", "INACTIF", "ARCHIVE"]) });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Statut invalide." });
+
+    const { rows: existingRows } = await query("SELECT * FROM accounts WHERE id = $1", [
+      req.params.id,
+    ]);
+    const existing = existingRows[0];
+    if (!existing) return res.status(404).json({ error: "Compte introuvable." });
+    if (!canAccessAccount(req.user, existing)) {
+      return res.status(403).json({ error: "Accès refusé à ce compte." });
+    }
+
+    const target = parsed.data.status;
+    if (target === "ARCHIVE" && !canArchiveAccount(req.user.role)) {
+      return res.status(403).json({
+        error: "Seuls le front desk et le directeur peuvent archiver un compte.",
+      });
+    }
+
+    const allowed = STATUS_TRANSITIONS[existing.status] || [];
+    if (existing.status !== target && !allowed.includes(target)) {
+      return res.status(409).json({
+        error: `Transition ${existing.status} -> ${target} non autorisée (cycle : ACTIF -> INACTIF -> ARCHIVE).`,
+      });
+    }
+
+    const archivedAt = target === "ARCHIVE" ? new Date() : existing.archived_at;
+
+    const { rows } = await query(
+      `UPDATE accounts SET status = $1, archived_at = $2, updated_at = now() WHERE id = $3 RETURNING *`,
+      [target, archivedAt, req.params.id]
+    );
+
+    await logAudit({
+      userId: req.user.id,
+      action: "ACCOUNT_STATUS_CHANGED",
+      entity: "accounts",
+      entityId: req.params.id,
+      details: { from: existing.status, to: target },
+    });
+
+    res.json(toCamel(rows[0]));
+  }
+);
