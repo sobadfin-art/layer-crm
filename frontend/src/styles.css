@@ -54,8 +54,27 @@ body {
   padding: 18px 18px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 8px;
+}
+
+/* Le logo + la cloche + les 3 boutons de langue ne tiennent pas côte à côte
+   sur les 210px de la sidebar desktop (retour utilisateur : cloche mal
+   positionnée, débordant par-dessus le contenu principal — même cause que
+   l'ancien bouton de déconnexion, déjà déplacé plus bas). On force ce
+   groupe sur sa propre ligne, pleine largeur, alignée à droite, plutôt que
+   de compter sur un retour à la ligne naturel qui dépendrait de la largeur
+   exacte du logo. Réservé au desktop (sidebar verticale à 210px) : en
+   dessous de 680px la sidebar devient une barre horizontale pleine largeur
+   (cf. media query plus bas) où logo+cloche+langues tiennent déjà sur une
+   seule ligne — pas besoin d'y forcer ce retour à la ligne. */
+@media (min-width: 681px) {
+  .sidebar-brand > div {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
 }
 
 .sidebar-brand img {
@@ -134,13 +153,37 @@ body {
   font-size: 11.5px;
   color: #8892a0;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
 }
 
-.user-chip .btn {
-  flex-shrink: 0;
+.user-chip-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  border-radius: 5px;
+  color: #d8dee9;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.user-chip-logout:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: white;
+}
+
+/* Icône de déconnexion compacte, réservée au haut de la sidebar en mode
+   mobile (barre basse) : sur desktop la vraie déconnexion est le bouton
+   .user-chip-logout ci-dessus, en bas ; cf. AppShell.jsx pour le pourquoi. */
+.logout-mobile-only {
+  display: none;
 }
 
 .shell-main {
@@ -176,6 +219,10 @@ body {
 
   .user-chip {
     display: none;
+  }
+
+  .logout-mobile-only {
+    display: flex;
   }
 
   .nav {
