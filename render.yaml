@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: moken-crm
+    runtime: node
+    plan: free
+    buildCommand: "cd backend && npm install && cd ../frontend && npm install && npm run build"
+    # ALLOW_SEED=true : seed.js refuse par défaut de tourner si NODE_ENV=production
+    # (garde-fou anti comptes de démo en vraie prod, cf. README "Environnement de
+    # développement vs production") — volontairement contourné ici puisque ce
+    # déploiement Render gratuit EST un environnement de démo/recette, pas une
+    # vraie mise en production avec de vraies données client.
+    preDeployCommand: "cd backend && npm run migrate && ALLOW_SEED=true npm run seed"
+    startCommand: "cd backend && npm start"
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: moken-crm-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: NODE_ENV
+        value: production
+
+databases:
+  - name: moken-crm-db
+    plan: free
+    databaseName: moken_crm
+    user: moken
