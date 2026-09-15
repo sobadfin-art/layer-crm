@@ -139,6 +139,74 @@ export default function Agenda() {
   const pendingTasks = taskList.filter((tk) => !tk.done);
   const doneTasks = taskList.filter((tk) => tk.done);
 
+  // Un rendez-vous passé est "archivé" (PDF Directeur section 0 : "rendre les
+  // tâches cliquables/archivables et conserver le contenu des rendez-vous
+  // réalisés" ; PDF Représentant section 10 : "Un rendez-vous passé / terminé
+  // est archivé et ne reste pas dans les vues courantes. L'historique doit
+  // rester consultable.") — même principe que pendingTasks/doneTasks
+  // ci-dessus, décliné pour les RDV : la vue principale ne montre que les RDV
+  // à venir, les RDV passés restent consultables (et le compte rendu reste
+  // saisissable) dans une section séparée, jamais supprimés.
+  const now = Date.now();
+  const upcomingRdvList = rdvList.filter((ev) => !ev.dueDate || new Date(ev.dueDate).getTime() >= now);
+  const pastRdvList = rdvList.filter((ev) => ev.dueDate && new Date(ev.dueDate).getTime() < now);
+
+  function renderRdvCard(ev, archived = false) {
+    const isOwn = ev.assigneeId === user.id;
+    const canEdit = isOwn || isPrivileged;
+    return (
+      <div className="panel" key={ev.id} style={archived ? { opacity: 0.75 } : undefined}>
+        <div className="task-row" style={{ border: "none", padding: "0 0 4px" }}>
+          <span
+            style={{ cursor: ev.accountId ? "pointer" : "default", textDecoration: ev.accountId ? "underline" : "none" }}
+            onClick={() => ev.accountId && navigate(`/clients/${ev.accountId}`)}
+          >
+            <strong>{ev.accountName || t("agenda.personalTask")}</strong> — {ev.title}
+            {/* GET /api/dashboard/rdv joint le nom du représentant sous
+                repFirstName/repLastName (et non assigneeFirstName/Last —
+                alias différent de GET /api/tasks, cf. dashboard.js). */}
+            {!isOwn && (ev.repFirstName || ev.repLastName) && (
+              <span className="typology-badge" style={{ marginLeft: 6 }}>
+                {ev.repFirstName} {ev.repLastName}
+              </span>
+            )}
+          </span>
+          <span>{ev.dueDate ? dateTime(ev.dueDate, locale) : "—"}</span>
+        </div>
+
+        {ev.compteRendu ? (
+          <p style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 8 }}>
+            <strong>{t("agenda.compteRenduSavedOn", { date: dateTime(ev.compteRenduAt, locale) })}</strong>
+            <br />
+            {ev.compteRendu}
+          </p>
+        ) : !canEdit ? null : openCompteRenduId === ev.id ? (
+          <div style={{ marginTop: 8 }}>
+            <div className="field">
+              <textarea
+                placeholder={t("agenda.compteRenduPlaceholder")}
+                value={compteRenduText}
+                onChange={(e) => setCompteRenduText(e.target.value)}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn primary" disabled={savingCompteRendu} onClick={() => submitCompteRendu(ev)}>
+                {savingCompteRendu ? t("agenda.compteRenduSaving") : t("agenda.compteRenduSubmit")}
+              </button>
+              <button className="btn outline" onClick={() => setOpenCompteRenduId(null)}>
+                {t("agenda.compteRenduCancel")}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button className="btn outline" style={{ marginTop: 8 }} onClick={() => startCompteRendu(ev)}>
+            {t("agenda.compteRenduAdd")}
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       <h1 className="page-title">{t("agenda.title")}</h1>
@@ -158,61 +226,21 @@ export default function Agenda() {
         <>
           {rdvError && <p className="error-text">{rdvError}</p>}
           {!loadingRdv && rdvList.length === 0 && !rdvError && <p className="empty-state">{t("agenda.rdvEmpty")}</p>}
-          {rdvList.map((ev) => {
-            const isOwn = ev.assigneeId === user.id;
-            const canEdit = isOwn || isPrivileged;
-            return (
-              <div className="panel" key={ev.id}>
-                <div className="task-row" style={{ border: "none", padding: "0 0 4px" }}>
-                  <span
-                    style={{ cursor: ev.accountId ? "pointer" : "default", textDecoration: ev.accountId ? "underline" : "none" }}
-                    onClick={() => ev.accountId && navigate(`/clients/${ev.accountId}`)}
-                  >
-                    <strong>{ev.accountName || t("agenda.personalTask")}</strong> — {ev.title}
-                    {/* GET /api/dashboard/rdv joint le nom du représentant sous
-                        repFirstName/repLastName (et non assigneeFirstName/Last —
-                        alias différent de GET /api/tasks, cf. dashboard.js). */}
-                    {!isOwn && (ev.repFirstName || ev.repLastName) && (
-                      <span className="typology-badge" style={{ marginLeft: 6 }}>
-                        {ev.repFirstName} {ev.repLastName}
-                      </span>
-                    )}
-                  </span>
-                  <span>{ev.dueDate ? dateTime(ev.dueDate, locale) : "—"}</span>
-                </div>
 
-                {ev.compteRendu ? (
-                  <p style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 8 }}>
-                    <strong>{t("agenda.compteRenduSavedOn", { date: dateTime(ev.compteRenduAt, locale) })}</strong>
-                    <br />
-                    {ev.compteRendu}
-                  </p>
-                ) : !canEdit ? null : openCompteRenduId === ev.id ? (
-                  <div style={{ marginTop: 8 }}>
-                    <div className="field">
-                      <textarea
-                        placeholder={t("agenda.compteRenduPlaceholder")}
-                        value={compteRenduText}
-                        onChange={(e) => setCompteRenduText(e.target.value)}
-                      />
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button className="btn primary" disabled={savingCompteRendu} onClick={() => submitCompteRendu(ev)}>
-                        {savingCompteRendu ? t("agenda.compteRenduSaving") : t("agenda.compteRenduSubmit")}
-                      </button>
-                      <button className="btn outline" onClick={() => setOpenCompteRenduId(null)}>
-                        {t("agenda.compteRenduCancel")}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button className="btn outline" style={{ marginTop: 8 }} onClick={() => startCompteRendu(ev)}>
-                    {t("agenda.compteRenduAdd")}
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          {rdvList.length > 0 && (
+            <>
+              <h3 style={{ margin: "4px 0 8px" }}>{t("agenda.upcomingTitle")}</h3>
+              {upcomingRdvList.length === 0 && <p className="empty-state">{t("agenda.upcomingEmpty")}</p>}
+              {upcomingRdvList.map((ev) => renderRdvCard(ev))}
+            </>
+          )}
+
+          {pastRdvList.length > 0 && (
+            <>
+              <h3 style={{ margin: "18px 0 8px" }}>{t("agenda.pastTitle")}</h3>
+              {pastRdvList.map((ev) => renderRdvCard(ev, true))}
+            </>
+          )}
         </>
       )}
 

@@ -4,6 +4,14 @@ import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate, dateTime } from "../lib/format.js";
 import { useAgendaSummary } from "../hooks/useAgendaSummary.js";
+import AccountsMap from "../components/AccountsMap.jsx";
+
+function isToday(dateStr) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
 
 // Un objectif est "actif" si la date du jour tombe dans sa période — on le
 // met en avant (trié en premier) plutôt qu'un objectif déjà écoulé ou pas
@@ -21,13 +29,58 @@ export default function Dashboard() {
   const [loadingObjectives, setLoadingObjectives] = useState(true);
   const [objectivesError, setObjectivesError] = useState(null);
   const {
-    upcomingRdv,
+    rdv,
+    tasks,
     pendingTasks,
     overdueTasks,
     loading: loadingAgenda,
     error: agendaError,
     reload: reloadAgenda,
   } = useAgendaSummary();
+
+  // Portefeuille — PDF section 1 : comptes gagnés/perdus sur la période
+  // (annuelle), clients actifs ayant/n'ayant pas commandé sur la période, et
+  // nombre total de comptes clients actifs affectés. Calculé à partir des
+  // données déjà scopées au représentant côté serveur (GET /accounts,
+  // GET /orders), jamais d'appel élargi.
+  const [accounts, setAccounts] = useState([]);
+  const [ordersThisYear, setOrdersThisYear] = useState([]);
+  const [loadingPortfolio, setLoadingPortfolio] = useState(true);
+
+  const loadPortfolio = useCallback(async () => {
+    setLoadingPortfolio(true);
+    try {
+      const yearStart = `${new Date().getFullYear()}-01-01T00:00:00.000Z`;
+      const [accountsData, ordersData] = await Promise.all([
+        api.get("/accounts"),
+        api.get(`/orders?dateFrom=${encodeURIComponent(yearStart)}`),
+      ]);
+      setAccounts(accountsData);
+      setOrdersThisYear(ordersData);
+    } catch {
+      // Non bloquant — le reste du tableau de bord reste utilisable.
+    } finally {
+      setLoadingPortfolio(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPortfolio();
+  }, [loadPortfolio]);
+
+  // Tâches du jour et rendez-vous du jour uniquement (PDF section 1) —
+  // distinct des listes "à venir" utilisées par le badge de nav/Agenda.jsx,
+  // qui restent, elles, inchangées.
+  const todayTasks = pendingTasks.filter((t) => isToday(t.dueDate));
+  const todayRdv = rdv.filter((r) => isToday(r.dueDate));
+
+  const currentYear = new Date().getFullYear();
+  const activeClients = accounts.filter((a) => a.type === "CLIENT" && a.status !== "ARCHIVE" && a.status !== "INACTIF");
+  const wonThisYear = accounts.filter((a) => a.wonDate && new Date(a.wonDate).getFullYear() === currentYear);
+  const lostThisYear = accounts.filter((a) => a.lostDate && new Date(a.lostDate).getFullYear() === currentYear);
+  const accountIdsWithOrder = new Set(ordersThisYear.map((o) => o.accountId));
+  const activeClientsWithOrder = activeClients.filter((a) => accountIdsWithOrder.has(a.id));
+  const activeClientsWithoutOrder = activeClients.filter((a) => !accountIdsWithOrder.has(a.id));
 
   const loadObjectives = useCallback(async () => {
     setLoadingObjectives(true);
@@ -112,12 +165,8 @@ export default function Dashboard() {
 
       <div className="cards-row">
         <div className="stat-card">
-          <div className="stat-label">{t("dashboard.upcomingRdv")}</div>
-          <div className="stat-value">{loadingAgenda ? "…" : upcomingRdv.length}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">{t("dashboard.pendingTasks")}</div>
-          <div className="stat-value">{loadingAgenda ? "…" : pendingTasks.length}</div>
+          <div className="stat-label">{t("dashboard.activeClients")}</div>
+          <div className="stat-value">{loadingPortfolio ? "…" : activeClients.length}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">{t("dashboard.overdueTasks")}</div>
@@ -130,8 +179,28 @@ export default function Dashboard() {
       {agendaError && <p className="error-text">{agendaError}</p>}
 
       <div className="panel">
+        <h3>{t("dashboard.portfolioTitle")}</h3>
+        <div className="task-row">
+          <span>{t("dashboard.portfolioWon")}</span>
+          <span>{loadingPortfolio ? "…" : wonThisYear.length}</span>
+        </div>
+        <div className="task-row">
+          <span>{t("dashboard.portfolioLost")}</span>
+          <span>{loadingPortfolio ? "…" : lostThisYear.length}</span>
+        </div>
+        <div className="task-row">
+          <span>{t("dashboard.portfolioActiveOrdered")}</span>
+          <span>{loadingPortfolio ? "…" : activeClientsWithOrder.length}</span>
+        </div>
+        <div className="task-row">
+          <span>{t("dashboard.portfolioActiveNotOrdered")}</span>
+          <span>{loadingPortfolio ? "…" : activeClientsWithoutOrder.length}</span>
+        </div>
+      </div>
+
+      <div className="panel">
         <h3>{t("dashboard.nextRdvTitle")}</h3>
-        {upcomingRdv.slice(0, 5).map((r) => (
+        {todayRdv.map((r) => (
           <div className="task-row" key={r.id}>
             <span>
               {r.accountName || t("dashboard.noAccount")} — {r.title}
@@ -139,12 +208,12 @@ export default function Dashboard() {
             <span>{r.dueDate ? dateTime(r.dueDate, locale) : t("dashboard.noDate")}</span>
           </div>
         ))}
-        {!loadingAgenda && upcomingRdv.length === 0 && <p className="empty-state">{t("dashboard.noRdv")}</p>}
+        {!loadingAgenda && todayRdv.length === 0 && <p className="empty-state">{t("dashboard.noRdv")}</p>}
       </div>
 
       <div className="panel">
         <h3>{t("dashboard.tasksTitle")}</h3>
-        {pendingTasks.map((tk) => {
+        {todayTasks.map((tk) => {
           const overdue = tk.dueDate && new Date(tk.dueDate).getTime() < Date.now();
           return (
             <div className="task-row" key={tk.id}>
@@ -158,8 +227,13 @@ export default function Dashboard() {
             </div>
           );
         })}
-        {!loadingAgenda && pendingTasks.length === 0 && <p className="empty-state">{t("dashboard.noTasks")}</p>}
+        {!loadingAgenda && todayTasks.length === 0 && <p className="empty-state">{t("dashboard.noTasks")}</p>}
       </div>
+
+      {/* Carte & tournées — sous les tâches et rendez-vous du jour (PDF
+          Représentant section 1 : "Le bloc doit être présent directement sur
+          le Dashboard, sous les tâches et rendez-vous."). */}
+      <AccountsMap scope="representant" />
     </>
   );
 }

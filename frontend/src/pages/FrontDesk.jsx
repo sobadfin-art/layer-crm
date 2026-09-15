@@ -28,6 +28,8 @@ export default function FrontDesk() {
   const [isOfflineData, setIsOfflineData] = useState(false);
   const [statusFilter, setStatusFilter] = useState("ENVOYEE_FRONT_DESK");
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [details, setDetails] = useState({});
   const [busyId, setBusyId] = useState(null);
@@ -47,6 +49,8 @@ export default function FrontDesk() {
       const params = new URLSearchParams();
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (search.trim()) params.set("search", search.trim());
+      if (dateFrom) params.set("dateFrom", new Date(dateFrom).toISOString());
+      if (dateTo) params.set("dateTo", new Date(`${dateTo}T23:59:59`).toISOString());
       const data = await api.get(`/orders?${params.toString()}`);
       setOrders(data);
       setIsOfflineData(false);
@@ -79,7 +83,7 @@ export default function FrontDesk() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     load();
-  }, [statusFilter]);
+  }, [statusFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     if (!toast) return;
@@ -193,6 +197,8 @@ export default function FrontDesk() {
           <option value="EXPORTEE_DOLIBARR">{t("frontDesk.statusExported")}</option>
           <option value="ANNULEE">{t("frontDesk.statusCancelled")}</option>
         </select>
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} title={t("frontDesk.dateFrom")} />
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} title={t("frontDesk.dateTo")} />
         <button className="btn outline" onClick={load}>
           {t("frontDesk.refresh")}
         </button>

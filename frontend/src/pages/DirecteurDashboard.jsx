@@ -4,8 +4,15 @@ import { Globe, Target } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate } from "../lib/format.js";
+import AccountsMap from "../components/AccountsMap.jsx";
 
-const SECTORS = ["OPTICIEN", "MODE_SURF_SPORT"];
+// 11 typologies réelles (remplace l'ancien modèle à 2 "secteurs" agrégés
+// depuis la migration 015 — cf. PDF Directeur commercial section 4 :
+// "sélectionner une ou plusieurs typologies de clients / réseaux").
+const TYPOLOGIES = [
+  "OPTICIEN", "SURF_SHOP", "FASHION_STORE", "SKATE_SHOP", "SKI_SHOP",
+  "CONCEPT_STORE", "USHIP", "BIKE_STORE", "KEY_ACCOUNT", "DISTRIBUTOR", "AUTRE",
+];
 const CATEGORIES = ["PREMIUM", "CLASSIC", "OPTICS", "ACCESS", "DISPLAY", "MERCH", "GOGGLES", "KIDS"];
 
 // Un objectif est "actif" si la date du jour tombe dans sa période — même
@@ -52,7 +59,7 @@ export default function DirecteurDashboard() {
   const [form, setForm] = useState({
     repId: "",
     type: "CHIFFRE_AFFAIRES",
-    sectors: [],
+    typologies: [],
     categories: [],
     periodStart: "",
     periodEnd: "",
@@ -114,6 +121,8 @@ export default function DirecteurDashboard() {
   const teamCa = sumTargetAchieved(objectivesWithProgress.filter((o) => o.type === "CHIFFRE_AFFAIRES"));
   const teamPrecommande = sumTargetAchieved(objectivesWithProgress.filter((o) => o.type === "PRECOMMANDE"));
   const teamCaPct = teamCa.target > 0 ? Math.min(100, Math.round((teamCa.achieved / teamCa.target) * 100)) : 0;
+  const teamPrecommandePct =
+    teamPrecommande.target > 0 ? Math.min(100, Math.round((teamPrecommande.achieved / teamPrecommande.target) * 100)) : 0;
 
   function toggleFormValue(field, value) {
     setForm((f) => ({
@@ -138,13 +147,13 @@ export default function DirecteurDashboard() {
       await api.post("/objectives", {
         repId: form.repId,
         type: form.type,
-        sectors: form.sectors,
+        typologies: form.typologies,
         categories: form.categories,
         periodStart: new Date(form.periodStart).toISOString(),
         periodEnd: new Date(form.periodEnd).toISOString(),
         targetAmount: Number(form.targetAmount),
       });
-      setForm({ repId: "", type: "CHIFFRE_AFFAIRES", sectors: [], categories: [], periodStart: "", periodEnd: "", targetAmount: "" });
+      setForm({ repId: "", type: "CHIFFRE_AFFAIRES", typologies: [], categories: [], periodStart: "", periodEnd: "", targetAmount: "" });
       setShowNewObjective(false);
       setToast(t("directeurDashboard.objectiveCreated"));
       await load();
@@ -259,16 +268,16 @@ export default function DirecteurDashboard() {
               />
             </div>
             <div className="field">
-              <label>{t("directeurDashboard.objectiveSectors")}</label>
+              <label>{t("directeurDashboard.objectiveTypologies")}</label>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {SECTORS.map((s) => (
+                {TYPOLOGIES.map((s) => (
                   <span
                     key={s}
                     className="typology-badge"
-                    style={{ cursor: "pointer", background: form.sectors.includes(s) ? "var(--teal-soft, #d7ece7)" : undefined }}
-                    onClick={() => toggleFormValue("sectors", s)}
+                    style={{ cursor: "pointer", background: form.typologies.includes(s) ? "var(--teal-soft, #d7ece7)" : undefined }}
+                    onClick={() => toggleFormValue("typologies", s)}
                   >
-                    {s}
+                    {t(`typology.${s}`)}
                   </span>
                 ))}
               </div>
@@ -319,6 +328,9 @@ export default function DirecteurDashboard() {
               {money(teamPrecommande.achieved, locale)}
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}> / {money(teamPrecommande.target, locale)}</span>
             </div>
+            <div className="progress-track">
+              <div className="progress-fill" style={{ width: `${teamPrecommandePct}%`, background: "var(--gold)" }} />
+            </div>
           </div>
           <div className="stat-card" style={{ cursor: "pointer" }} onClick={() => navigate("/orders")}>
             <div className="stat-label">{t("directeurDashboard.statPending")}</div>
@@ -344,6 +356,11 @@ export default function DirecteurDashboard() {
           ))}
         </div>
       )}
+
+      {/* Carte & tournées — directement sous "Performance par représentant"
+          (PDF Directeur commercial section 2 : "Le bloc Carte & tournées doit
+          apparaître directement sous « Performance par représentant »"). */}
+      {!loading && !error && <AccountsMap scope="directeur" repOptions={reps} masterRepOptions={masterReps} />}
 
       {toast && <div className="toast">{toast}</div>}
     </>

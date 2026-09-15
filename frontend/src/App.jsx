@@ -10,6 +10,7 @@ import {
   UserCog,
   Settings2,
   FileUp,
+  LifeBuoy,
 } from "lucide-react";
 import { useAuth } from "./AuthContext.jsx";
 import { useI18n } from "./i18n/I18nContext.jsx";
@@ -33,6 +34,9 @@ import Data from "./pages/Data.jsx";
 import BusinessRules from "./pages/BusinessRules.jsx";
 import CatalogueAdmin from "./pages/CatalogueAdmin.jsx";
 import AccountsImportAdmin from "./pages/AccountsImportAdmin.jsx";
+import SavQueue from "./pages/SavQueue.jsx";
+import MasterRepDashboard from "./pages/MasterRepDashboard.jsx";
+import RepData from "./pages/RepData.jsx";
 import AppShell from "./components/AppShell.jsx";
 
 // Écran neutre pour les rôles sans écran construit pour l'instant
@@ -114,6 +118,7 @@ export default function App() {
       { to: "/clients", label: t("nav.clients"), icon: Users },
       { to: "/equipe", label: t("nav.equipeAdmin"), icon: UserCheck },
       { to: "/orders", label: t("nav.frontDesk"), icon: ClipboardCheck },
+      { to: "/sav", label: t("nav.sav"), icon: LifeBuoy },
       { to: "/data", label: t("nav.data"), icon: Award },
       { to: "/config", label: t("nav.config"), icon: Settings2 },
       { to: "/utilisateurs", label: t("nav.utilisateurs"), icon: UserCog },
@@ -121,7 +126,14 @@ export default function App() {
     ];
     homePath = "/dashboard";
   } else if (isFrontDesk) {
-    navItems = [{ to: "/orders", label: t("nav.orders"), icon: ClipboardCheck }];
+    // PDF Front Desk section "Périmètre attendu" : Commandes + Clients &
+    // prospects (accès global) + SAV — pas seulement la file de commandes
+    // qui était, jusqu'ici, le seul écran routé pour ce rôle.
+    navItems = [
+      { to: "/orders", label: t("nav.orders"), icon: ClipboardCheck },
+      { to: "/clients", label: t("nav.clients"), icon: Users },
+      { to: "/sav", label: t("nav.sav"), icon: LifeBuoy },
+    ];
     homePath = "/orders";
   } else if (isRepresentant) {
     navItems = [
@@ -139,7 +151,12 @@ export default function App() {
     ];
     homePath = "/dashboard";
   } else if (isMasterRep) {
+    // Dashboard sectoriel ajouté en écran d'accueil (n'existait pas avant —
+    // cf. PDF Master Rep section 1 : KPI secteur + performance équipe + carte
+    // & tournées). "Mon équipe" (Equipe.jsx) reste accessible séparément pour
+    // le suivi individuel en lecture seule des objectifs par représentant.
     navItems = [
+      { to: "/dashboard", label: t("nav.dashboard"), icon: LayoutDashboard },
       { to: "/equipe", label: t("nav.equipe"), icon: UserCheck },
       { to: "/clients", label: t("nav.clients"), icon: Users },
       { to: "/commandes", label: t("nav.commandes"), icon: ClipboardCheck },
@@ -150,7 +167,7 @@ export default function App() {
         badge: agenda.badgeCount > 0 ? agenda.badgeCount : undefined,
       },
     ];
-    homePath = "/equipe";
+    homePath = "/dashboard";
   } else if (isAdministrateur) {
     // Catalogue produits (gestion + import en masse) et import fiches client —
     // les deux responsabilités documentées pour ce rôle (section 3 du
@@ -172,6 +189,13 @@ export default function App() {
         <Route element={<AppShell navItems={navItems} />}>
           <Route path="/" element={<Navigate to={homePath} replace />} />
           {canSeeFrontDesk && <Route path="/orders" element={<FrontDesk />} />}
+          {(isFrontDesk || isDirecteur) && <Route path="/sav" element={<SavQueue />} />}
+          {isFrontDesk && (
+            <>
+              <Route path="/clients" element={<ClientsList />} />
+              <Route path="/clients/:id" element={<AccountDetail />} />
+            </>
+          )}
           {isDirecteur && (
             <>
               <Route path="/dashboard" element={<DirecteurDashboard />} />
@@ -192,17 +216,23 @@ export default function App() {
               <Route path="/clients/:id/commande" element={<NewOrder />} />
               <Route path="/commandes" element={<OrdersList />} />
               <Route path="/catalogue" element={<Catalogue />} />
-              <Route path="/data" element={<ComingSoon />} />
+              <Route path="/data" element={<RepData />} />
               <Route path="/agenda" element={<Agenda />} />
             </>
           )}
           {isMasterRep && (
             <>
+              <Route path="/dashboard" element={<MasterRepDashboard />} />
               <Route path="/equipe" element={<Equipe />} />
               <Route path="/equipe/:repId" element={<RepProfile />} />
               <Route path="/clients" element={<ClientsList />} />
+              {/* Pas de /clients/:id/commande : la création de commande est
+                  réservée au Représentant (règle non négociable des PDF de
+                  cadrage, 2026-09-15 — "Le Master Rep ne doit pas avoir de
+                  fonction de création de commande"). La fiche compte reste
+                  accessible en lecture/actions autorisées, /commandes reste
+                  une vue de LECTURE du secteur (cf. orders.js ORDER_ROLES). */}
               <Route path="/clients/:id" element={<AccountDetail />} />
-              <Route path="/clients/:id/commande" element={<NewOrder />} />
               <Route path="/commandes" element={<OrdersList />} />
               <Route path="/agenda" element={<Agenda />} />
             </>
