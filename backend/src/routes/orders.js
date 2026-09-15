@@ -13,7 +13,17 @@ import { notifyUser, notifyUsers, userIdsWithRoles } from "../lib/notifications.
 
 export const ordersRouter = Router();
 
+// Lecture (liste/détail) : tous les rôles qui doivent pouvoir consulter des
+// commandes (Master Rep = vue de son secteur, Front desk/Directeur = tout).
 const ORDER_ROLES = [ROLES.REPRESENTANT, ROLES.MASTER_REP, ROLES.FRONT_DESK, ROLES.DIRECTEUR];
+
+// Création / envoi au front desk : RÉSERVÉ AU REPRÉSENTANT — règle non
+// négociable des PDF de cadrage (2026-09-15, "Matrice des responsabilités" :
+// Créer une commande / Envoyer au Front Desk = Oui pour Représentant
+// uniquement, Non pour Master Rep, Front Desk et Administrateur). Le Master
+// Rep a un accès en LECTURE aux commandes de son équipe (ORDER_ROLES
+// ci-dessus, routes GET) mais ne doit jamais pouvoir en créer une lui-même.
+const ORDER_CREATE_ROLES = [ROLES.REPRESENTANT];
 
 async function loadAccountWithCountry(accountId) {
   const { rows } = await query(
@@ -130,7 +140,8 @@ const createSchema = z.object({
 
 // POST /api/orders — panier -> commande en brouillon, avec calcul serveur des
 // prix/remises/frais de port (jamais fait confiance au client pour ces valeurs).
-ordersRouter.post("/", requireAuth, requireRole(...ORDER_ROLES), async (req, res) => {
+// Réservé au Représentant (cf. ORDER_CREATE_ROLES ci-dessus).
+ordersRouter.post("/", requireAuth, requireRole(...ORDER_CREATE_ROLES), async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const data = parsed.data;
@@ -380,7 +391,7 @@ ordersRouter.patch(
 ordersRouter.post(
   "/:id/send-to-front-desk",
   requireAuth,
-  requireRole(...ORDER_ROLES),
+  requireRole(...ORDER_CREATE_ROLES),
   async (req, res) => {
     const { rows } = await query("SELECT * FROM orders WHERE id = $1", [req.params.id]);
     const order = rows[0];

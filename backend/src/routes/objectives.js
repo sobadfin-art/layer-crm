@@ -4,14 +4,13 @@ import { query } from "../lib/db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { ROLES } from "../lib/roles.js";
 import { CATEGORIES } from "../lib/categories.js";
+import { TYPOLOGIES } from "../lib/typology.js";
 import { getManagedRepUserIds } from "../lib/managedReps.js";
 import { computeObjectiveProgress } from "../lib/objectiveProgress.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
 
 export const objectivesRouter = Router();
-
-const SECTORS = ["OPTICIEN", "MODE_SURF_SPORT"];
 
 // Le Master Rep voit les objectifs de son équipe en lecture seule, ne les fixe
 // jamais (section 3 : "objectifs en lecture seule" + "ne fixe jamais d'objectif").
@@ -66,7 +65,11 @@ objectivesRouter.get("/:id/progress", requireAuth, requireRole(...READ_ROLES), a
 const objectiveFields = z.object({
   repId: z.string().uuid(),
   type: z.enum(["CHIFFRE_AFFAIRES", "PRECOMMANDE"]),
-  sectors: z.array(z.enum(SECTORS)).default([]),
+  // Multi-sélection des 11 typologies client — remplace l'ancien modèle à 2
+  // secteurs agrégés (cf. migration 015 et PDF Directeur commercial section
+  // 4 : "sélectionner une ou plusieurs typologies de clients / réseaux").
+  // Tableau vide = aucun filtre de typologie (l'objectif s'applique à toutes).
+  typologies: z.array(z.enum(TYPOLOGIES)).default([]),
   categories: z.array(z.enum(CATEGORIES)).default([]),
   periodStart: z.string().datetime(),
   periodEnd: z.string().datetime(),
@@ -85,9 +88,9 @@ objectivesRouter.post("/", requireAuth, requireRole(ROLES.DIRECTEUR), async (req
   const d = parsed.data;
 
   const { rows } = await query(
-    `INSERT INTO objectives (rep_id, type, sectors, categories, period_start, period_end, target_amount)
+    `INSERT INTO objectives (rep_id, type, typologies, categories, period_start, period_end, target_amount)
      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [d.repId, d.type, d.sectors, d.categories, d.periodStart, d.periodEnd, d.targetAmount]
+    [d.repId, d.type, d.typologies, d.categories, d.periodStart, d.periodEnd, d.targetAmount]
   );
 
   await logAudit({

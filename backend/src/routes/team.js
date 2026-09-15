@@ -83,8 +83,17 @@ teamRouter.get("/members", requireAuth, requireRole(ROLES.DIRECTEUR), async (req
 // seule — le Master Rep ne gère pas l'affectation lui-même (section 3 :
 // seuls front desk/directeur réaffectent, cf. lib/scope.js).
 teamRouter.get("/mine", requireAuth, requireRole(ROLES.MASTER_REP), async (req, res) => {
+  // territory_names : résolution des territory_ids en libellés directement
+  // ici (plutôt que de renvoyer les UUID bruts) — utile au Dashboard Master
+  // Rep (PDF section 1 : "le territoire / la zone couverte ... doit être
+  // clairement identifiable"), sans donner accès à /team/territories
+  // (réservé Directeur/Front desk) juste pour ce besoin d'affichage.
   const { rows } = await query(
-    `SELECT u.id, u.email, u.first_name, u.last_name, u.active
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.active, sr.territory_ids,
+            COALESCE(
+              (SELECT array_agg(t.name ORDER BY t.name) FROM territories t WHERE t.id = ANY(sr.territory_ids)),
+              '{}'
+            ) AS territory_names
      FROM users u
      JOIN sales_reps sr ON sr.user_id = u.id
      JOIN master_reps mr ON mr.id = sr.master_rep_id

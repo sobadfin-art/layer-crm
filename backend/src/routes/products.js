@@ -90,6 +90,20 @@ productsRouter.get("/", requireAuth, requireRole(...ALL_ROLES), async (req, res)
     clauses.push(`p.category = $${i++}`);
     params.push(req.query.category);
   }
+  // Filtres écran Administrateur (PDF section 1.2 : "Filtres par catégorie,
+  // catalogue, stock et statut produit") — optionnels, jamais utilisés par
+  // l'écran de prise de commande (Catalogue.jsx), qui ne les envoie pas.
+  if (req.query.stockStatus) {
+    clauses.push(`p.stock_status = $${i++}`);
+    params.push(req.query.stockStatus);
+  }
+  if (req.query.productStatus) {
+    clauses.push(`p.product_status = $${i++}`);
+    params.push(req.query.productStatus);
+  }
+  if (req.query.noPhoto === "true") {
+    clauses.push(`p.photo_url IS NULL`);
+  }
   if (req.query.search) {
     clauses.push(`(p.label ILIKE $${i} OR p.model ILIKE $${i} OR p.ref ILIKE $${i})`);
     params.push(`%${req.query.search}%`);
@@ -125,6 +139,10 @@ const productSchema = z.object({
   color: z.string().optional().nullable(),
   category: z.enum([...CATEGORIES, "NON_CLASSE"]).optional(),
   collection: z.string().optional().nullable(),
+  // Descriptif produit (PDF Administrateur section 2 "Identification") —
+  // jamais alimenté par l'import en masse, uniquement par la création/
+  // modification manuelle d'une référence (cf. migration 016).
+  description: z.string().optional().nullable(),
   catalogId: z.string().uuid().optional().nullable(),
   photoUrl: photoUrlField,
   dolibarrRef: z.string().optional().nullable(), // correspondance Dolibarr (point 6) — utilisé si `ref` ne suffit pas
@@ -153,14 +171,14 @@ productsRouter.post(
     try {
       const { rows } = await query(
         `INSERT INTO products (
-          ref, label, model, color, category, collection, catalog_id, photo_url,
+          ref, label, model, color, category, collection, description, catalog_id, photo_url,
           price_fr, price_export, price_ch, rrp, qty, stock_status, product_status,
           restock_date, expected_qty, dolibarr_ref, modified_by_id
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
         RETURNING *`,
         [
           d.ref, d.label, d.model ?? null, d.color ?? null, d.category ?? "NON_CLASSE",
-          d.collection ?? null, d.catalogId ?? null, d.photoUrl ?? null,
+          d.collection ?? null, d.description ?? null, d.catalogId ?? null, d.photoUrl ?? null,
           d.priceFR ?? null, d.priceExport ?? null, d.priceCH ?? null, d.rrp ?? null,
           d.qty ?? 0, d.stockStatus ?? "EN_STOCK", d.productStatus ?? "NOUVEAU",
           d.restockDate ?? null, d.expectedQty ?? null, d.dolibarrRef ?? null, req.user.id,

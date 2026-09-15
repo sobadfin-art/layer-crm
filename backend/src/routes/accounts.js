@@ -8,6 +8,7 @@ import { REGIMES_FISCAUX, defaultRegimeFiscalForCountry } from "../lib/taxRegime
 import { getManagedRepUserIds } from "../lib/managedReps.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
+import { notifyUsers, userIdsWithRoles } from "../lib/notifications.js";
 import {
   accountsScopeClause,
   canAccessAccount,
@@ -126,6 +127,58 @@ accountsRouter.get(
        LEFT JOIN users owner_u ON owner_u.id = a.owner_rep_id
        WHERE ${clauses.join(" AND ")}
        ORDER BY a.created_at DESC`,
+      params
+    );
+    res.json(toCamelList(rows));
+  }
+);
+
+// ---------------------------------------------------------------------------
+// GET /api/accounts/map — données pour le bloc "Carte & tournées" (V1 : une
+// visualisation non géographique, PAS une vraie carte — cf. PDF Représentant
+// section 1 / Master Rep section 2 / Directeur section 2 : "l'optimisation de
+// tournée et la connexion Google Maps peuvent être traitées ultérieurement en
+// V2, mais le bloc, les filtres et les comptes doivent exister en V1"). Aucun
+// lat/lng n'existe dans le schéma (décision documentée, cf. README) — on
+// renvoie donc uniquement ce qu'il faut pour un composant de visualisation
+// illustrative filtrable par Type/Typologie/Représentant, jamais une vraie
+// géolocalisation. Doit être déclarée AVANT /:id pour ne pas être interceptée
+// par ce paramètre générique.
+// ---------------------------------------------------------------------------
+accountsRouter.get(
+  "/map",
+  requireAuth,
+  requireRole(ROLES.REPRESENTANT, ROLES.MASTER_REP, ROLES.DIRECTEUR),
+  async (req, res) => {
+    const { where, params } = accountsScopeClause(req.user);
+    const clauses = [where, "a.status != 'ARCHIVE'"];
+    let i = params.length + 1;
+
+    if (req.query.type) {
+      clauses.push(`a.type = $${i++}`);
+      params.push(req.query.type);
+    }
+    if (req.query.typology) {
+      clauses.push(`a.typology::text = $${i++}`);
+      params.push(req.query.typology);
+    }
+    if (req.query.repId) {
+      clauses.push(`a.owner_rep_id = $${i++}`);
+      params.push(req.query.repId);
+    }
+    if (req.query.masterRepId) {
+      clauses.push(`a.master_rep_id = $${i++}`);
+      params.push(req.query.masterRepId);
+    }
+
+    const { rows } = await query(
+      `SELECT a.id, a.name, a.type, a.typology, a.pipeline_stage,
+              a.owner_rep_id, owner_u.first_name AS owner_rep_first_name, owner_u.last_name AS owner_rep_last_name
+       FROM accounts a
+       LEFT JOIN users owner_u ON owner_u.id = a.owner_rep_id
+       WHERE ${clauses.join(" AND ")}
+       ORDER BY a.name ASC
+       LIMIT 500`,
       params
     );
     res.json(toCamelList(rows));
@@ -268,6 +321,24 @@ accountsRouter.post(
       entity: "accounts",
       entityId: rows[0].id,
       details: { name: rows[0].name, type: rows[0].type, regimeFiscal: rows[0].regime_fiscal },
+    });
+
+    // Notification Front desk (cf. PDF Front Desk section 2 : "Création d'un
+    // nouveau client ou prospect" doit déclencher une notification exploitable
+    // avec accès direct à la fiche, pour contrôle/validation des informations
+    // récupérées). Le directeur la reçoit aussi (vision globale, comme pour
+    // ORDER_SENT_TO_FRONT_DESK et SAV_TICKET_CREATED). On exclut le créateur
+    // lui-même de la liste des destinataires : inutile de le notifier d'une
+    // fiche qu'il vient de créer.
+    const accountRecipients = (await userIdsWithRoles([ROLES.FRONT_DESK, ROLES.DIRECTEUR])).filter(
+      (id) => id !== req.user.id
+    );
+    await notifyUsers(accountRecipients, {
+      type: "ACCOUNT_CREATED",
+      title: data.type === "PROSPECT" ? "Nouveau prospect" : "Nouveau client",
+      body: rows[0].name,
+      entity: "accounts",
+      entityId: rows[0].id,
     });
 
     res.status(201).json(toCamel(rows[0]));

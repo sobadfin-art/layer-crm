@@ -4,6 +4,7 @@ import { query } from "../lib/db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { ROLES } from "../lib/roles.js";
 import { getManagedRepUserIds } from "../lib/managedReps.js";
+import { INTERACTION_TYPES } from "../lib/interactionTypes.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
 
@@ -70,6 +71,9 @@ const createSchema = z.object({
   // compte (cf. validation ci-dessous) ; TACHE = tâche générique, comme avant
   // ce lot. Défaut TACHE pour ne rien changer au comportement existant.
   type: z.enum(["RDV", "TACHE"]).default("TACHE"),
+  // Sous-type du RDV (référentiel fusionné, cf. lib/interactionTypes.js) —
+  // uniquement pertinent si type === "RDV" ; optionnel, jamais deviné.
+  rdvSubtype: z.enum(INTERACTION_TYPES).optional().nullable(),
 });
 
 tasksRouter.post(
@@ -103,9 +107,17 @@ tasksRouter.post(
     }
 
     const { rows } = await query(
-      `INSERT INTO tasks (title, due_date, assignee_id, created_by_id, account_id, type)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [data.title, data.dueDate ?? null, assigneeId, req.user.id, data.accountId ?? null, data.type]
+      `INSERT INTO tasks (title, due_date, assignee_id, created_by_id, account_id, type, rdv_subtype)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [
+        data.title,
+        data.dueDate ?? null,
+        assigneeId,
+        req.user.id,
+        data.accountId ?? null,
+        data.type,
+        data.type === "RDV" ? data.rdvSubtype ?? null : null,
+      ]
     );
     const task = rows[0];
 

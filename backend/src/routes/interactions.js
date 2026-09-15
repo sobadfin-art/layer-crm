@@ -4,6 +4,7 @@ import { query } from "../lib/db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { ROLES } from "../lib/roles.js";
 import { canAccessAccount } from "../lib/scope.js";
+import { INTERACTION_TYPES } from "../lib/interactionTypes.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 
 export const interactionsRouter = Router({ mergeParams: true });
@@ -63,6 +64,11 @@ interactionsRouter.post(
     const schema = z.object({
       note: z.string().min(1),
       viaVoice: z.boolean().optional(),
+      // Type d'interaction (référentiel fusionné, cf. lib/interactionTypes.js)
+      // — optionnel : les intégrations existantes (ex. traces automatiques de
+      // planification/compte rendu RDV créées par routes/tasks.js) continuent
+      // de fonctionner sans type précisé.
+      type: z.enum(INTERACTION_TYPES).optional().nullable(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
@@ -70,9 +76,9 @@ interactionsRouter.post(
     }
 
     const { rows } = await query(
-      `INSERT INTO interactions (account_id, author_id, note, via_voice)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.params.accountId, req.user.id, parsed.data.note, parsed.data.viaVoice ?? false]
+      `INSERT INTO interactions (account_id, author_id, note, via_voice, type)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.params.accountId, req.user.id, parsed.data.note, parsed.data.viaVoice ?? false, parsed.data.type ?? null]
     );
     res.status(201).json(toCamel(rows[0]));
   }

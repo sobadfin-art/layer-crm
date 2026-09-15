@@ -28,7 +28,12 @@ export const COUNTED_STATUSES = ["VALIDEE", "EXPORTEE_DOLIBARR"];
 export async function computeObjectiveProgress(objective) {
   const isPrecommandeObjective = objective.type === "PRECOMMANDE";
   const categories = objective.categories || [];
-  const sectors = objective.sectors || [];
+  // Depuis la migration 015 : filtrage par typologie(s) client (multi-
+  // sélection parmi les 11 typologies), plus par l'ancien "secteur" agrégé à
+  // 2 valeurs. `objective.sectors` n'est plus lu ici (cf. commentaire de
+  // colonne dans la migration) — seul `objective.typologies` compte
+  // désormais. Tableau vide = aucun filtre (objectif toutes typologies).
+  const typologies = objective.typologies || [];
 
   // Une commande "compte comme précommande" seulement si elle est marquée
   // précommande ET pas encore confirmée livrée ; sinon (vente ferme dès le
@@ -50,14 +55,14 @@ export async function computeObjectiveProgress(objective) {
        AND ${precommandeFilter}
        AND o.validated_at BETWEEN $3 AND $4
        AND ($5::text[] = '{}' OR p.category::text = ANY($5::text[]))
-       AND ($6::text[] = '{}' OR a.sector::text = ANY($6::text[]))`,
+       AND ($6::text[] = '{}' OR a.typology::text = ANY($6::text[]))`,
     [
       objective.rep_id,
       COUNTED_STATUSES,
       objective.period_start,
       objective.period_end,
       categories,
-      sectors,
+      typologies,
     ]
   );
 
