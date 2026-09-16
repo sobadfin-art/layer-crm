@@ -9,12 +9,6 @@ import ProductPhotoCarousel from "../components/ProductPhotoCarousel.jsx";
 
 const CATEGORIES = ["PREMIUM", "CLASSIC", "OPTICS", "ACCESS", "DISPLAY", "MERCH", "GOGGLES", "KIDS"];
 
-function parsePgArray(str) {
-  if (!str || typeof str !== "string") return [];
-  const inner = str.replace(/^\{/, "").replace(/\}$/, "");
-  return inner ? inner.split(",").filter(Boolean) : [];
-}
-
 // Même règle d'affichage du stock que Catalogue.jsx (stockLine) — reprise ici
 // telle quelle car la fiche corrective Représentant demande que le statut
 // stock/réassort soit visible directement au moment de la prise de commande,
@@ -50,10 +44,32 @@ function unitPriceFor(product, countryCode) {
 // Ceci n'est qu'un APERÇU affiché au représentant : le serveur recalcule
 // toujours la remise réelle à l'enregistrement de la commande (POST /api/orders),
 // jamais fait confiance à ce que le client envoie.
+//
+// BUG CORRIGÉ (fiche corrective "CORRECTIFS PRIORITAIRES — DIRECTION
+// COMMERCIALE + REPRÉSENTANT + RÈGLES DE REMISE", section 4/6 : "la remise ne
+// s'applique pas"). `r.categories` est déjà un tableau JS natif tel que
+// renvoyé par GET /api/business-rules (node-pg parse nativement les colonnes
+// PostgreSQL `product_category[]`) — un ancien appel à un helper
+// `parsePgArray(str)` prévu pour un LITTÉRAL texte brut de type `"{PREMIUM}"`
+// recevait donc directement un tableau, échouait sa vérification
+// `typeof str !== "string"` et renvoyait systématiquement `[]`. Résultat :
+// TOUTE règle de remise apparaissait ici comme "sans restriction de
+// catégorie" (`cats.length === 0` toujours vrai), y compris des règles
+// explicitement limitées à une seule catégorie — une règle de portée
+// REPRESENTANT/GLOBAL non pertinente pour la catégorie en cours pouvait donc
+// masquer, dans cet APERÇU seulement, la règle PAYS réellement applicable
+// (ex. la règle France de la catégorie concernée), donnant l'impression
+// trompeuse que "la remise France ne s'applique pas" alors que le serveur,
+// qui n'a jamais eu ce bug (lib/pricing.js#pickRule utilise `r.categories`
+// directement), calculait déjà le bon montant à l'enregistrement — vérifié
+// par une commande réelle avant ce correctif (règle PAYS/France/CLASSIC/20%
+// correctement appliquée côté serveur, alors que l'aperçu panier affichait à
+// tort la règle REPRESENTANT/PREMIUM/25%). Corrigé en utilisant
+// `r.categories` tel quel, cohérent avec le serveur.
 function pickDiscountRule(rules, category, repId, countryId) {
   const candidates = rules.filter((r) => {
     if (r.type !== "REMISE_CATEGORIE" || !r.active) return false;
-    const cats = parsePgArray(r.categories);
+    const cats = r.categories || [];
     return cats.length === 0 || cats.includes(category);
   });
   return (

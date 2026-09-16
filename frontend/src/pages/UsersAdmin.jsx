@@ -6,22 +6,52 @@ import { useI18n } from "../i18n/I18nContext.jsx";
 import { dateTime } from "../lib/format.js";
 
 // Écran "Utilisateurs" — administration générale des comptes (tous rôles),
-// réservé au directeur, branché sur /api/admin/users (routes/admin-users.js).
-// Volontairement DISTINCT de TeamManagement.jsx (qui couvre uniquement
-// représentants/Master Reps via /api/team) : ici, création de FRONT_DESK et
-// ADMINISTRATEUR (les deux seuls rôles créables par cette route), changement
-// de rôle encadré, activation/désactivation, réinitialisation forcée de mot
-// de passe. Le rôle DIRECTEUR n'est ni créable ni modifiable ici (cf.
-// commentaire en tête du fichier backend) — ses lignes s'affichent en lecture
-// seule dans la liste, sans aucune action disponible.
+// réservé au directeur.
 //
-// Un mot de passe temporaire n'est communiqué qu'UNE SEULE FOIS, dans la
-// réponse HTTP de création/réinitialisation (jamais journalisé, jamais
-// récupérable ensuite) — affiché ici dans un encart explicite avec avertissement,
-// pas de bouton "copier" presse-papier pour rester simple (pas de nouvelle
-// dépendance), l'utilisateur sélectionne/copie le texte lui-même.
+// CORRECTIF (fiche corrective "Direction Commerciale + Représentant + Règles
+// de remise", section 1 : "l'écran actuel de création d'utilisateur (côté
+// Direction Commerciale) est trop limité ... il faut ajouter un champ RÔLE
+// avec au minimum : Représentant, Master Rep, Front Desk, Administrateur")
+// — ce formulaire de création couvre désormais les 4 rôles depuis ce même
+// écran, au lieu de se limiter à Front Desk/Administrateur. Le rôle
+// sélectionné détermine réellement les droits (jamais de création
+// "Administrateur par défaut" — section 1, "IMPORTANT" du cahier des
+// charges) : selon le rôle choisi, la création est routée vers la bonne
+// route backend, EXACTEMENT comme si elle avait été faite depuis l'écran
+// dédié :
+//   - REPRESENTANT / MASTER_REP → POST /api/team/members (routes/team.js),
+//     avec mot de passe initial saisi par le directeur, rattachement Master
+//     Rep (pour un représentant) et Pays/Territoire (section 1 : "ajouter
+//     également obligatoirement : PAYS/TERRITOIRE" pour les profils
+//     commerciaux) — obligatoire pour ces deux rôles.
+//   - FRONT_DESK / ADMINISTRATEUR → POST /api/admin/users
+//     (routes/admin-users.js), mot de passe temporaire auto-généré, comme
+//     avant.
+// Les deux routes backend restent délibérément séparées (cf. commentaire en
+// tête du fichier backend admin-users.js — "pour qu'une route nommée
+// team/members ne modifie jamais silencieusement un DIRECTEUR/FRONT_DESK/
+// ADMINISTRATEUR") : cet écran ne fait qu'appeler l'une ou l'autre selon le
+// rôle choisi, il ne les fusionne pas. TeamManagement.jsx (écran "Équipe",
+// /equipe) reste pleinement fonctionnel et inchangé — cet écran-ci est un
+// second point d'entrée vers la même création de représentant/Master Rep,
+// pas un remplacement.
+//
+// Changement de rôle encadré, activation/désactivation, réinitialisation
+// forcée de mot de passe. Le rôle DIRECTEUR n'est ni créable ni modifiable
+// ici (cf. commentaire en tête du fichier backend) — ses lignes s'affichent
+// en lecture seule dans la liste, sans aucune action disponible.
+//
+// Un mot de passe temporaire (Front Desk/Administrateur) n'est communiqué
+// qu'UNE SEULE FOIS, dans la réponse HTTP de création/réinitialisation
+// (jamais journalisé, jamais récupérable ensuite) — affiché ici dans un
+// encart explicite avec avertissement, pas de bouton "copier" presse-papier
+// pour rester simple (pas de nouvelle dépendance), l'utilisateur
+// sélectionne/copie le texte lui-même.
 const MANAGEABLE_ROLES = ["REPRESENTANT", "MASTER_REP", "FRONT_DESK", "ADMINISTRATEUR"];
-const CREATABLE_ROLES = ["FRONT_DESK", "ADMINISTRATEUR"];
+const CREATABLE_ROLES = ["REPRESENTANT", "MASTER_REP", "FRONT_DESK", "ADMINISTRATEUR"];
+// Rôles "commerciaux" : créés via /api/team/members, nécessitent un mot de
+// passe initial saisi par le directeur ainsi qu'un Pays/Territoire.
+const COMMERCIAL_ROLES = ["REPRESENTANT", "MASTER_REP"];
 
 export default function UsersAdmin() {
   const { t, locale } = useI18n();
@@ -37,9 +67,41 @@ export default function UsersAdmin() {
   const [tempPasswordInfo, setTempPasswordInfo] = useState(null); // { email, password }
 
   const [showNewUser, setShowNewUser] = useState(false);
-  const [newUserForm, setNewUserForm] = useState({ email: "", firstName: "", lastName: "", role: "FRONT_DESK" });
+  const [newUserForm, setNewUserForm] = useState({
+    email: "",
+    firstName: "",
+    lastName: "",
+    role: "REPRESENTANT",
+    password: "",
+    masterRepUserId: "",
+    territoryIds: [],
+  });
   const [creating, setCreating] = useState(false);
   const [newUserError, setNewUserError] = useState(null);
+
+  // Territoires (Pays/Territoire) + membres d'équipe existants (pour le
+  // sélecteur Master Rep) — chargés indépendamment de roleFilter/activeFilter
+  // ci-dessus (qui ne filtrent que la LISTE affichée), pour que le formulaire
+  // de création dispose toujours des Master Reps même si la liste est
+  // actuellement filtrée sur un autre rôle.
+  const [territories, setTerritories] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+
+  const loadTeamData = useCallback(async () => {
+    try {
+      const [terr, members] = await Promise.all([api.get("/team/territories"), api.get("/team/members")]);
+      setTerritories(terr);
+      setTeamMembers(members);
+    } catch {
+      // Non bloquant : n'alimente que le formulaire de création représentant/Master Rep.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTeamData();
+  }, [loadTeamData]);
+
+  const masterReps = teamMembers.filter((m) => m.role === "MASTER_REP" && m.active);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,6 +130,10 @@ export default function UsersAdmin() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  function resetNewUserForm() {
+    setNewUserForm({ email: "", firstName: "", lastName: "", role: "REPRESENTANT", password: "", masterRepUserId: "", territoryIds: [] });
+  }
+
   async function handleCreateUser(e) {
     e.preventDefault();
     setNewUserError(null);
@@ -75,17 +141,46 @@ export default function UsersAdmin() {
       setNewUserError(t("usersAdmin.newUserMissing"));
       return;
     }
+    const isCommercial = COMMERCIAL_ROLES.includes(newUserForm.role);
+    if (isCommercial) {
+      if (newUserForm.password.length < 8) {
+        setNewUserError(t("teamManagement.newMemberPasswordShort"));
+        return;
+      }
+      if (newUserForm.territoryIds.length === 0) {
+        setNewUserError(t("usersAdmin.newUserTerritoryMissing"));
+        return;
+      }
+    }
     setCreating(true);
     try {
-      const created = await api.post("/admin/users", {
-        email: newUserForm.email.trim(),
-        firstName: newUserForm.firstName.trim(),
-        lastName: newUserForm.lastName.trim(),
-        role: newUserForm.role,
-      });
-      setNewUserForm({ email: "", firstName: "", lastName: "", role: "FRONT_DESK" });
+      if (isCommercial) {
+        // REPRESENTANT / MASTER_REP : même route et mêmes règles que l'écran
+        // Équipe (TeamManagement.jsx) — le rôle choisi détermine réellement
+        // les droits, jamais de repli sur Administrateur (section 1 du
+        // cahier des charges).
+        await api.post("/team/members", {
+          email: newUserForm.email.trim(),
+          firstName: newUserForm.firstName.trim(),
+          lastName: newUserForm.lastName.trim(),
+          role: newUserForm.role,
+          password: newUserForm.password,
+          masterRepUserId: newUserForm.role === "REPRESENTANT" && newUserForm.masterRepUserId ? newUserForm.masterRepUserId : undefined,
+          territoryIds: newUserForm.territoryIds,
+        });
+        setToast(t("teamManagement.memberCreated"));
+        await loadTeamData();
+      } else {
+        const created = await api.post("/admin/users", {
+          email: newUserForm.email.trim(),
+          firstName: newUserForm.firstName.trim(),
+          lastName: newUserForm.lastName.trim(),
+          role: newUserForm.role,
+        });
+        setTempPasswordInfo({ email: created.email, password: created.temporaryPassword });
+      }
+      resetNewUserForm();
       setShowNewUser(false);
-      setTempPasswordInfo({ email: created.email, password: created.temporaryPassword });
       await load();
     } catch (err) {
       setNewUserError(err.message);
@@ -200,7 +295,69 @@ export default function UsersAdmin() {
               <label>{t("teamManagement.email")}</label>
               <input type="email" value={newUserForm.email} onChange={(e) => setNewUserForm((f) => ({ ...f, email: e.target.value }))} />
             </div>
-            <p style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>{t("usersAdmin.newUserPasswordHint")}</p>
+
+            {COMMERCIAL_ROLES.includes(newUserForm.role) ? (
+              <>
+                <div className="field">
+                  <label>{t("teamManagement.initialPassword")}</label>
+                  <input
+                    type="password"
+                    value={newUserForm.password}
+                    onChange={(e) => setNewUserForm((f) => ({ ...f, password: e.target.value }))}
+                  />
+                  <span style={{ fontSize: 11, color: "var(--ink-soft)" }}>{t("teamManagement.initialPasswordHint")}</span>
+                </div>
+                {newUserForm.role === "REPRESENTANT" && (
+                  <div className="field">
+                    <label>{t("teamManagement.masterRepLabel")}</label>
+                    <select
+                      value={newUserForm.masterRepUserId}
+                      onChange={(e) => setNewUserForm((f) => ({ ...f, masterRepUserId: e.target.value }))}
+                    >
+                      <option value="">{t("teamManagement.noMasterRep")}</option>
+                      {masterReps.map((mr) => (
+                        <option key={mr.id} value={mr.id}>
+                          {mr.firstName} {mr.lastName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="field">
+                  <label>{t("usersAdmin.countryTerritoryLabel")}</label>
+                  <div className="cat-tabs" style={{ marginTop: 4 }}>
+                    {territories.map((terr) => {
+                      const active = newUserForm.territoryIds.includes(terr.id);
+                      return (
+                        <span
+                          key={terr.id}
+                          className="typology-badge"
+                          style={{
+                            cursor: "pointer",
+                            background: active ? "var(--teal-soft, #d7ece7)" : undefined,
+                          }}
+                          onClick={() =>
+                            setNewUserForm((f) => ({
+                              ...f,
+                              territoryIds: f.territoryIds.includes(terr.id)
+                                ? f.territoryIds.filter((x) => x !== terr.id)
+                                : [...f.territoryIds, terr.id],
+                            }))
+                          }
+                        >
+                          {terr.name}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  {territories.length === 0 && (
+                    <p style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>{t("usersAdmin.noTerritoriesHint")}</p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>{t("usersAdmin.newUserPasswordHint")}</p>
+            )}
             {newUserError && <p className="error-text">{newUserError}</p>}
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               <button className="btn primary" type="submit" disabled={creating}>
