@@ -1452,6 +1452,81 @@ Corrections réellement apportées ce lot :
     Playwright dédié, 5/5 assertions, en plus des 13+6+5 assertions propres à chacun des trois sujets
     ci-dessus (24 au total).
 
+- **Correctifs prioritaires — Direction Commerciale + Représentant + Règles de remise (2026-09-16,
+  fiche corrective "CORRECTIFS PRIORITAIRES — DIRECTION COMMERCIALE + REPRÉSENTANT + RÈGLES DE
+  REMISE")** : cinq sujets, priorisés P0 par la fiche elle-même ; deux des cinq ("régressions" bouton
+  commande / multi-catalogue) se sont révélées **déjà corrigées** par le lot précédent et non
+  reproductibles dans le code actuel — voir le point dédié ci-dessous.
+  - **Directeur — création d'utilisateurs Représentant/Master Rep/Front Desk/Administrateur depuis un
+    seul écran (gap comblé) :** l'écran "Utilisateurs" (`UsersAdmin.jsx`, `/api/admin/users`) ne
+    proposait jusqu'ici que Front Desk/Administrateur au moment de la création — exactement la
+    limitation décrite par la fiche ("je peux principalement créer un utilisateur Front Desk /
+    Administrateur"). Le formulaire de création propose désormais les 4 rôles minimum demandés
+    (Représentant, Master Rep, Front Desk, Administrateur), et **le rôle choisi détermine réellement les
+    droits accordés** (jamais de repli implicite sur Administrateur — exigence explicite de la fiche) :
+    selon le rôle sélectionné, la création est routée vers la route backend appropriée, exactement comme
+    si elle avait été faite depuis l'écran dédié — `POST /api/team/members` (mot de passe initial saisi
+    par le directeur, rattachement à un Master Rep pour un représentant, Pays/Territoire obligatoire)
+    pour Représentant/Master Rep, `POST /api/admin/users` (mot de passe temporaire auto-généré, comme
+    avant) pour Front Desk/Administrateur. Les deux routes backend restent délibérément séparées (cf.
+    commentaire d'origine dans `admin-users.js`) : cet écran appelle l'une ou l'autre selon le rôle, il
+    ne les fusionne pas. L'écran "Équipe" (`TeamManagement.jsx`, `/equipe`) reste pleinement
+    fonctionnel et inchangé — "Utilisateurs" est désormais un second point d'entrée vers la même
+    création de représentant/Master Rep, pas un remplacement.
+  - **Champ Pays/Territoire pour les profils commerciaux (gap comblé) :** obligatoire à la création d'un
+    Représentant ou d'un Master Rep depuis "Utilisateurs" (comme depuis "Équipe"), sous forme de bulles
+    multi-sélection alimentées par `GET /api/team/territories` — mécanisme déjà existant, réutilisé tel
+    quel plutôt qu'un nouveau champ "pays" séparé, pour rester cohérent avec le seul modèle de données
+    existant (`sales_reps.territory_ids`). Quatre territoires mono-pays ("France", "Espagne",
+    "Allemagne", "Suisse") créés en données de démonstration pour correspondre directement aux exemples
+    de la fiche ("Pays : France", "Pays : Espagne") ; le territoire préexistant "Sud-Ouest" (FR+ES
+    combinés, seul territoire présent auparavant) reste disponible pour un usage multi-pays si besoin.
+  - **Bug réel corrigé — la remise France ne s'appliquait pas dans l'aperçu panier (`NewOrder.jsx`) :**
+    cas testé par la fiche reproduit puis corrigé. La fonction `parsePgArray(r.categories)`, utilisée
+    par l'aperçu panier pour filtrer les règles de remise par catégorie produit, supposait à tort que
+    `categories` était une chaîne brute façon PostgreSQL (`"{PREMIUM}"`) — alors que l'API renvoie déjà
+    un tableau JS natif (`["PREMIUM"]"`, le driver `pg` parse les colonnes tableau automatiquement).
+    `parsePgArray` retournait donc silencieusement `[]` pour **toutes** les règles, ce qui annulait de
+    fait leur restriction de catégorie côté aperçu : une règle Représentant réservée à PREMIUM (25%)
+    semblait s'appliquer à n'importe quelle catégorie, masquant la règle Pays/France réellement
+    applicable (20% sur Classic). Le calcul **serveur** (`backend/src/lib/pricing.js#pickRule`, qui
+    recalcule systématiquement et seul fait foi à l'enregistrement de la commande) n'a jamais été
+    affecté — le montant réellement facturé était donc toujours correct, mais le représentant voyait un
+    aperçu trompeur avant envoi. Corrigé en supprimant `parsePgArray` et en utilisant `r.categories`
+    directement, comme le fait déjà le backend. Vérifié de bout en bout par script Playwright (remise
+    France 20% désormais visible et correcte au panier pour une commande Classic) et par API (commande
+    réelle envoyée au front desk : `discountPct: "20.00"` conservé jusqu'à la fiche front desk) ; non-
+    régression confirmée sur le cas Premium/Représentant (25%, inchangé).
+  - **Normalisation du rattachement pays — bug secondaire trouvé lors de l'audit (import CSV de
+    comptes) :** la fiche demandait explicitement de vérifier que FR/France/fr/FRANCE résolvent au même
+    pays partout dans le code. Audit complet des points de résolution pays (création manuelle de compte,
+    création de règle commerciale, import CSV) : les deux premiers utilisent déjà des UUID stricts ou une
+    correspondance par code normalisé, sans bug. Le troisième (`lib/accountsImport.js#loadCountriesByName`)
+    n'indexait les pays que par **nom** normalisé ("france"), jamais par **code** ("fr") — un fichier
+    d'import (Dolibarr ou autre) utilisant des codes pays plutôt que des noms complets voyait donc
+    **chaque ligne concernée rejetée** à l'import ("Pays inconnu : FR"), au lieu d'être simplement mal
+    classée. Corrigé : indexation par nom ET par code dans la même table de correspondance. N'affecte
+    pas le moteur de remise lui-même (qui ne consulte jamais cette fonction), mais fait partie du même
+    effort de fiabilisation demandé par la fiche.
+  - **"Régressions" bouton "Nouvelle commande" et sélection multi-catalogue — non reproduites dans le
+    code actuel :** la fiche décrit ces deux fonctionnalités comme ayant disparu après une reconnexion.
+    Script Playwright dédié rejouant précisément le scénario décrit (premier chargement, après
+    déconnexion/reconnexion, après rafraîchissement de la page, depuis le Dashboard ET depuis la fiche
+    client) : 6/6 assertions passent, les deux fonctionnalités sont présentes et survivent à chaque
+    scénario testé. Ces deux sujets avaient déjà été traités par le lot précédent ("Correctifs P0 —
+    Profil Représentant", ci-dessus), livré le même jour sous forme d'archive à déployer manuellement sur
+    Render (le déploiement de cette application se fait par import de fichiers sur render.com, jamais par
+    déploiement automatique depuis Git) — l'hypothèse la plus probable est que le site bêta testé par
+    l'utilisateur reflétait encore une version antérieure à cette livraison au moment du test. Aucun code
+    modifié pour ces deux points ; à revérifier directement sur Render après mise à jour du déploiement.
+  - Non-régression vérifiée sur les quatre tests explicitement demandés par la fiche (section "Test de
+    non-régression obligatoire") : création d'utilisateurs avec rôle + pays (Représentant France, Master
+    Rep France, Représentant Espagne — rôles et territoires confirmés par l'API après création), bouton
+    "Nouvelle commande" (Dashboard + fiche client), catalogues Optics26/SUN26/SUN27 sélectionnables en
+    multi-sélection, remise France de bout en bout (catalogue → panier → récapitulatif → commande envoyée
+    au front desk). Ainsi que sur la création Front Desk/Administrateur depuis le même écran désormais
+    unifié (mot de passe temporaire toujours auto-généré, aucune régression du comportement existant).
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
