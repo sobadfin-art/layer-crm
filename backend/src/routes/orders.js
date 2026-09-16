@@ -115,8 +115,72 @@ ordersRouter.get("/", requireAuth, requireRole(...ORDER_ROLES), async (req, res)
   res.json(toCamelList(rows));
 });
 
+// CORRECTIF (fiche corrective "CORRECTIFS PRIORITAIRES — VISUALISATION DES
+// COMMANDES + EXPORT DOLIBARR", sections 1 à 4) : "il doit exister UNE SEULE
+// représentation visuelle de référence d'une commande dans tout le CRM",
+// calquée sur le récapitulatif panier (NewOrder.jsx). Ce récapitulatif
+// affiche des TOTAUX calculés (montant marchandise, total par catégorie,
+// total général) — jusqu'ici seule la réponse de POST /orders les renvoyait
+// (une seule fois, à la création), jamais GET /:id. Ce endpoint renvoie
+// désormais le même type de bloc `totals`, calculé ici à partir des lignes
+// telles qu'enregistrées (jamais recalculé à partir d'un prix catalogue
+// actuel — section 3 "IMPORTANT" : une commande historique représente les
+// données au moment de sa validation). `catalogNames` par ligne (reprend le
+// même agrégat que GET /products, routes/products.js#PRODUCT_JOINS) répond
+// au "catalogue(s)" demandé par la liste de champs minimum (section 3).
+// account_name/rep_first_name/rep_last_name ajoutés pour que l'écran de
+// visualisation n'ait pas besoin d'un second appel pour afficher l'en-tête
+// (client, représentant) — même besoin déjà couvert par GET /orders (liste).
+function computeSavedOrderTotals(order, lines) {
+  const byCategoryMap = new Map();
+  let merchandiseAmount = 0;
+  let totalQty = 0;
+
+  for (const line of lines) {
+    totalQty += line.qty;
+    const lineAmount = line.isGift ? 0 : Number(line.unitPriceHt) * line.qty * (1 - Number(line.discountPct || 0) / 100);
+    merchandiseAmount += lineAmount;
+
+    const key = line.category || "NON_CLASSE";
+    const entry = byCategoryMap.get(key) || { category: key, qty: 0, subtotal: 0, discountPct: null };
+    entry.qty += line.qty;
+    entry.subtotal += lineAmount;
+    // Toutes les lignes d'une même catégorie partagent en pratique la même
+    // remise (règle par catégorie) — on affiche celle de la première ligne
+    // remisée rencontrée, purement informatif pour l'en-tête du bloc.
+    if (entry.discountPct === null && !line.isGift && Number(line.discountPct || 0) > 0) {
+      entry.discountPct = Number(line.discountPct);
+    }
+    byCategoryMap.set(key, entry);
+  }
+
+  merchandiseAmount = Math.round(merchandiseAmount * 100) / 100;
+  const shippingFeeHt = Number(order.shippingFeeHt) || 0;
+  const orderTotal = order.shippingOffered ? merchandiseAmount : merchandiseAmount + shippingFeeHt;
+
+  return {
+    totalQty,
+    merchandiseAmount,
+    shippingFeeHt,
+    shippingOffered: order.shippingOffered,
+    orderTotal: Math.round(orderTotal * 100) / 100,
+    byCategory: [...byCategoryMap.values()].map((c) => ({
+      ...c,
+      subtotal: Math.round(c.subtotal * 100) / 100,
+      discountPct: c.discountPct || 0,
+    })),
+  };
+}
+
 ordersRouter.get("/:id", requireAuth, requireRole(...ORDER_ROLES), async (req, res) => {
-  const { rows } = await query("SELECT * FROM orders WHERE id = $1", [req.params.id]);
+  const { rows } = await query(
+    `SELECT o.*, a.name AS account_name, u.first_name AS rep_first_name, u.last_name AS rep_last_name
+     FROM orders o
+     JOIN accounts a ON a.id = o.account_id
+     JOIN users u ON u.id = o.rep_id
+     WHERE o.id = $1`,
+    [req.params.id]
+  );
   const order = rows[0];
   if (!order) return res.status(404).json({ error: "Commande introuvable." });
   if (!(await canAccessOrder(req.user, order))) {
@@ -124,12 +188,28 @@ ordersRouter.get("/:id", requireAuth, requireRole(...ORDER_ROLES), async (req, r
   }
 
   const { rows: lines } = await query(
-    `SELECT ol.*, p.ref, p.label, p.category FROM order_lines ol
-     JOIN products p ON p.id = ol.product_id WHERE ol.order_id = $1`,
+    `SELECT ol.*, p.ref, p.label, p.category,
+            COALESCE(pcagg.catalog_names, ARRAY[]::text[]) AS catalog_names
+     FROM order_lines ol
+     JOIN products p ON p.id = ol.product_id
+     LEFT JOIN LATERAL (
+       SELECT array_agg(c.name ORDER BY c.name) AS catalog_names
+       FROM product_catalogs pc JOIN catalogs c ON c.id = pc.catalog_id
+       WHERE pc.product_id = p.id
+     ) pcagg ON true
+     WHERE ol.order_id = $1
+     ORDER BY p.category, p.label`,
     [req.params.id]
   );
 
-  res.json({ ...toCamel(order), lines: toCamelList(lines) });
+  const camelOrder = toCamel(order);
+  const camelLines = toCamelList(lines);
+
+  res.json({
+    ...camelOrder,
+    lines: camelLines,
+    totals: computeSavedOrderTotals(camelOrder, camelLines),
+  });
 });
 
 const lineSchema = z.object({

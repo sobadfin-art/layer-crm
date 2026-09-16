@@ -24,12 +24,24 @@
 // toujours le nom du compte, à titre informatif/lisible pour l'opérateur
 // Dolibarr, sans aucune logique de rapprochement automatique.
 //
-// Règle définitive sur l'IDENTIFICATION PRODUIT (renforcée) : en revanche
-// chaque ligne de commande DOIT disposer d'une référence exploitable avant
-// export — dolibarr_ref du produit si renseignée, sinon la référence CRM
-// (product.ref). C'est désormais un point BLOQUANT de la check-list (voir
-// "product_references" ci-dessous), avec le détail du/des produit(s) en cause
-// dans le message d'erreur.
+// Règle définitive sur l'IDENTIFICATION PRODUIT — RÉVISÉE (fiche corrective
+// "CORRECTIFS PRIORITAIRES — VISUALISATION DES COMMANDES + EXPORT DOLIBARR",
+// sections 7 à 16, fichier exemple joint). Le format de fichier attendu par
+// Dolibarr a changé : il ne porte plus qu'UNE commande à la fois, sur
+// exactement 6 colonnes (fk_product, qty, label, remise_percent, tva_tx,
+// subprice — noms et ordre EXACTS du fichier exemple, ne jamais les
+// renommer/traduire/réordonner), une ligne par ligne de commande. La colonne
+// `fk_product` DOIT être l'identifiant produit Dolibarr (`products.dolibarr_ref`)
+// — jamais la référence CRM (`ref`) en repli, contrairement à l'ancienne
+// règle : section 9, "NE PAS utiliser l'ID interne CRM, le SKU à la place de
+// l'ID Dolibarr...". C'est donc désormais un point BLOQUANT strict (voir
+// "product_references" ci-dessous), sans repli, avec le détail du/des
+// produit(s) en cause dans le message d'erreur (section 16, exemple de
+// message donné textuellement par la fiche). La colonne `label`, elle,
+// reprend la référence CRM (`ref`) telle quelle (section 11 : "ne pas
+// reconstruire arbitrairement le label si une valeur existe déjà" — le
+// fichier exemple confirme que Dolibarr y attend la référence produit, pas un
+// intitulé commercial).
 import * as XLSX from "xlsx";
 import { query } from "./db.js";
 import { vatRateForRegime } from "./taxRegime.js";
@@ -100,17 +112,10 @@ export async function buildExportChecklist(orderId) {
       detail: order.vat_number || "Manquant — à renseigner sur la fiche compte.",
     });
   }
-  if (order.regime_fiscal === "RECARGO_EQUIVALENCIA") {
-    items.push({
-      key: "recargo_rate_configured",
-      label: "Taux de TVA Recargo de Equivalencia configuré",
-      ok: settings.vat_rate_recargo_equivalencia !== null,
-      detail:
-        settings.vat_rate_recargo_equivalencia !== null
-          ? `${settings.vat_rate_recargo_equivalencia}%`
-          : "Non configuré — taux à définir avec votre expert-comptable avant l'export réel.",
-    });
-  }
+  // (L'ancien avertissement "recargo_rate_configured", non bloquant, est
+  // remplacé ci-dessous par le contrôle "vat_rate_available" — désormais
+  // BLOQUANT pour tous les régimes, puisque tva_tx est une colonne
+  // obligatoire du nouveau format d'export, sans repli possible.)
 
   items.push({
     key: "lines_present",
@@ -119,25 +124,38 @@ export async function buildExportChecklist(orderId) {
     detail: `${order.lines.length} ligne(s)`,
   });
 
-  // Contrôle produit (renforcé, bloquant) : chaque ligne doit disposer d'au
-  // moins une référence exploitable — dolibarr_ref si renseignée, sinon la
-  // référence CRM. On identifie explicitement le(s) produit(s) en cause dans
-  // le détail pour que le front desk sache exactement quoi corriger.
-  const linesMissingRef = order.lines.filter((line) => {
-    const ref = (line.product_dolibarr_ref || line.product_ref || "").trim();
-    return ref.length === 0;
-  });
+  // Contrôle produit (section 9/16 de la fiche corrective — RENFORCÉ, plus de
+  // repli sur la référence CRM) : chaque ligne DOIT disposer d'un identifiant
+  // produit Dolibarr (`products.dolibarr_ref`), c'est la valeur qui alimente
+  // la colonne `fk_product` de l'export. Message d'erreur au format
+  // explicitement donné par la fiche (section 16), un message par produit en
+  // cause.
+  const linesMissingDolibarrId = order.lines.filter((line) => !(line.product_dolibarr_ref || "").trim());
   items.push({
     key: "product_references",
-    label: "Chaque ligne dispose d'une référence produit exploitable (Dolibarr ou CRM)",
-    ok: linesMissingRef.length === 0,
+    label: "Chaque ligne dispose d'un identifiant produit Dolibarr (fk_product)",
+    ok: linesMissingDolibarrId.length === 0,
     detail:
-      linesMissingRef.length === 0
+      linesMissingDolibarrId.length === 0
         ? "OK"
-        : `Référence manquante pour : ${linesMissingRef.map((l) => l.product_ref || l.product_id).join(", ")}`,
+        : linesMissingDolibarrId
+            .map((l) => `Impossible d'exporter la commande : identifiant produit Dolibarr manquant pour la référence ${l.product_ref || l.product_id}.`)
+            .join(" "),
   });
 
-  const blocking = ["order_status", "not_already_exported", "lines_present", "product_references"];
+  // TVA (section 13) : colonne obligatoire du nouveau format, sans repli
+  // possible — si le régime fiscal de la commande ne résout à aucun taux
+  // connu (aujourd'hui uniquement Recargo de Equivalencia tant qu'il n'est
+  // pas configuré), l'export est bloqué plutôt que d'écrire une cellule vide.
+  const vatRate = vatRateForRegime(order.regime_fiscal, settings);
+  items.push({
+    key: "vat_rate_available",
+    label: "Taux de TVA disponible pour la commande (colonne tva_tx)",
+    ok: vatRate !== null,
+    detail: vatRate !== null ? `${vatRate}%` : "Taux de TVA non configuré pour ce régime fiscal — voir Réglages Dolibarr.",
+  });
+
+  const blocking = ["order_status", "not_already_exported", "lines_present", "product_references", "vat_rate_available"];
   const blockingFailed = items.filter((it) => blocking.includes(it.key) && !it.ok);
   const warnings = items.filter((it) => !blocking.includes(it.key) && !it.ok);
 
@@ -145,7 +163,13 @@ export async function buildExportChecklist(orderId) {
     orderId,
     canExport: blockingFailed.length === 0,
     items,
-    blockingIssues: blockingFailed.map((i) => i.label),
+    // Message explicite (section 16 : "NE PAS générer silencieusement un
+    // fichier incorrect. Afficher une erreur explicite... Impossible
+    // d'exporter la commande : identifiant produit Dolibarr manquant pour la
+    // référence XXXXX.") — on préfère le `detail` (qui porte ce message
+    // précis pour product_references) au `label` générique dès qu'il en dit
+    // plus que "OK".
+    blockingIssues: blockingFailed.map((i) => (i.detail && i.detail !== "OK" ? i.detail : i.label)),
     warnings: warnings.map((i) => i.label),
   };
 }
@@ -158,76 +182,71 @@ function csvEscape(value, delimiter) {
   return s;
 }
 
-const CSV_COLUMNS = [
-  "ref_client",
-  "compte_client",
-  "devise",
-  "date_livraison_souhaitee",
-  "entrepot",
-  "produit_ref",
-  "quantite",
-  "prix_unitaire_ht",
-  "taux_remise_pct",
-  "regime_fiscal",
-  "taux_tva_pct",
-  "condition_paiement_jours",
-  "condition_paiement_dolibarr_id",
-  "mode_paiement",
-  "mode_paiement_dolibarr_id",
-  "ligne_offerte",
-  "ligne_reliquat",
-];
+// Colonnes STRICTEMENT reprises du fichier exemple fourni (fiche corrective,
+// pièce jointe "exemple export pour Doli.xlsx", feuille "Feuil1") — mêmes
+// noms, même ordre, aucune colonne ajoutée. Ne JAMAIS renommer/traduire/
+// réordonner (section 7/8 : "LE FICHIER JOINT PRIME SUR TOUTE
+// INTERPRÉTATION"). L'ancien format 17 colonnes (ref_client, compte_client,
+// devise, entrepôt, conditions/modes de paiement, régime fiscal, indicateurs
+// offert/reliquat...) est abandonné : ces informations restent gérées côté
+// Dolibarr lui-même au moment de l'import (l'opérateur a déjà ouvert la fiche
+// du bon client/de la bonne commande avant d'importer ce fichier de lignes,
+// cf. cahier-des-charges-export-dolibarr.md) et n'ont plus leur place ici.
+const CSV_COLUMNS = ["fk_product", "qty", "label", "remise_percent", "tva_tx", "subprice"];
 
-const PAYMENT_MODE_LABEL = {
-  PRELEVEMENT_SEPA: "Prélèvement SEPA",
-  LCR: "LCR",
-};
-
-// Construit les lignes de données (une par ligne de commande — plusieurs
-// commandes peuvent être combinées dans un seul fichier, export par lot,
-// section 7 : "par lot quotidien"), indépendamment du format de fichier final
-// (CSV ou XLSX, cf. buildDolibarrCsv/buildDolibarrXlsx ci-dessous) — mêmes
-// valeurs, même logique métier (gift/reliquat/régime fiscal), pour ne jamais
-// faire diverger les deux formats.
+// Construit les lignes de données (une par ligne de commande produit),
+// indépendamment du format de fichier final (CSV ou XLSX, cf.
+// buildDolibarrCsv/buildDolibarrXlsx ci-dessous) — mêmes valeurs, même
+// logique métier, pour ne jamais faire diverger les deux formats. Le fichier
+// exemple ne porte pas d'identifiant de commande/client (section 8) : cette
+// fonction reste appelable avec plusieurs commandes (concaténation simple
+// des lignes, ex. un export groupé), mais l'écran Front Desk n'en sélectionne
+// jamais qu'une seule à la fois, conformément au flux Dolibarr décrit
+// ci-dessus (une commande = un fichier de lignes importé dans la fiche
+// commande déjà ouverte côté Dolibarr).
 function buildDolibarrRows(orders, settings) {
   const rows = [];
 
   for (const order of orders) {
-    // Nom du compte uniquement — aucune logique de rapprochement automatique
-    // client CRM <-> Dolibarr (règle définitive, cf. commentaire en tête de
-    // fichier) : le client est déjà identifié côté Dolibarr avant l'import,
-    // cette colonne est purement informative/lisible pour l'opérateur.
-    const accountKey = order.account_name;
-
-    const refClient = order.dolibarr_ref_client || `O-${order.id.slice(0, 8)}`;
     // Régime fiscal de la fiche compte (jamais du pays seul ni de la
     // typologie) — null pour RECARGO_EQUIVALENCIA tant que le taux n'est pas
-    // configuré, jamais deviné (cf. check-list "recargo_rate_configured").
+    // configuré, jamais deviné. Bloqué en amont par la check-list
+    // ("vat_rate_available") : à ce stade, vatRate ne devrait jamais être
+    // null pour une commande dont l'export a été autorisé — filet de sécurité
+    // uniquement (ne devrait jamais produire de cellule vide en pratique).
     const vatRate = vatRateForRegime(order.regime_fiscal, settings);
 
     for (const line of order.lines) {
       const isGift = line.is_gift;
+      // subprice (section 14) : PRIX UNITAIRE HISTORIQUE de la ligne, tel
+      // qu'enregistré à la validation de la commande (order_lines.unit_price_ht,
+      // jamais un prix catalogue actuel). Le "prix offert" reste géré comme
+      // avant via le réglage giftLineStrategy (prix à 0 ou remise à 100%),
+      // sans colonne dédiée puisque le nouveau format n'en prévoit pas.
       const unitPrice = isGift && settings.gift_line_strategy === "ZERO_PRICE" ? 0 : Number(line.unit_price_ht);
+      // remise_percent (section 12) : LA REMISE HISTORIQUE de la commande
+      // (order_lines.discount_pct), jamais recalculée avec les règles
+      // commerciales actuelles.
       const discountPct = isGift && settings.gift_line_strategy === "FULL_DISCOUNT" ? 100 : Number(line.discount_pct || 0);
+      // fk_product (section 9) : l'identifiant produit Dolibarr enregistré
+      // sur la fiche produit CRM — jamais l'ID interne CRM, jamais le SKU en
+      // repli (la check-list bloque déjà l'export si absent). Converti en
+      // nombre quand c'est un identifiant purement numérique (comme dans le
+      // fichier exemple : 931, 926, 1366...), laissé en texte sinon (cas
+      // d'un identifiant Dolibarr alphanumérique).
+      const rawDolibarrId = (line.product_dolibarr_ref || "").trim();
+      const fkProduct = /^\d+$/.test(rawDolibarrId) ? Number(rawDolibarrId) : rawDolibarrId;
 
       rows.push([
-        refClient,
-        accountKey || "",
-        order.currency,
-        order.desired_delivery_date ? new Date(order.desired_delivery_date).toISOString().slice(0, 10) : "",
-        settings.default_warehouse_id || "Entrepôt principal",
-        line.product_dolibarr_ref || line.product_ref,
+        fkProduct,
         line.qty,
-        unitPrice.toFixed(2),
-        discountPct.toFixed(2),
-        order.regime_fiscal,
-        vatRate === null ? "" : vatRate.toFixed(2),
-        settings.payment_term_days,
-        settings.default_payment_term_id || "",
-        PAYMENT_MODE_LABEL[settings.payment_mode] || settings.payment_mode,
-        settings.default_payment_mode_id || "",
-        isGift ? "oui" : "non",
-        line.is_reliquat ? "oui" : "non",
+        // label (section 11) : reprend la référence CRM telle quelle (le
+        // fichier exemple y porte des références produit, pas un intitulé
+        // commercial) — jamais reconstruite/reformatée.
+        line.product_ref,
+        Math.round(discountPct * 100) / 100,
+        vatRate === null ? "" : Math.round(vatRate * 100) / 100,
+        Math.round(unitPrice * 100) / 100,
       ]);
     }
   }

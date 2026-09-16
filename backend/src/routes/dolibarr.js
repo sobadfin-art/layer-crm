@@ -126,7 +126,13 @@ dolibarrRouter.post("/orders/export", requireAuth, requireRole(...EXPORT_ROLES),
   }
 
   if (bundles.length === 0) {
-    return res.status(422).json({ error: "Aucune commande exportable.", rejected });
+    // Message explicite pour le cas d'usage réel de l'écran Front Desk (une
+    // seule commande exportée à la fois) — section 16 : "afficher une erreur
+    // explicite", pas un message générique masquant la vraie raison. Pour un
+    // export groupé (plusieurs orderIds, cas API/outillage), le message reste
+    // générique et le détail par commande vit dans `rejected`.
+    const error = rejected.length === 1 ? rejected[0].reason : "Aucune commande exportable.";
+    return res.status(422).json({ error, rejected });
   }
 
   // Fichier .xlsx — bascule demandée par la fiche corrective V2 Front Desk
@@ -137,12 +143,15 @@ dolibarrRouter.post("/orders/export", requireAuth, requireRole(...EXPORT_ROLES),
   const xlsx = buildDolibarrXlsx(bundles, settings);
 
   // Marquage + traçabilité, seulement pour les commandes réellement exportées.
+  // exported_by ajouté (fiche corrective "VISUALISATION DES COMMANDES +
+  // EXPORT DOLIBARR", section 6 : "idéalement utilisateur ayant effectué
+  // l'export") — migration 021.
   for (const order of bundles) {
     const refClient = order.dolibarr_ref_client || `O-${order.id.slice(0, 8)}`;
     await query(
-      `UPDATE orders SET status = 'EXPORTEE_DOLIBARR', exported_at = now(), dolibarr_ref_client = $1, updated_at = now()
-       WHERE id = $2`,
-      [refClient, order.id]
+      `UPDATE orders SET status = 'EXPORTEE_DOLIBARR', exported_at = now(), exported_by = $1, dolibarr_ref_client = $2, updated_at = now()
+       WHERE id = $3`,
+      [req.user.id, refClient, order.id]
     );
     await logAudit({
       userId: req.user.id,
@@ -160,3 +169,49 @@ dolibarrRouter.post("/orders/export", requireAuth, requireRole(...EXPORT_ROLES),
   }
   res.send(xlsx);
 });
+
+// GET /api/dolibarr/orders/:id/export-file — RETÉLÉCHARGEMENT (fiche
+// corrective, sections 5/6/17 : "Une commande exportée doit conserver le
+// statut EXPORTÉE et rester ... retéléchargeable" / "NE PAS rendre le fichier
+// inaccessible après le premier téléchargement" / bouton dédié "RETÉLÉCHARGER
+// L'EXPORT DOLIBARR"). Distinct de POST /orders/export : ne touche JAMAIS au
+// statut ni à exported_at/exported_by (déjà posés lors du premier export),
+// ne fait que régénérer le même fichier à partir des données HISTORIQUES de
+// la commande validée (order_lines — prix/remise jamais recalculés, section 6
+// "IMPORTANT"). Réservé aux commandes déjà exportées ; pour une commande pas
+// encore exportée, c'est POST /orders/export (bouton "Export Dolibarr") qui
+// s'applique.
+dolibarrRouter.get(
+  "/orders/:id/export-file",
+  requireAuth,
+  requireRole(...EXPORT_ROLES),
+  async (req, res) => {
+    const bundle = await loadOrderBundle(req.params.id);
+    if (!bundle) return res.status(404).json({ error: "Commande introuvable." });
+    if (bundle.status !== "EXPORTEE_DOLIBARR") {
+      return res.status(409).json({
+        error: "Cette commande n'a pas encore été exportée — utilisez d'abord l'export Dolibarr.",
+      });
+    }
+
+    // Filet de sécurité (section 16, "ne pas générer silencieusement un
+    // fichier incorrect") : si l'identifiant Dolibarr d'un produit a été
+    // retiré après l'export initial, on refuse la régénération plutôt que de
+    // produire un fichier avec une colonne fk_product vide.
+    const missing = bundle.lines.filter((line) => !(line.product_dolibarr_ref || "").trim());
+    if (missing.length > 0) {
+      return res.status(409).json({
+        error: `Impossible de régénérer le fichier : identifiant produit Dolibarr manquant pour la référence ${missing
+          .map((l) => l.product_ref || l.product_id)
+          .join(", ")}.`,
+      });
+    }
+
+    const settings = await getDolibarrSettings();
+    const xlsx = buildDolibarrXlsx([bundle], settings);
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="export-dolibarr-${bundle.id.slice(0, 8)}.xlsx"`);
+    res.send(xlsx);
+  }
+);
