@@ -204,3 +204,30 @@ businessRulesRouter.patch(
     }
   }
 );
+
+// Correctif 2026-09-16 (demande directe Direction Commerciale : "pour établir
+// des regle de remise chez le directeur, dans configurer - rajouter la
+// possibilité de modifier la regle ou de la supprimer") — jusqu'ici une règle
+// ne pouvait qu'être activée/désactivée (cf. commentaire en tête de
+// BusinessRules.jsx : "les règles ne sont JAMAIS supprimées"), ce que le
+// client a désormais explicitement demandé de changer. `business_rule_reps`
+// (ciblage représentant, migration 013) a une FK ON DELETE CASCADE vers
+// cette table — aucun nettoyage manuel nécessaire, contrairement aux
+// territoires (routes/team.js) qui n'ont pas cette garantie en base. Les
+// commandes déjà passées ne référencent jamais l'id de la règle (seul le
+// taux calculé au moment de la commande, order_lines.discount_pct, y est
+// recopié) : supprimer une règle n'affecte donc jamais l'historique.
+businessRulesRouter.delete("/:id", requireAuth, requireRole(ROLES.DIRECTEUR), async (req, res) => {
+  const { rows } = await query("DELETE FROM business_rules WHERE id = $1 RETURNING *", [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: "Règle introuvable." });
+
+  await logAudit({
+    userId: req.user.id,
+    action: "BUSINESS_RULE_DELETED",
+    entity: "business_rules",
+    entityId: req.params.id,
+    details: { type: rows[0].type, scope: rows[0].scope, ratePct: rows[0].rate_pct },
+  });
+
+  res.status(204).end();
+});
