@@ -15,6 +15,8 @@ Permettre à l'administrateur de créer ou mettre à jour un catalogue entier de
 - Excel (`.xlsx`, `.xls`)
 - CSV (`.csv`)
 - Le nom des colonnes du fichier source est libre — c'est le mapping (étape 4) qui fait la correspondance, pas une nomenclature imposée à l'utilisateur.
+- **Un onglet par catalogue** (correctif 2026-09-16, sur exemple fourni par le client) : un fichier Excel peut contenir plusieurs onglets, chacun représentant un catalogue différent (ex. "SUN 26", "SUN 27", "OPTICS 26"). L'assistant lit toujours un seul onglet à la fois — celui qui correspond au catalogue choisi à l'étape 1 — et propose un sélecteur d'onglet dès que le fichier en contient plusieurs (cf. section 4 bis). Un CSV n'a jamais qu'un seul onglet par nature.
+- La ligne d'en-têtes n'est plus obligatoirement la toute première ligne du fichier : une ou plusieurs lignes vides au-dessus des en-têtes (ligne de titre, ligne blanche...) sont désormais ignorées automatiquement — motif réel rencontré dans le fichier fourni par le client, où chaque onglet commence par une ligne vide avant les en-têtes.
 
 ---
 
@@ -25,6 +27,12 @@ Avant de lire le contenu du fichier, l'administrateur choisit :
 - **Nouveau catalogue** : saisie libre d'un nom (ex. "Hiver 2027").
 
 Toutes les références du fichier importé sont rattachées à ce catalogue unique. **L'import ne peut pas être lancé tant qu'aucun catalogue n'est choisi ou créé.**
+
+---
+
+## 3 bis. Sélection de l'onglet (fichier "1 onglet par catalogue")
+
+Dès qu'un fichier importé contient plusieurs onglets, un sélecteur apparaît à l'étape 2 (mapping), au-dessus de la correspondance des colonnes, pour choisir lequel lire — l'onglet correspondant au catalogue choisi à l'étape 1. Changer d'onglet ré-analyse le fichier sur cet onglet : en-têtes, correspondance suggérée et aperçu des 10 premières lignes sont systématiquement propres à l'onglet sélectionné, jamais mélangés avec un autre. Un fichier à plusieurs onglets destiné à plusieurs catalogues (ex. "SUN 26" et "SUN 27") nécessite donc **un import par catalogue** : on répète l'assistant complet (étapes 1 à 5) une fois par onglet, en changeant à chaque fois le catalogue choisi à l'étape 1 et l'onglet sélectionné à l'étape 2 — jamais un import unique qui répartirait automatiquement les onglets entre plusieurs catalogues (le rattachement au catalogue reste un choix explicite de l'administrateur, cf. section 3).
 
 ---
 
@@ -43,8 +51,9 @@ Le système propose un mapping automatique basé sur la reconnaissance de motifs
 | Prix Suisse | swissprice, chprice, prixsuisse |
 | Prix conseillé (RRP) | rrp, prixconseille, recommendedretailprice |
 | Quantité en stock | stock, qty, quantite, quantité |
+| ID Dolibarr | id dolibarr, dolibarr id, code dolibarr, dolibarr ref, ref dolibarr, dolibarr code, id produit dolibarr |
 
-L'administrateur peut **corriger manuellement** chaque correspondance via un menu déroulant listant les colonnes réellement présentes dans le fichier. **Le champ Référence est le seul obligatoire** — sans lui, l'import ne peut pas être validé (c'est la clé d'identification unique d'une référence).
+L'administrateur peut **corriger manuellement** chaque correspondance via un menu déroulant listant les colonnes réellement présentes dans le fichier. **Le champ Référence est le seul obligatoire** — sans lui, l'import ne peut pas être validé (c'est la clé d'identification unique d'une référence). L'ID Dolibarr reste facultatif au mapping (une ligne sans ID Dolibarr s'importe normalement), mais dès qu'il est renseigné il déclenche la vérification de cohérence décrite en section 7 bis.
 
 ---
 
@@ -86,6 +95,23 @@ Pour chaque ligne valide :
 
 ---
 
+## 7 bis. Règle de cohérence Référence <-> ID Dolibarr (correctif 2026-09-16)
+
+Ajoutée à la demande explicite du client : *"rajouter le code produit ID Dolibarr pour s'assurer des bonnes connexions"*, avec la règle suivante formulée par le client et appliquée ici telle quelle :
+
+> Si un produit se retrouve dans plusieurs catalogues, la référence ne peut pas être doublée — un seul ID Dolibarr est possible pour cette référence. Un catalogue peut en revanche parfaitement avoir des références qui existent déjà dans un autre catalogue — ce n'est jamais un problème en soi.
+
+Concrètement, dès qu'une ligne renseigne un ID Dolibarr, deux vérifications s'appliquent — dans les deux sens, et tous catalogues confondus (base entière, pas seulement le catalogue en cours d'import) :
+
+1. **Une référence ne peut avoir qu'un seul ID Dolibarr.** Si la même référence apparaît avec un ID Dolibarr différent — dans le fichier importé (par exemple entre deux onglets traités l'un après l'autre) ou par rapport à ce qui est déjà enregistré pour cette référence — la ligne est rejetée avec un message explicite, jamais importée avec un ID Dolibarr douteux.
+2. **Un ID Dolibarr ne peut être rattaché qu'à une seule référence.** Si le même ID Dolibarr est associé à deux références différentes — dans le fichier ou par rapport à l'existant — les lignes concernées sont rejetées, pour la même raison.
+
+Ce qui est **explicitement toléré, et ne déclenche donc aucune de ces deux vérifications** : une référence déjà présente dans un autre catalogue, tant que son ID Dolibarr reste le même. Importer une référence déjà rattachée à un autre catalogue la réattribue simplement au catalogue choisi à l'étape 1 (comportement de mise à jour déjà décrit en section 7) — ce n'est jamais un conflit à signaler.
+
+Les lignes rejetées par cette règle comptent dans les **erreurs** du résumé (étape 4, section 6), au même titre qu'une ligne sans référence — jamais un rejet de l'import entier : les autres lignes valides du fichier s'importent normalement.
+
+---
+
 ## 8. Gestion des catégories
 
 Les catégories doivent correspondre à la liste officielle administrable (actuellement : Premium, Classic, Optics, Access, Display, Merch, Goggles). Si une valeur de catégorie du fichier ne correspond à aucune catégorie connue, la référence est importée avec la catégorie **"Non classé"**, à corriger manuellement ensuite — jamais rejetée ni classée au hasard dans une catégorie existante.
@@ -101,10 +127,16 @@ Les catégories doivent correspondre à la liste officielle administrable (actue
 
 ## 10. Modèle de fichier
 
-Le système doit permettre de télécharger un modèle Excel vierge listant les colonnes attendues (Référence, Modèle, Couleur, Catégorie, Prix France, Prix Export, Prix Suisse, RRP, Stock), pour que les imports suivants arrivent déjà au bon format et nécessitent moins de remappage manuel. *(Fonctionnalité prévue mais pas encore développée dans le prototype actuel — à ajouter en développement réel.)*
+**Implémenté le 2026-09-16** (cette section décrivait jusqu'ici une fonctionnalité prévue mais non développée — c'est désormais fait). Un bouton **"Télécharger un modèle"**, sur l'écran d'upload de l'assistant d'import, télécharge un fichier Excel vierge (`modele-import-catalogue.xlsx`) listant les colonnes attendues : Référence, Modèle, Couleur, Catégorie, Prix France, Prix Export, Prix Suisse, Prix conseillé (RRP), Quantité en stock, **ID Dolibarr**. Conformément à la règle "1 onglet par catalogue" (section 2), ce modèle contient **un onglet par catalogue déjà existant** dans l'application (même nom que le catalogue, uniquement les en-têtes, aucune ligne de données) ; s'il n'existe encore aucun catalogue, le modèle contient un unique onglet générique "Catalogue". L'administrateur choisit ensuite, pour chaque onglet à remplir, le catalogue correspondant à l'étape 1 lors de l'import (section 3).
 
 ---
 
 ## 11. Suppression d'un catalogue
 
 Réservée à l'administrateur. Supprimer un catalogue ne supprime jamais les références qui lui sont rattachées : elles repassent automatiquement en statut **"Sans catalogue"** et restent visibles pour être réaffectées à un autre catalogue.
+
+---
+
+## 12. Historique
+
+- **2026-09-16** — Ajout de la règle de cohérence Référence <-> ID Dolibarr (section 7 bis), de la reconnaissance de la colonne "ID Dolibarr" (section 4), du support des fichiers "1 onglet par catalogue" avec sélecteur d'onglet (sections 2 et 3 bis) et de la reconnaissance d'une ligne d'en-têtes précédée de lignes vides (section 2) — à la demande du client, sur la base d'un exemple réel fourni (fichier à 3 onglets SUN 26 / SUN 27 / OPTICS 26 avec colonne ID Dolibarr). Modèle de fichier téléchargeable (section 10) implémenté à cette occasion, avec un onglet par catalogue existant. Grounded dans le code réellement implémenté et testé : `lib/fileParsing.js` (détection de la ligne d'en-têtes, sélection d'onglet), `lib/catalogImport.js` (`validateDolibarrIds`), `lib/importMapping.js`, `lib/importTemplates.js`, `routes/catalogs.js` (`GET /import-template`) — vérifié de bout en bout avec le fichier réel fourni par le client (import des 3 onglets dans des catalogues séparés, détection effective d'un conflit d'ID Dolibarr réel présent dans ce fichier entre deux variantes de casse d'une même référence).

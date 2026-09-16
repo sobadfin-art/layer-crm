@@ -240,11 +240,18 @@ jour uniquement les existantes.
 
 ## 11. Modèle de fichier
 
-Contrairement au catalogue produits, un modèle Excel vierge à télécharger n'a plus vraiment d'utilité
-ici : le fichier source n'est pas rempli à la main par l'administrateur, c'est un **export direct
-depuis Dolibarr**, dont le format (section 5) est déjà fixé par Dolibarr lui-même. Le mapping par
-défaut (section 5) tient lieu de gabarit. *(Cette section pourra être retirée du périmètre de
-développement si elle est jugée inutile — à confirmer.)*
+**Décision revue et implémentée le 2026-09-16** — cette section envisageait initialement de retirer
+purement et simplement cette fonctionnalité, faute d'utilité perçue (le fichier source étant
+normalement un export direct depuis Dolibarr, dont le format est déjà fixé par Dolibarr lui-même,
+contrairement au catalogue produits rempli à la main). Le client a depuis demandé explicitement ce
+bouton également pour les fiches client ("un autre bouton doit être prévu pour récupérer le modèle
+import pour les fiches clients"). Un bouton **"Télécharger un modèle"**, sur l'écran d'upload de
+l'assistant d'import, télécharge donc désormais un fichier Excel vierge
+(`modele-import-fiches-client.xlsx`, un seul onglet "Fiches clients") listant les colonnes du socle
+au vocabulaire Dolibarr standard (section 5) : Id, Nom, Nom alternatif, État, Adresse, Code postal,
+Ville, Pays, Téléphone, Tél portable, Email, Numéro TVA, Nom du commercial — utile comme aide-mémoire
+ou pour une saisie manuelle ponctuelle même quand l'essentiel des imports reste un export Dolibarr
+tel quel.
 
 ---
 

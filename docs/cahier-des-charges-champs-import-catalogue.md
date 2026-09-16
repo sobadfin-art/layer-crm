@@ -37,7 +37,18 @@ Deux niveaux de champs :
 | Prix Suisse | `Swiss Price`, `CH Price`, `Prix Suisse` | Non | Nombre | Laissé vide |
 | Prix conseillé (RRP) | `RRP`, `Prix conseillé`, `Recommended Retail Price` | Non | Nombre | Laissé vide |
 | Quantité en stock | `Stock`, `Qty`, `Quantite`, `Quantité` | Non | Nombre entier | **0** par défaut à la création si absente |
-| Code Dolibarr | `Code Dolibarr`, `Dolibarr Ref`, `Ref Dolibarr`, `Dolibarr Code` | Non | Texte libre | Laissé vide. Sert uniquement de correspondance de secours pour le retour client si la Référence CRM ne suffit pas — n'est **jamais** utilisé comme clé de rapprochement de l'import lui-même (c'est toujours la Référence) |
+| ID Dolibarr | `ID Dolibarr`, `Code Dolibarr`, `Dolibarr Ref`, `Ref Dolibarr`, `Dolibarr Code`, `Dolibarr Id`, `Id Produit Dolibarr` | Non | Texte libre (accepte un identifiant numérique, ex. `931`) | Laissé vide si absent. **Depuis le 2026-09-16, ce champ n'est plus une simple correspondance de secours** : dès qu'il est renseigné, il déclenche une vérification de cohérence à l'import (section 1 bis) — une référence ne peut avoir qu'un seul ID Dolibarr, et réciproquement. Il reste néanmoins **toujours la Référence**, jamais l'ID Dolibarr, qui sert de clé de rapprochement principale pour créer/mettre à jour une fiche (cf. `cahier-des-charges-import-catalogue.md` section 4) |
+
+---
+
+## 1 bis. Cohérence Référence <-> ID Dolibarr (correctif 2026-09-16)
+
+Règle demandée explicitement par le client (*"s'assurer des bonnes connexions"*), appliquée dans les deux sens et tous catalogues confondus :
+
+- **une référence ne peut avoir qu'un seul ID Dolibarr** — jamais deux ID différents pour la même référence, que ce soit dans le même fichier (ex. deux onglets/catalogues qui se contredisent) ou par rapport à ce qui est déjà enregistré en base ;
+- **un ID Dolibarr ne peut être rattaché qu'à une seule référence** — jamais deux références différentes partageant le même ID.
+
+À l'inverse, et c'est **explicitement autorisé** : la même référence peut parfaitement apparaître dans plusieurs catalogues différents (le client : *"un catalogue peut avoir des références qui existent sur plusieurs catalogues"*) — ce n'est un problème que si son ID Dolibarr change d'un catalogue à l'autre. Le détail complet (algorithme, exemples, ce qui est rejeté vs toléré) est documenté dans `cahier-des-charges-import-catalogue.md`, section 7 bis — cette section-ci ne fait que positionner le champ ID Dolibarr par rapport aux autres champs du socle.
 
 ---
 
@@ -161,3 +172,10 @@ le site internet encore. il le seront plus tard").
   refusé, id inexistant → 404 sans fichier orphelin) et vérification à
   travers l'interface réelle (clic sur le bouton, sélection de fichier,
   miniature affichée après envoi).
+- **2026-09-16** — Élévation du champ Code Dolibarr en "ID Dolibarr" (section
+  1) avec nouvelle règle de cohérence Référence <-> ID Dolibarr (section 1
+  bis), à la demande du client, sur la base d'un exemple réel fourni (fichier
+  à 3 onglets SUN 26 / SUN 27 / OPTICS 26). Voir `cahier-des-charges-import-
+  catalogue.md` section 7 bis pour le détail complet de la règle, et sa
+  section 12 pour la liste des fichiers de code concernés et la vérification
+  effectuée.

@@ -1276,6 +1276,32 @@ Corrections réellement apportées ce lot :
   commande retrouvée côté API avec tous les champs (adresses, contact, IBAN...) correctement
   persistés ; et séparément pour le parcours "Clients & prospects" classique (Représentant sans
   sélecteur représentant/Master Rep, Directeur avec ce sélecteur obligatoire et blocage si absent).
+- **Import catalogue produits — ID Dolibarr, fichiers "1 onglet par catalogue" et modèles
+  téléchargeables (2026-09-16, sur exemple réel fourni par le client) :** trois évolutions liées, à
+  la demande explicite du client : (1) la colonne "ID Dolibarr" est désormais reconnue à l'import
+  (`lib/importMapping.js`) et déclenche une nouvelle règle de cohérence — une référence ne peut avoir
+  qu'un seul ID Dolibarr et réciproquement, tous catalogues confondus, MAIS une référence peut
+  parfaitement exister dans plusieurs catalogues tant que son ID ne change pas (`lib/catalogImport.js`,
+  `validateDolibarrIds` — cf. `docs/cahier-des-charges-import-catalogue.md` section 7 bis pour le
+  détail) ; (2) support des fichiers Excel à plusieurs onglets ("1 onglet par catalogue", ex. SUN 26 /
+  SUN 27 / OPTICS 26 du fichier fourni) avec sélecteur d'onglet dans l'assistant d'import
+  (`lib/fileParsing.js`, `ImportWizard.jsx`) — la détection de la ligne d'en-têtes a aussi été rendue
+  tolérante à une ou plusieurs lignes vides au-dessus (motif réel du fichier fourni, qui aurait sinon
+  fait échouer silencieusement la reconnaissance des colonnes) ; (3) un bouton "Télécharger un modèle"
+  (Excel vierge, colonnes attendues, un onglet par catalogue existant) a été ajouté à l'import
+  catalogue **et**, sur demande explicite complémentaire du client en cours de conversation, à l'import
+  fiches client (`routes/catalogs.js` et `routes/accounts-import.js`, `GET .../template`), ce dernier
+  renversant une décision antérieure qui l'excluait faute d'utilité perçue (cf. `docs/cahier-des-
+  charges-import-fiches-client.md` section 11). Au passage, corrigé un bug latent de l'import
+  catalogue exposé par les vraies données du fichier fourni : une référence apparaissant plusieurs
+  fois dans un même onglet provoquait une violation de contrainte `UNIQUE(ref)` à l'application
+  (`applyImport` ne mettait pas à jour son suivi des références déjà vues pendant la boucle). Aucun
+  changement de schéma de base de données. Vérifié de bout en bout avec le fichier réel fourni par le
+  client (script API : 20/20 assertions — import des 3 onglets dans des catalogues séparés, détection
+  effective d'un vrai conflit d'ID Dolibarr présent dans ce fichier entre deux variantes de casse
+  d'une même référence, rejet correct de conflits construits délibérément dans les deux sens ; script
+  Playwright : sélecteur d'onglet, bouton modèle sur les deux écrans, déclenchement réel du
+  téléchargement).
 
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
