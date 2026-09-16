@@ -5,10 +5,16 @@
 // annuels du représentant."), étendue sur confirmation explicite du client
 // (2026-09-16) à la lisibilité des indicateurs cumulés (portefeuille annuel
 // et commandes fermes/précommandes cumulées vs objectif) des tableaux de bord
-// Représentant, Master Rep et Directeur — les trois seuls écrans concernés.
-// Rien d'autre dans l'app ne bascule sur cette période (Data/RepData.jsx,
-// l'historique de la fiche compte, les extractions Directeur... restent en
-// année civile, cf. commentaires locaux à ces écrans).
+// Représentant, Master Rep et Directeur.
+//
+// Étendue une seconde fois (CORRECTIFS P0 — Profil Représentant, section 3,
+// même journée) à Data > Customer Performance (RepData.jsx), qui bascule
+// désormais aussi sur l'année commerciale par défaut — cf.
+// backend/src/lib/fiscalYear.js (miroir backend de ce fichier) et le
+// paramètre ?year= de GET /api/dashboard/customer-performance. Data >
+// Bestsellers, lui, reste volontairement en année civile : cette fiche
+// corrective ne demande le changement que pour Customer Performance,
+// cf. commentaire local dans routes/dashboard.js.
 export function fiscalYearBounds(date = new Date()) {
   const year = date.getFullYear();
   const month = date.getMonth(); // 0 = janvier ... 10 = novembre, 11 = décembre

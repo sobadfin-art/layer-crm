@@ -92,13 +92,15 @@ export default function NewOrder() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Sélection du catalogue actif ("bulles" — cf. fiche corrective V2, section
-  // 6.2) : étape obligatoire avant la saisie des produits. catalogId === null
-  // tant qu'aucun catalogue n'a été choisi ; subview reste sur "catalog".
-  const [catalogId, setCatalogId] = useState(null);
-  const [catalogsLoading, setCatalogsLoading] = useState(false);
+  // Filtre Catalogue (fiche corrective P0 — Profil Représentant, section 1) :
+  // sélection multiple de bulles directement sur la page Nouvelle commande,
+  // plus d'étape intermédiaire. selectedCatalogIds === [] tant qu'aucun
+  // catalogue n'est sélectionné ; dans ce cas la grille reste vide et l'ajout
+  // au panier est bloqué (section E).
+  const [selectedCatalogIds, setSelectedCatalogIds] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(false);
 
-  const [subview, setSubview] = useState("catalog");
+  const [subview, setSubview] = useState("browse");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
 
@@ -116,8 +118,7 @@ export default function NewOrder() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    setSubview("catalog");
-    setCatalogId(null);
+    setSelectedCatalogIds([]);
     setProducts([]);
     Promise.all([api.get(`/accounts/${id}`), api.get("/catalogs"), api.get("/business-rules")])
       .then(([accountData, catalogsData, rulesData]) => {
@@ -130,43 +131,52 @@ export default function NewOrder() {
   }, [id]);
 
   // Les catalogues proposés à la sélection sont les catalogues actifs
-  // contenant au moins une référence. On garde toujours en dernier recours
-  // une bulle "Tous les produits" pour ne jamais bloquer la saisie si un
-  // produit n'est rattaché à aucun catalogue (ancienne donnée, import
-  // partiel...).
+  // contenant au moins une référence.
   const selectableCatalogs = useMemo(
     () => catalogs.filter((c) => c.active && (c.productCount ?? 0) > 0),
     [catalogs]
   );
 
-  function selectCatalog(nextCatalogId) {
-    setCatalogsLoading(true);
+  // Bascule (ajout/retrait) d'un catalogue dans la sélection multiple —
+  // fiche corrective P0, section C : bulles à sélection multiple, jamais un
+  // <select>. Ne touche jamais au panier ni à la sous-vue : la grille se met
+  // simplement à jour avec les produits des catalogues sélectionnés.
+  function toggleCatalog(catalogId) {
+    setSelectedCatalogIds((prev) =>
+      prev.includes(catalogId) ? prev.filter((c) => c !== catalogId) : [...prev, catalogId]
+    );
+  }
+
+  // Recharge la grille à chaque changement de sélection de catalogue(s),
+  // sans jamais réinitialiser le panier (section D) ni la recherche/le
+  // filtre catégorie en cours (pas de "rechargement complet du parcours").
+  // Le backend supporte déjà le filtre OR multi-catalogue via
+  // ?catalogId=A,B (voir routes/products.js, ajouté pour le Catalogue Admin).
+  useEffect(() => {
+    if (selectedCatalogIds.length === 0) {
+      setProducts([]);
+      return;
+    }
+    setProductsLoading(true);
     setError(null);
-    const qs = nextCatalogId ? `?catalogId=${nextCatalogId}` : "";
     api
-      .get(`/products${qs}`)
+      .get(`/products?catalogId=${selectedCatalogIds.join(",")}`)
       .then((productsData) => {
         setProducts(productsData);
         // Fusion dans l'accumulateur global plutôt que remplacement : un
         // produit déjà présent (ex. reference partagée entre catalogues) est
-        // simplement mis à jour, jamais perdu.
+        // simplement mis à jour, jamais perdu — le panier peut ainsi
+        // toujours résoudre un article ajouté sous une sélection de
+        // catalogues différente de la sélection courante.
         setProductsById((prev) => {
           const next = new Map(prev);
           for (const p of productsData) next.set(p.id, p);
           return next;
         });
-        setCatalogId(nextCatalogId);
-        setSearch("");
-        setCategory("all");
-        // Le panier N'EST PLUS réinitialisé ici : un changement de catalogue
-        // doit permettre d'ajouter des articles d'un second catalogue actif
-        // au même panier (règle "plusieurs catalogues actifs si nécessaire",
-        // "le panier doit être conservé jusqu'au récapitulatif").
-        setSubview("browse");
       })
       .catch((err) => setError(err.message))
-      .finally(() => setCatalogsLoading(false));
-  }
+      .finally(() => setProductsLoading(false));
+  }, [selectedCatalogIds]);
 
   useEffect(() => {
     if (!toast) return;
@@ -192,6 +202,11 @@ export default function NewOrder() {
   }, [products, search, category]);
 
   function changeQty(productId, delta) {
+    // Garde-fou (section E) : aucun ajout possible tant qu'aucun catalogue
+    // n'est sélectionné. Backstop défensif — la grille est de toute façon
+    // vide dans ce cas, donc ce chemin ne devrait normalement pas être
+    // atteint depuis l'UI.
+    if (selectedCatalogIds.length === 0) return;
     setCart((prev) => {
       const next = new Map(prev);
       const current = next.get(productId) || { qty: 0, isGift: false };
@@ -208,6 +223,7 @@ export default function NewOrder() {
   // Saisie directe de la quantité (fiche Parcours de création de commande,
   // section 4 : "boutons +/- et/ou saisie directe"), en plus des boutons.
   function setQtyDirect(productId, rawValue) {
+    if (selectedCatalogIds.length === 0) return;
     const parsed = Math.max(0, Math.floor(Number(rawValue) || 0));
     setCart((prev) => {
       const next = new Map(prev);
@@ -328,50 +344,29 @@ export default function NewOrder() {
         <ArrowLeft size={14} /> {t("newOrder.backToClient")}
       </button>
 
-      {subview === "catalog" && (
-        <>
-          <h1 className="page-title">{t("newOrder.catalogStepTitle", { name: account.name })}</h1>
-          <p className="page-sub">{t("newOrder.catalogStepSubtitle")}</p>
-
-          {catalogsLoading && <p className="empty-state">{t("newOrder.catalogLoading")}</p>}
-
-          {!catalogsLoading && (
-            <div className="catalog-bubbles">
-              {selectableCatalogs.map((c) => (
-                <button key={c.id} type="button" className="catalog-bubble" onClick={() => selectCatalog(c.id)}>
-                  <span className="catalog-bubble-name">{c.name}</span>
-                  <span className="catalog-bubble-count">{t("newOrder.catalogProductCount", { count: c.productCount })}</span>
-                </button>
-              ))}
-              <button type="button" className="catalog-bubble catalog-bubble-all" onClick={() => selectCatalog(null)}>
-                <span className="catalog-bubble-name">{t("newOrder.allProductsBubble")}</span>
-              </button>
-            </div>
-          )}
-
-          {selectableCatalogs.length === 0 && !catalogsLoading && (
-            <p className="empty-state">{t("newOrder.catalogEmpty")}</p>
-          )}
-        </>
-      )}
-
       {subview === "browse" && (
         <>
           <h1 className="page-title">{t("newOrder.title", { name: account.name })}</h1>
-          <p className="page-sub">
-            {t("newOrder.subtitle")}
-            {catalogId && catalogs.find((c) => c.id === catalogId) && (
-              <> — {t("newOrder.currentCatalogue", { catalogue: catalogs.find((c) => c.id === catalogId).name })}</>
-            )}
-          </p>
-          <button
-            type="button"
-            className="btn outline"
-            style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}
-            onClick={() => setSubview("catalog")}
-          >
-            <ArrowLeft size={14} /> {t("newOrder.changeCatalogue")}
-          </button>
+          <p className="page-sub">{t("newOrder.subtitle")}</p>
+
+          <div className="filter-label" style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6, marginTop: 4 }}>
+            {t("newOrder.catalogFilterLabel")}
+          </div>
+          {selectableCatalogs.length > 0 && (
+            <div className="cat-tabs" style={{ marginBottom: 10 }}>
+              {selectableCatalogs.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`cat-tab ${selectedCatalogIds.includes(c.id) ? "active" : ""}`}
+                  onClick={() => toggleCatalog(c.id)}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {selectableCatalogs.length === 0 && <p className="empty-state">{t("newOrder.catalogEmpty")}</p>}
 
           <div className="search-bar">
             <Search size={15} color="#8892a0" />
@@ -388,10 +383,22 @@ export default function NewOrder() {
             ))}
           </div>
 
-          {filtered.length === 0 && <p className="empty-state">{t("catalogue.empty")}</p>}
+          {selectedCatalogIds.length === 0 && (
+            <p className="empty-state" style={{ fontWeight: 600 }}>
+              {t("newOrder.selectCatalogRequired")}
+            </p>
+          )}
+
+          {selectedCatalogIds.length > 0 && productsLoading && (
+            <p className="empty-state">{t("newOrder.catalogLoading")}</p>
+          )}
+
+          {selectedCatalogIds.length > 0 && !productsLoading && filtered.length === 0 && (
+            <p className="empty-state">{t("catalogue.empty")}</p>
+          )}
 
           <div className="product-grid">
-            {filtered.map((p) => {
+            {selectedCatalogIds.length > 0 && !productsLoading && filtered.map((p) => {
               const entry = cart.get(p.id);
               const price = account ? unitPriceFor(p, account.countryCode) : null;
               const stock = stockLine(p, t, locale);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money } from "../lib/format.js";
+import { fiscalYearBounds, fiscalYearLabel } from "../lib/fiscalYear.js";
 
 // Data — profil Représentant (PDF section 9) : périmètre volontairement plus
 // restreint que le Directeur — seulement Bestsellers et Customer Performance,
@@ -22,7 +23,14 @@ export default function RepData() {
   const [bsError, setBsError] = useState(null);
   const [generated, setGenerated] = useState(false);
 
-  const [custYear, setCustYear] = useState(String(new Date().getFullYear()));
+  // Customer Performance bascule sur l'année COMMERCIALE (1er novembre → 31
+  // octobre) par défaut, pas l'année civile — fiche corrective P0, section 3.
+  // custYear stocke l'année de DÉBUT de cette période commerciale (ex. "2025"
+  // pour la période 01/11/2025-31/10/2026, affichée "2025–2026"), cohérent
+  // avec ?year= côté serveur (voir routes/dashboard.js). Le tableau
+  // Bestsellers ci-dessus, lui, reste en année civile (non concerné par ce
+  // correctif) : `year` (sans préfixe cust) n'est pas touché.
+  const [custYear, setCustYear] = useState(String(fiscalYearBounds().startYear));
   const [customers, setCustomers] = useState(null);
   const [custLoading, setCustLoading] = useState(true);
   const [custError, setCustError] = useState(null);
@@ -71,6 +79,10 @@ export default function RepData() {
   }
 
   const years = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i));
+  // Sélecteur dédié Customer Performance : années commerciales (début Nov.),
+  // affichées avec leur libellé "2025–2026" plutôt qu'une seule année civile
+  // ambiguë — cf. commentaire sur custYear plus haut.
+  const fiscalYearStarts = Array.from({ length: 5 }, (_, i) => fiscalYearBounds().startYear - i);
 
   return (
     <>
@@ -153,10 +165,10 @@ export default function RepData() {
           <div className="panel">
             <div className="form-row">
               <div className="field">
-                <label>{t("repData.year")}</label>
+                <label>{t("repData.fiscalYear")}</label>
                 <select value={custYear} onChange={(e) => setCustYear(e.target.value)}>
-                  {years.map((y) => (
-                    <option key={y} value={y}>{y}</option>
+                  {fiscalYearStarts.map((y) => (
+                    <option key={y} value={y}>{fiscalYearLabel(new Date(Date.UTC(y, 10, 1)))}</option>
                   ))}
                 </select>
               </div>

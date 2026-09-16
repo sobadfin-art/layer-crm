@@ -346,13 +346,20 @@ export default function Data() {
                         row.prevAmount !== null && Number(row.prevAmount) > 0
                           ? Math.round(((Number(row.totalAmount) - Number(row.prevAmount)) / Number(row.prevAmount)) * 100)
                           : null;
+                      // row.typologies / row.repNames : listes agrégées (un produit peut
+                      // avoir été vendu à plusieurs typologies de comptes / par plusieurs
+                      // représentants) — corrigé pour ne plus fragmenter les totaux
+                      // (voir commentaire backend routes/dashboard.js sur le bug de
+                      // GROUP BY). On affiche donc la liste plutôt qu'une seule valeur.
+                      const typologyLabels = (row.typologies || []).filter(Boolean).map((ty) => t(`typology.${ty}`)).join(", ");
+                      const repLabels = (row.repNames || []).filter(Boolean).join(", ");
                       return (
-                        <tr key={`${row.ref}-${row.repFirstName}-${idx}`}>
+                        <tr key={`${row.ref}-${idx}`}>
                           <td>{row.ref}</td>
                           <td>{row.label}</td>
                           <td>{row.category}</td>
-                          <td>{t(`typology.${row.typology}`)}</td>
-                          <td>{row.repFirstName} {row.repLastName}</td>
+                          <td>{typologyLabels}</td>
+                          <td>{repLabels}</td>
                           <td>{row.totalQty}</td>
                           <td>{money(row.totalAmount, locale)}</td>
                           <td>{row.prevAmount !== null ? money(row.prevAmount, locale) : "—"}</td>
