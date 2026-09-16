@@ -1811,6 +1811,60 @@ Corrections réellement apportées ce lot :
   - Non-régression vérifiée sur le reste de l'écran de commande (ajout au panier, cadeaux, franco de
     port, reliquats) et sur l'ensemble des parcours Représentant/Master Rep/Directeur déjà testés.
 
+- **Config (Directeur) — modification et suppression des règles commerciales (2026-09-16, demande
+  directe : "pour établir des regle de remise chez le directeur, dans configurer - rajouter la
+  possibilité de modifier la regle ou de la supprimer")** : jusqu'ici une règle (remise catégorie,
+  frais de port...) ne pouvait qu'être activée/désactivée depuis cet écran — corrigé, sans toucher à
+  ce bouton existant, conservé tel quel.
+  - **Modifier** : chaque règle de la liste a désormais un bouton "Edit" qui rouvre le même formulaire
+    que "Nouvelle règle", pré-rempli avec ses valeurs actuelles (type, portée, pays/représentants,
+    catégories, taux/montant/seuil) ; la validation et l'enregistrement (`PATCH /business-rules/:id`)
+    existaient déjà côté serveur (chantier remise catégorie multi-représentants, migration 013) — seul
+    l'écran ne les exposait pas encore. Le statut actif/inactif n'est volontairement jamais touché par
+    cette édition, pour ne jamais réactiver une règle désactivée simplement en la modifiant.
+  - **Supprimer** : icône poubelle sur chaque règle, nouvelle route `DELETE /api/business-rules/:id`
+    (réservée au directeur, comme la création) — `business_rule_reps` (ciblage représentant) a une
+    contrainte `ON DELETE CASCADE` vers cette table, donc aucun nettoyage manuel n'est nécessaire ; les
+    commandes déjà passées ne référencent jamais l'id d'une règle (seul le taux calculé au moment de la
+    commande est recopié sur la ligne), donc supprimer une règle n'affecte jamais l'historique déjà
+    enregistré.
+  - Vérifié de bout en bout par script Playwright : création d'une règle de test, modification (valeur
+    bien pré-remplie, mise à jour bien reflétée dans la liste), puis suppression (ligne bien retirée) —
+    9/9 assertions ; non-régression confirmée sur le reste de l'écran Config (réglages Dolibarr,
+    activation/désactivation existante) et sur l'ensemble des parcours déjà testés.
+
+- **Rapprochement des photos mokenvision.com en production (2026-09-16, demande directe : "dans ce
+  cas là note que aucune photo publiée en ligne www.mokenvision.com n'apparait dans le catalogue",
+  puis confirmation "oui go,")** : opération de données uniquement, **aucun changement de code**.
+  - **Constat** : le script `backend/scripts/mokenvision-photos/match-photos-to-catalog.mjs`
+    (rapprochement fiche produit ↔ photo mokenvision.com par modèle/couleur, à partir du fichier
+    `moken_photos_map.json`) n'avait jusqu'ici été exécuté que contre la base de développement locale
+    de ce sandbox — jamais contre la base de production Render, qui est une base entièrement séparée
+    (le déploiement se fait par upload manuel de fichiers sur GitHub, sans base partagée ni CI/CD).
+    Résultat : 0 photo mokenvision.com n'était jamais apparue dans le catalogue en ligne, confirmé par
+    absence totale de requête réseau vers mokenvision.com et par `photoUrl: null` sur les fiches
+    interrogées directement en production.
+  - **Action, après accord explicite** : la même logique de rapprochement (normalisation du nom de
+    modèle, puis correspondance de couleur si possible, jamais de correspondance approximative/devinée)
+    a été rejouée manuellement contre les 406 fiches produit de production sans photo, via l'API du CRM
+    (`POST /api/products/:id/photos/url`, comme le fait le script lui-même) — exécutée depuis le
+    navigateur du poste relié à la session (le sandbox n'a pas d'accès réseau direct au site de
+    production), en session authentifiée Administrateur.
+  - **Résultat** : **278 fiches rapprochées et mises à jour** (aucun échec sur les 278 appels), les
+    **128 fiches restantes n'ont aucun modèle correspondant dans `moken_photos_map.json`** et n'ont
+    donc jamais été touchées (toujours sans photo, à traiter manuellement si de nouvelles photos sont
+    scrapées). Vérifié après coup : la fiche AARON 54-18-150 (citée en exemple) affiche désormais sa
+    photo réelle, chargée avec succès (280×280) depuis mokenvision.com.
+  - **Important à savoir** : les photos ne sont pas dupliquées/hébergées côté Moken — la fiche produit
+    stocke l'URL mokenvision.com et l'image est chargée en direct depuis leur site à chaque affichage.
+    Si mokenvision.com retire ou déplace une image plus tard, la photo casserait aussi côté CRM.
+  - La fonctionnalité distincte d'**import de photos en masse par l'Administrateur** (upload de zip/
+    fichiers multiples, stockage S3/R2 dédié) reste **volontairement non développée** : aucun espace de
+    stockage fichiers n'est configuré dans le projet à ce jour, et conformément à la demande explicite
+    ("dis-le-moi avant de commencer plutôt que d'improviser une solution temporaire... qui ne tiendrait
+    pas en production"), rien n'a été improvisé. À reprendre si besoin, une fois un espace de stockage
+    S3-compatible provisionné.
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
