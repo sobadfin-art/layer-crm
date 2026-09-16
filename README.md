@@ -1865,6 +1865,58 @@ Corrections réellement apportées ce lot :
     pas en production"), rien n'a été improvisé. À reprendre si besoin, une fois un espace de stockage
     S3-compatible provisionné.
 
+- **Photo produit cliquable — vue en grand avec carrousel (2026-09-16, demande directe : "sur toute
+  les fiches produits, peux tu rendre cliquable la photo et faire en sorte de pouvoir voir le produit
+  en plus grand. On pourra activer le carroussel en plus grand. prevoir une croix pour fermer")** :
+  nouveau composant partagé `frontend/src/components/PhotoLightbox.jsx` — overlay plein écran,
+  navigation entre toutes les photos de la fiche (flèches, points cliquables, flèches clavier
+  gauche/droite), fermeture par la croix, par clic en dehors de la photo, ou par la touche Échap.
+  Branché sur la photo, partout où une fiche produit en affiche une :
+  - **Catalogue** (Représentant/Master Rep, `Catalogue.jsx`) et **sélecteur de la prise de commande**
+    (`NewOrder.jsx`) : les deux partagent déjà `ProductPhotoCarousel.jsx`, qui ouvre désormais le
+    lightbox au clic sur l'image — sans jamais interférer avec les flèches/points du mini-carrousel
+    de la vignette (qui restent, comme avant, cantonnés à leurs propres boutons), ni avec la
+    sélection de quantité de la fiche.
+  - **Catalogue produits** (Administrateur, consultation visuelle, `CatalogueConsult.jsx`) : même
+    principe sur son composant photo dédié à cet écran.
+  - **Admin produits** (Administrateur, tableau de gestion, `CatalogueAdmin.jsx`) : la vignette 32×32
+    de chaque ligne ouvre elle aussi le lightbox en lecture seule — sans toucher au bouton "Gérer les
+    photos" existant à côté, qui continue d'ouvrir sa propre modale de gestion (ajout/réordonnancement/
+    suppression), un usage volontairement distinct.
+  - Vérifié de bout en bout par script Playwright sur les quatre écrans (24/24 assertions) : ouverture
+    au clic, image affichée en grand, croix visible et fonctionnelle, fermeture par clic sur le fond et
+    par Échap, navigation carrousel en grand (flèches, clavier, points) sur une fiche multi-photos,
+    non-régression du mini-carrousel de la vignette et de la quantité de commande (le clic photo ne
+    déclenche jamais un ajout au panier), non-régression des boutons "Modifier"/"Gérer les photos"
+    déjà en place. Aucun changement côté serveur (fonctionnalité 100 % d'affichage).
+
+- **Nouvelle route : remplacement d'identité de compte (2026-09-16, demande directe : "Remplace le
+  compte de démo directeur (directeur@moken.demo) par mon vrai compte... donne-moi un mot de passe
+  temporaire à changer à la première connexion")** : aucune route n'existait pour changer l'email d'un
+  compte existant (seuls création, activation, rôle et mot de passe l'étaient) — nécessaire pour cette
+  demande, puisqu'aucun accès SQL direct n'est possible en production depuis l'extérieur (déploiement
+  par upload manuel, pas de shell serveur exposé).
+  - `PATCH /api/admin/users/:userId/identity` (réservé DIRECTEUR, comme le reste de ce module) : met à
+    jour email/prénom/nom, ET génère systématiquement un nouveau mot de passe temporaire à changer à la
+    prochaine connexion (`must_change_password = TRUE`) — remplacer l'identité d'un compte doit
+    toujours invalider l'ancien mot de passe, pour qu'un ancien titulaire ne puisse jamais se connecter
+    sous la nouvelle identité. Email dupliqué → erreur explicite (comme la création), email/prénom/nom
+    vides → rejetés, opération journalisée (`USER_IDENTITY_REPLACED`, email avant/après).
+  - **Volontairement pas de bouton dans l'écran Utilisateurs** (`UsersAdmin.jsx`) : les lignes DIRECTEUR
+    y restent en lecture seule sans aucune action, comme conçu à l'origine — cette route est un outil de
+    maintenance ponctuelle, appelée directement, pas depuis l'interface.
+  - Vérifié de bout en bout : ancien email refusé après remplacement, nouveau email + mot de passe
+    temporaire accepté et redirige bien vers l'écran de changement de mot de passe obligatoire, nom
+    affiché mis à jour partout après un changement de mot de passe complet ; email déjà utilisé par un
+    autre compte rejeté (409) sans toucher ce dernier ; email invalide et champs vides rejetés (400).
+  - **Compte directeur@moken.demo remplacé par pierre.legall@mokenvision.com** (nom affiché : Pierre Le
+    Gall) — d'abord vérifié sur l'environnement de développement local (restauré ensuite à l'état de
+    seed d'origine après vérification), puis appliqué sur la production dès que cette route y a été
+    déployée. Le mot de passe temporaire a été communiqué une seule fois, en dehors de ce document.
+    Les autres comptes de démo (rep/rep2/masterrep/frontdesk/admin@moken.demo) sont conservés tels
+    quels à la demande du client, à supprimer une fois les vrais comptes de son équipe créés depuis
+    l'application (écran Utilisateurs ou Équipe, selon le rôle).
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
