@@ -231,6 +231,11 @@
         "color": "crystal",
         "imageUrl": "https://www.mokenvision.com/4408-home_default/otis.jpg",
         "productUrl": "https://www.mokenvision.com/en/otis/360-1056-otis-3760314191609.html"
+      },
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/4411-home_default/otis.jpg",
+        "productUrl": "https://www.mokenvision.com/en/blue-light/497-otis-3760314193696.html"
       }
     ]
   },
@@ -1011,6 +1016,11 @@
         "color": "crystal",
         "imageUrl": "https://www.mokenvision.com/2320-home_default/leon.jpg",
         "productUrl": "https://www.mokenvision.com/en/leon/63-977-leon-3760314190053.html"
+      },
+      {
+        "color": "Crystal",
+        "imageUrl": "https://www.mokenvision.com/2691-home_default/leon.jpg",
+        "productUrl": "https://www.mokenvision.com/en/blue-light/335-410-leon-3760314193726.html"
       }
     ]
   },
@@ -1116,6 +1126,11 @@
         "color": "blue",
         "imageUrl": "https://www.mokenvision.com/4808-home_default/hawkins-covers.jpg",
         "productUrl": "https://www.mokenvision.com/en/sunglasses-collection/779-1266-hawkins-covers-1000006573149.html"
+      },
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/5354-home_default/hawkins-covers.jpg",
+        "productUrl": "https://www.mokenvision.com/en/hawkins/873-1396-hawkins-covers-3760314197809.html"
       }
     ]
   },
@@ -1481,6 +1496,606 @@
         "color": null,
         "imageUrl": "https://www.mokenvision.com/5373-home_default/hawkins-covers.jpg",
         "productUrl": "https://www.mokenvision.com/en/cleaner-kit/638-hawkins-covers-3760314194914.html"
+      }
+    ]
+  },
+  "nika": {
+    "model": "Nika",
+    "variants": [
+      {
+        "color": "Sawdust",
+        "imageUrl": "https://www.mokenvision.com/5380-home_default/sawdust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/nika/842-sawdust-3760314196833.html"
+      }
+    ]
+  },
+  "sally": {
+    "model": "Sally",
+    "variants": [
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/5120-home_default/maria.jpg",
+        "productUrl": "https://www.mokenvision.com/en/sally/845-maria-3760314196925.html"
+      }
+    ]
+  },
+  "mandy": {
+    "model": "Mandy",
+    "variants": [
+      {
+        "color": "Blue",
+        "imageUrl": "https://www.mokenvision.com/5205-home_default/maria.jpg",
+        "productUrl": "https://www.mokenvision.com/en/mandy/848-maria-3760314196802.html"
+      }
+    ]
+  },
+  "giulia": {
+    "model": "Giulia",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/5231-home_default/chirac.jpg",
+        "productUrl": "https://www.mokenvision.com/en/giulia/852-chirac-3760314196871.html"
+      }
+    ]
+  },
+  "bryson": {
+    "model": "Bryson",
+    "variants": [
+      {
+        "color": "Blue",
+        "imageUrl": "https://www.mokenvision.com/3399-home_default/bryson.jpg",
+        "productUrl": "https://www.mokenvision.com/en/bryson/533-bryson-3760314193443.html"
+      }
+    ]
+  },
+  "luz": {
+    "model": "Luz",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/5385-home_default/luz.jpg",
+        "productUrl": "https://www.mokenvision.com/en/luz/540-luz-3760314193320.html"
+      }
+    ]
+  },
+  "maria": {
+    "model": "Maria",
+    "variants": [
+      {
+        "color": "Pink",
+        "imageUrl": "https://www.mokenvision.com/3425-home_default/maria.jpg",
+        "productUrl": "https://www.mokenvision.com/en/maria/541-maria-3760314193559.html"
+      }
+    ]
+  },
+  "mary": {
+    "model": "Mary",
+    "variants": [
+      {
+        "color": "Blue",
+        "imageUrl": "https://www.mokenvision.com/3434-home_default/mary.jpg",
+        "productUrl": "https://www.mokenvision.com/en/mary/544-mary-3760314193474.html"
+      }
+    ]
+  },
+  "sasha": {
+    "model": "Sasha",
+    "variants": [
+      {
+        "color": "Yellow",
+        "imageUrl": "https://www.mokenvision.com/3445-home_default/sasha.jpg",
+        "productUrl": "https://www.mokenvision.com/en/sasha/548-sasha-3760314193504.html"
+      }
+    ]
+  },
+  "gary": {
+    "model": "Gary",
+    "variants": [
+      {
+        "color": "Yellow",
+        "imageUrl": "https://www.mokenvision.com/3454-home_default/gary.jpg",
+        "productUrl": "https://www.mokenvision.com/en/gary/551-gary-3760314193399.html"
+      }
+    ]
+  },
+  "jack": {
+    "model": "Jack",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/3465-home_default/jack.jpg",
+        "productUrl": "https://www.mokenvision.com/en/jack/554-jack-3760314193382.html"
+      }
+    ]
+  },
+  "crossroads": {
+    "model": "Crossroads",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/3478-home_default/crossroads.jpg",
+        "productUrl": "https://www.mokenvision.com/en/crossroads/558-crossroads-3760314193344.html"
+      }
+    ]
+  },
+  "elena": {
+    "model": "Elena",
+    "variants": [
+      {
+        "color": "Rose",
+        "imageUrl": "https://www.mokenvision.com/3417-home_default/elena.jpg",
+        "productUrl": "https://www.mokenvision.com/en/elena/538-elena-3760314193511.html"
+      }
+    ]
+  },
+  "marius": {
+    "model": "Marius",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/2979-home_default/marius.jpg",
+        "productUrl": "https://www.mokenvision.com/en/marius/434-marius.html"
+      }
+    ]
+  },
+  "oscar": {
+    "model": "Oscar",
+    "variants": [
+      {
+        "color": "Yellow",
+        "imageUrl": "https://www.mokenvision.com/2983-home_default/oscar.jpg",
+        "productUrl": "https://www.mokenvision.com/en/oscar/436-oscar-3760314192378.html"
+      }
+    ]
+  },
+  "kent": {
+    "model": "Kent",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/2617-home_default/kent.jpg",
+        "productUrl": "https://www.mokenvision.com/en/kent/283-kent-3760314191418.html"
+      }
+    ]
+  },
+  "sawdust": {
+    "model": "Sawdust",
+    "variants": [
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/2675-home_default/sawdust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/sawdust/331-sawdust-1000005892425.html"
+      }
+    ]
+  },
+  "still": {
+    "model": "Still",
+    "variants": [
+      {
+        "color": "Gray",
+        "imageUrl": "https://www.mokenvision.com/2664-home_default/still.jpg",
+        "productUrl": "https://www.mokenvision.com/en/still/319-still-1000005892319.html"
+      }
+    ]
+  },
+  "duke": {
+    "model": "Duke",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/2642-home_default/duke.jpg",
+        "productUrl": "https://www.mokenvision.com/en/duke/297-duke-3760314191555.html"
+      }
+    ]
+  },
+  "jeanne": {
+    "model": "Jeanne",
+    "variants": [
+      {
+        "color": "Crystal",
+        "imageUrl": "https://www.mokenvision.com/2645-home_default/jeanne.jpg",
+        "productUrl": "https://www.mokenvision.com/en/jeanne/299-jeanne-3760314191517.html"
+      }
+    ]
+  },
+  "rust": {
+    "model": "Rust",
+    "variants": [
+      {
+        "color": "Gray",
+        "imageUrl": "https://www.mokenvision.com/2653-home_default/rust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/rust/308-rust-1000005892562.html"
+      }
+    ]
+  },
+  "leaf": {
+    "model": "Leaf",
+    "variants": [
+      {
+        "color": "Wood",
+        "imageUrl": "https://www.mokenvision.com/2674-home_default/leaf.jpg",
+        "productUrl": "https://www.mokenvision.com/en/home/330-leaf.html"
+      }
+    ]
+  },
+  "boucau": {
+    "model": "Boucau",
+    "variants": [
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/2655-home_default/boucau.jpg",
+        "productUrl": "https://www.mokenvision.com/en/boucau/310-boucau-1000005892487.html"
+      }
+    ]
+  },
+  "laas": {
+    "model": "Laas",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/2651-home_default/laas.jpg",
+        "productUrl": "https://www.mokenvision.com/en/laas/306-laas-1000005892531.html"
+      }
+    ]
+  },
+  "nina": {
+    "model": "Nina",
+    "variants": [
+      {
+        "color": "Rose",
+        "imageUrl": "https://www.mokenvision.com/2634-home_default/nina.jpg",
+        "productUrl": "https://www.mokenvision.com/en/eyeglasses/293-nina-3760314191586.html"
+      }
+    ]
+  },
+  "fine": {
+    "model": "Fine",
+    "variants": [
+      {
+        "color": "Gray",
+        "imageUrl": "https://www.mokenvision.com/2670-home_default/fine.jpg",
+        "productUrl": "https://www.mokenvision.com/en/fine/325-fine-1000005892371.html"
+      }
+    ]
+  },
+  "ella": {
+    "model": "Ella",
+    "variants": [
+      {
+        "color": "Horn/Nude Sand",
+        "imageUrl": "https://www.mokenvision.com/2630-home_default/ella.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ella/291-ella-3760314191500.html"
+      }
+    ]
+  },
+  "aaron": {
+    "model": "Aaron",
+    "variants": [
+      {
+        "color": "Blue",
+        "imageUrl": "https://www.mokenvision.com/2964-home_default/aaron.jpg",
+        "productUrl": "https://www.mokenvision.com/en/aaron/427-aaron-3760314192316.html"
+      }
+    ]
+  },
+  "chirac": {
+    "model": "Chirac",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/2968-home_default/chirac.jpg",
+        "productUrl": "https://www.mokenvision.com/en/chirac/429-chirac-3760314192286.html"
+      }
+    ]
+  },
+  "carissa": {
+    "model": "CARISSA",
+    "variants": [
+      {
+        "color": "Sawdust",
+        "imageUrl": "https://www.mokenvision.com/3762-home_default/sawdust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/carissa/610-sawdust-3760314195881.html"
+      }
+    ]
+  },
+  "john": {
+    "model": "JOHN",
+    "variants": [
+      {
+        "color": "Sawdust",
+        "imageUrl": "https://www.mokenvision.com/3777-home_default/sawdust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/john/614-sawdust-3760314195829.html"
+      }
+    ]
+  },
+  "monika": {
+    "model": "MONIKA",
+    "variants": [
+      {
+        "color": "Sawdust",
+        "imageUrl": "https://www.mokenvision.com/3867-home_default/sawdust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/monika/618-sawdust-3760314195447.html"
+      }
+    ]
+  },
+  "jessy": {
+    "model": "JESSY",
+    "variants": [
+      {
+        "color": "Blue",
+        "imageUrl": "https://www.mokenvision.com/3801-home_default/sawdust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/jessica/621-sawdust-3760314195935.html"
+      }
+    ]
+  },
+  "lucy": {
+    "model": "LUCY",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/3813-home_default/sawdust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/lucy/624-sawdust-3760314195911.html"
+      }
+    ]
+  },
+  "laura": {
+    "model": "LAURA",
+    "variants": [
+      {
+        "color": "Green",
+        "imageUrl": "https://www.mokenvision.com/3841-home_default/sawdust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/laura/630-sawdust-3760314195843.html"
+      }
+    ]
+  },
+  "jade": {
+    "model": "JADE",
+    "variants": [
+      {
+        "color": "Green",
+        "imageUrl": "https://www.mokenvision.com/3852-home_default/sawdust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/jade/633-sawdust-3760314195973.html"
+      }
+    ]
+  },
+  "george": {
+    "model": "George",
+    "variants": [
+      {
+        "color": "Aged Gold Tortoiseshell",
+        "imageUrl": "https://www.mokenvision.com/4621-home_default/still.jpg",
+        "productUrl": "https://www.mokenvision.com/en/eyeglasses/729-still-3760314196031.html"
+      }
+    ]
+  },
+  "matt": {
+    "model": "Matt",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/4633-home_default/still.jpg",
+        "productUrl": "https://www.mokenvision.com/en/eyeglasses/732-still-3760314196048.html"
+      }
+    ]
+  },
+  "layne": {
+    "model": "Layne",
+    "variants": [
+      {
+        "color": "Crystal",
+        "imageUrl": "https://www.mokenvision.com/4647-home_default/aaron.jpg",
+        "productUrl": "https://www.mokenvision.com/en/eyeglasses/736-aaron-3760314196291.html"
+      }
+    ]
+  },
+  "daria": {
+    "model": "Daria",
+    "variants": [
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/5212-home_default/luz.jpg",
+        "productUrl": "https://www.mokenvision.com/en/daria/855-luz-3760314196864.html"
+      }
+    ]
+  },
+  "dylan": {
+    "model": "Dylan",
+    "variants": [
+      {
+        "color": "Crystal",
+        "imageUrl": "https://www.mokenvision.com/5192-home_default/kent.jpg",
+        "productUrl": "https://www.mokenvision.com/en/dylan/858-kent-3760314196710.html"
+      }
+    ]
+  },
+  "tom": {
+    "model": "Tom",
+    "variants": [
+      {
+        "color": "Blue",
+        "imageUrl": "https://www.mokenvision.com/5176-home_default/duke.jpg",
+        "productUrl": "https://www.mokenvision.com/en/tom/861-duke-3760314196758.html"
+      }
+    ]
+  },
+  "kyle": {
+    "model": "Kyle",
+    "variants": [
+      {
+        "color": "Gray",
+        "imageUrl": "https://www.mokenvision.com/5181-home_default/duke.jpg",
+        "productUrl": "https://www.mokenvision.com/en/kyle/864-duke-3760314196727.html"
+      }
+    ]
+  },
+  "ava": {
+    "model": "Ava",
+    "variants": [
+      {
+        "color": "Black Tortoiseshell",
+        "imageUrl": "https://www.mokenvision.com/5282-home_default/maria.jpg",
+        "productUrl": "https://www.mokenvision.com/en/ava/875-maria-3760314197823.html"
+      }
+    ]
+  },
+  "helen": {
+    "model": "Helen",
+    "variants": [
+      {
+        "color": "Green",
+        "imageUrl": "https://www.mokenvision.com/5290-home_default/elena.jpg",
+        "productUrl": "https://www.mokenvision.com/en/helen/878-elena-3760314197915.html"
+      }
+    ]
+  },
+  "jana": {
+    "model": "Jana",
+    "variants": [
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/5305-home_default/jeanne.jpg",
+        "productUrl": "https://www.mokenvision.com/en/jana/882-jeanne-3760314197878.html"
+      }
+    ]
+  },
+  "mily": {
+    "model": "Mily",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/5318-home_default/maria.jpg",
+        "productUrl": "https://www.mokenvision.com/en/mily/885-maria-3760314197960.html"
+      }
+    ]
+  },
+  "tessa": {
+    "model": "Tessa",
+    "variants": [
+      {
+        "color": "Brown",
+        "imageUrl": "https://www.mokenvision.com/5331-home_default/nina.jpg",
+        "productUrl": "https://www.mokenvision.com/en/tessa/888-nina-3760314197861.html"
+      }
+    ]
+  },
+  "valerie": {
+    "model": "Valerie",
+    "variants": [
+      {
+        "color": "Blue",
+        "imageUrl": "https://www.mokenvision.com/5344-home_default/chirac.jpg",
+        "productUrl": "https://www.mokenvision.com/en/valerie/891-chirac-3760314197991.html"
+      }
+    ]
+  },
+  "kurtiss": {
+    "model": "Kurtiss",
+    "variants": [
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/4269-home_default/kurtiss.jpg",
+        "productUrl": "https://www.mokenvision.com/en/kurtiss/516-960-kurtiss-3760314193634.html"
+      }
+    ]
+  },
+  "hawkins": {
+    "model": "Hawkins",
+    "variants": [
+      {
+        "color": "Grey (Glacier)",
+        "imageUrl": "https://www.mokenvision.com/2824-home_default/hawkins-glacier.jpg",
+        "productUrl": "https://www.mokenvision.com/en/hawkins/376-hawkins-glacier-3760314191906.html"
+      }
+    ]
+  },
+  "kutbak": {
+    "model": "Kutbak",
+    "variants": [
+      {
+        "color": "Blue",
+        "imageUrl": "https://www.mokenvision.com/5011-home_default/the-rockett.jpg",
+        "productUrl": "https://www.mokenvision.com/en/kutbak/750-1214-the-rockett-3760314196130.html"
+      }
+    ]
+  },
+  "moana": {
+    "model": "Moana",
+    "variants": [
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/5017-home_default/kurtiss.jpg",
+        "productUrl": "https://www.mokenvision.com/en/moana/818-1339-kurtiss-3760314197168.html"
+      }
+    ]
+  },
+  "olina": {
+    "model": "Olina",
+    "variants": [
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/5023-home_default/kurtiss.jpg",
+        "productUrl": "https://www.mokenvision.com/en/olina/822-1346-kurtiss-3760314197199.html"
+      }
+    ]
+  },
+  "keli": {
+    "model": "Keli",
+    "variants": [
+      {
+        "color": "Beige (Sand)",
+        "imageUrl": "https://www.mokenvision.com/5059-home_default/kurtiss.jpg",
+        "productUrl": "https://www.mokenvision.com/en/keli/825-1352-kurtiss-3760314197236.html"
+      }
+    ]
+  },
+  "hawkinsvintage": {
+    "model": "Hawkins Vintage",
+    "variants": [
+      {
+        "color": "Grey",
+        "imageUrl": "https://www.mokenvision.com/4659-home_default/hawkins-vintage.jpg",
+        "productUrl": "https://www.mokenvision.com/en/hawkins-vintage/510-933-hawkins-vintage-3760314193665.html"
+      }
+    ]
+  },
+  "josephineii": {
+    "model": "JOSEPHINE II",
+    "variants": [
+      {
+        "color": "Green",
+        "imageUrl": "https://www.mokenvision.com/3825-home_default/sawdust.jpg",
+        "productUrl": "https://www.mokenvision.com/en/josephine-ii/627-sawdust-3760314195362.html"
+      }
+    ]
+  },
+  "rockett": {
+    "model": "The Rockett",
+    "variants": [
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/4304-home_default/the-rockett.jpg",
+        "productUrl": "https://www.mokenvision.com/en/rockett/234-964-the-rockett-3760314190534.html"
+      }
+    ]
+  },
+  "hawkinssmk": {
+    "model": "Hawkins SMK",
+    "variants": [
+      {
+        "color": "Grey",
+        "imageUrl": "https://www.mokenvision.com/4973-home_default/hawkins.jpg",
+        "productUrl": "https://www.mokenvision.com/en/hawkins/740-1203-hawkins-3760314196246.html"
+      }
+    ]
+  },
+  "hawkinstheheliaspromodel": {
+    "model": "Hawkins: The Helias Pro Model",
+    "variants": [
+      {
+        "color": "Black",
+        "imageUrl": "https://www.mokenvision.com/4696-home_default/hawkins-glacier.jpg",
+        "productUrl": "https://www.mokenvision.com/en/hawkins/744-1206-hawkins-glacier-3760314196437.html"
       }
     ]
   }

@@ -20,16 +20,39 @@
 // Sa visibilité doit donc couvrir les deux cas : les comptes où il est master_rep_id
 // (ceux de son équipe) ET ceux dont il est directement owner_rep_id (les siens).
 import { ROLES } from "./roles.js";
+import { query } from "./db.js";
+
+// Sous-requête vivante : équipe ACTUELLE d'un Master Rep (par son user_id),
+// jamais le champ dénormalisé accounts.master_rep_id — cf. correctif ci-dessous.
+const MANAGED_REPS_SUBQUERY = `
+  SELECT sr.user_id FROM sales_reps sr
+  JOIN master_reps mr ON sr.master_rep_id = mr.id
+  WHERE mr.user_id = $PLACEHOLDER
+`;
 
 // Retourne { where: "...", params: [...] } à injecter dans une requête sur `accounts`.
 // `paramOffset` permet de placer ces paramètres après d'autres déjà utilisés dans la requête.
+//
+// Correctif (fiche corrective Master Rep V4, section "Clients & prospects" :
+// "comptes de l'équipe pas correctement affichés") : le scope Master Rep
+// s'appuyait sur accounts.master_rep_id, un champ dénormalisé qui (1) n'est
+// JAMAIS renseigné quand un représentant crée lui-même son compte (branche
+// REPRESENTANT de POST /accounts, cf. routes/accounts.js — seul owner_rep_id
+// y est positionné) et (2) n'est jamais mis à jour rétroactivement quand un
+// représentant change de Master Rep (PATCH /team/members/:userId ne touche
+// que sales_reps.master_rep_id, jamais les comptes déjà créés). Résultat : la
+// quasi-totalité des comptes créés par les représentants eux-mêmes — le cas
+// normal — restaient invisibles pour leur Master Rep. Le scope repose donc
+// maintenant sur une jointure vivante contre sales_reps/master_reps (l'équipe
+// RÉELLE au moment de la requête), jamais sur la colonne dénormalisée.
 export function accountsScopeClause(user, paramOffset = 0) {
   if (user.role === ROLES.REPRESENTANT) {
     return { where: `owner_rep_id = $${paramOffset + 1}`, params: [user.id] };
   }
   if (user.role === ROLES.MASTER_REP) {
+    const p = paramOffset + 1;
     return {
-      where: `(master_rep_id = $${paramOffset + 1} OR owner_rep_id = $${paramOffset + 1})`,
+      where: `(owner_rep_id = $${p} OR owner_rep_id IN (${MANAGED_REPS_SUBQUERY.replace("$PLACEHOLDER", `$${p}`)}))`,
       params: [user.id],
     };
   }
@@ -52,11 +75,17 @@ export function canAccessAccountsModule(role) {
 }
 
 // Un compte donné (déjà chargé en DB) est-il visible par cet utilisateur ?
-export function canAccessAccount(user, account) {
+// Async depuis le correctif Master Rep V4 (cf. accountsScopeClause
+// ci-dessus) : le cas MASTER_REP doit vérifier l'équipe RÉELLE actuelle
+// (sales_reps/master_reps), jamais le champ dénormalisé
+// account.master_rep_id, pour rester cohérent avec les listes.
+export async function canAccessAccount(user, account) {
   if (canViewAllAccounts(user.role)) return true;
   if (user.role === ROLES.REPRESENTANT) return account.owner_rep_id === user.id;
   if (user.role === ROLES.MASTER_REP) {
-    return account.master_rep_id === user.id || account.owner_rep_id === user.id;
+    if (account.owner_rep_id === user.id) return true;
+    const { rows } = await query(MANAGED_REPS_SUBQUERY.replace("$PLACEHOLDER", "$1"), [user.id]);
+    return rows.some((r) => r.user_id === account.owner_rep_id);
   }
   return false;
 }

@@ -34,7 +34,7 @@ interactionsRouter.get(
   async (req, res) => {
     const account = await loadAccountOr404(req.params.accountId, res);
     if (!account) return;
-    if (!canAccessAccount(req.user, account)) {
+    if (!(await canAccessAccount(req.user, account))) {
       return res.status(403).json({ error: "Accès refusé à ce compte." });
     }
     const { rows } = await query(
@@ -57,7 +57,7 @@ interactionsRouter.post(
   async (req, res) => {
     const account = await loadAccountOr404(req.params.accountId, res);
     if (!account) return;
-    if (!canAccessAccount(req.user, account)) {
+    if (!(await canAccessAccount(req.user, account))) {
       return res.status(403).json({ error: "Accès refusé à ce compte." });
     }
 

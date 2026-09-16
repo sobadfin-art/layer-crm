@@ -212,7 +212,7 @@ accountsRouter.get(
     );
     const account = rows[0];
     if (!account) return res.status(404).json({ error: "Compte introuvable." });
-    if (!canAccessAccount(req.user, account)) {
+    if (!(await canAccessAccount(req.user, account))) {
       return res.status(403).json({ error: "Accès refusé à ce compte." });
     }
     res.json(toCamel(account));
@@ -245,6 +245,19 @@ accountsRouter.post(
       // Un représentant est automatiquement propriétaire de ce qu'il crée,
       // et ne peut jamais s'affecter un masterRep lui-même (cf. section 3).
       ownerRepId = req.user.id;
+      // Champ informatif (affichage, filtre carte) renseigné avec son Master
+      // Rep ACTUEL s'il en a un — corrige le cas le plus fréquent qui
+      // laissait ce champ vide (fiche corrective Master Rep V4 : "comptes de
+      // l'équipe pas correctement affichés"). Le contrôle d'accès réel, lui,
+      // ne dépend plus de ce champ du tout depuis le même correctif (cf.
+      // lib/scope.js) : ceci ne fait qu'améliorer la donnée affichée.
+      const { rows: mrRows } = await query(
+        `SELECT mr.user_id FROM sales_reps sr
+         JOIN master_reps mr ON sr.master_rep_id = mr.id
+         WHERE sr.user_id = $1`,
+        [req.user.id]
+      );
+      masterRepId = mrRows[0]?.user_id ?? null;
     } else if (req.user.role === ROLES.MASTER_REP) {
       // Règle confirmée : le Master Rep choisit un représentant de son équipe
       // (champ obligatoire dans l'UI, mais côté API on accepte son absence) ;
@@ -372,7 +385,7 @@ accountsRouter.patch(
     ]);
     const existing = existingRows[0];
     if (!existing) return res.status(404).json({ error: "Compte introuvable." });
-    if (!canAccessAccount(req.user, existing)) {
+    if (!(await canAccessAccount(req.user, existing))) {
       return res.status(403).json({ error: "Accès refusé à ce compte." });
     }
 
@@ -482,7 +495,7 @@ accountsRouter.patch(
     ]);
     const existing = existingRows[0];
     if (!existing) return res.status(404).json({ error: "Compte introuvable." });
-    if (!canAccessAccount(req.user, existing)) {
+    if (!(await canAccessAccount(req.user, existing))) {
       return res.status(403).json({ error: "Accès refusé à ce compte." });
     }
 
@@ -536,7 +549,7 @@ accountsRouter.patch(
     ]);
     const existing = existingRows[0];
     if (!existing) return res.status(404).json({ error: "Compte introuvable." });
-    if (!canAccessAccount(req.user, existing)) {
+    if (!(await canAccessAccount(req.user, existing))) {
       return res.status(403).json({ error: "Accès refusé à ce compte." });
     }
 

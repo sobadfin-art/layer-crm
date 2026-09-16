@@ -4,6 +4,7 @@ import { query } from "../lib/db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { ROLES } from "../lib/roles.js";
 import { canAccessAccount } from "../lib/scope.js";
+import { getManagedRepUserIds } from "../lib/managedReps.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
 import { notifyUsers, userIdsWithRoles } from "../lib/notifications.js";
@@ -57,10 +58,19 @@ savRouter.get("/", requireAuth, requireRole(...SAV_ROLES), async (req, res) => {
     params
   );
 
-  const visible =
-    req.user.role === ROLES.FRONT_DESK || req.user.role === ROLES.DIRECTEUR
-      ? rows
-      : rows.filter((r) => canAccessAccount(req.user, { owner_rep_id: r.owner_rep_id, master_rep_id: r.master_rep_id }));
+  // Filtrage synchrone équivalent à canAccessAccount, mais sans une requête
+  // par ligne : pour un Master Rep, l'équipe gérée (sales_reps/master_reps,
+  // même source vivante que accountsScopeClause — cf. correctif Master Rep
+  // V4 dans lib/scope.js) est résolue une seule fois avant le filtre.
+  let visible;
+  if (req.user.role === ROLES.FRONT_DESK || req.user.role === ROLES.DIRECTEUR) {
+    visible = rows;
+  } else if (req.user.role === ROLES.MASTER_REP) {
+    const managedIds = new Set(await getManagedRepUserIds(req.user.id));
+    visible = rows.filter((r) => r.owner_rep_id === req.user.id || managedIds.has(r.owner_rep_id));
+  } else {
+    visible = rows.filter((r) => r.owner_rep_id === req.user.id);
+  }
 
   res.json(toCamelList(visible));
 });
@@ -70,7 +80,7 @@ savRouter.get("/:id", requireAuth, requireRole(...SAV_ROLES), async (req, res) =
   if (!ticket) return;
   const account = await loadAccountOr404(ticket.account_id, res);
   if (!account) return;
-  if (!canAccessAccount(req.user, account)) {
+  if (!(await canAccessAccount(req.user, account))) {
     return res.status(403).json({ error: "Accès refusé à ce compte." });
   }
 
@@ -96,7 +106,7 @@ savRouter.post("/", requireAuth, requireRole(...SAV_ROLES), async (req, res) => 
 
   const account = await loadAccountOr404(parsed.data.accountId, res);
   if (!account) return;
-  if (!canAccessAccount(req.user, account)) {
+  if (!(await canAccessAccount(req.user, account))) {
     return res.status(403).json({ error: "Accès refusé à ce compte." });
   }
 
@@ -181,7 +191,7 @@ savRouter.post("/:id/notes", requireAuth, requireRole(...SAV_ROLES), async (req,
   if (!ticket) return;
   const account = await loadAccountOr404(ticket.account_id, res);
   if (!account) return;
-  if (!canAccessAccount(req.user, account)) {
+  if (!(await canAccessAccount(req.user, account))) {
     return res.status(403).json({ error: "Accès refusé à ce compte." });
   }
 

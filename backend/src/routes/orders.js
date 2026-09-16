@@ -17,13 +17,25 @@ export const ordersRouter = Router();
 // commandes (Master Rep = vue de son secteur, Front desk/Directeur = tout).
 const ORDER_ROLES = [ROLES.REPRESENTANT, ROLES.MASTER_REP, ROLES.FRONT_DESK, ROLES.DIRECTEUR];
 
-// Création / envoi au front desk : RÉSERVÉ AU REPRÉSENTANT — règle non
-// négociable des PDF de cadrage (2026-09-15, "Matrice des responsabilités" :
-// Créer une commande / Envoyer au Front Desk = Oui pour Représentant
-// uniquement, Non pour Master Rep, Front Desk et Administrateur). Le Master
-// Rep a un accès en LECTURE aux commandes de son équipe (ORDER_ROLES
-// ci-dessus, routes GET) mais ne doit jamais pouvoir en créer une lui-même.
-const ORDER_CREATE_ROLES = [ROLES.REPRESENTANT];
+// Création / envoi au front desk : à l'origine RÉSERVÉ AU REPRÉSENTANT,
+// règle documentée comme non négociable par les PDF de cadrage du
+// 2026-09-15 ("Matrice des responsabilités" : Créer une commande / Envoyer au
+// Front Desk = Oui pour Représentant uniquement, Non pour Master Rep, Front
+// Desk et Administrateur).
+//
+// Correctif (fiche corrective Direction Commerciale V3, 2026-09-16) : ce
+// document déclare explicitement ses règles "les plus récentes" et qu'elles
+// "remplacent les règles antérieures incompatibles, notamment sur la
+// capacité à créer une commande" — et ceci UNIQUEMENT pour le rôle DIRECTEUR
+// (section dédiée : "le Directeur doit pouvoir créer une commande, comme un
+// représentant"). Le Master Rep n'est PAS concerné par cette levée : sa
+// restriction "lecture seule (pas de création)" reste une décision client
+// explicite distincte et continue de s'appliquer sans changement — ne pas
+// l'ajouter ici même si un futur document semble le suggérer sans le dire
+// aussi explicitement que celui-ci pour Directeur. Front Desk et
+// Administrateur restent également exclus, cf. règle d'origine ci-dessus,
+// jamais mentionnés par le correctif Direction Commerciale.
+const ORDER_CREATE_ROLES = [ROLES.REPRESENTANT, ROLES.DIRECTEUR];
 
 async function loadAccountWithCountry(accountId) {
   const { rows } = await query(
@@ -148,7 +160,7 @@ ordersRouter.post("/", requireAuth, requireRole(...ORDER_CREATE_ROLES), async (r
 
   const account = await loadAccountWithCountry(data.accountId);
   if (!account) return res.status(400).json({ error: "Compte introuvable." });
-  if (!canAccessAccount(req.user, account)) {
+  if (!(await canAccessAccount(req.user, account))) {
     return res.status(403).json({ error: "Accès refusé à ce compte." });
   }
 

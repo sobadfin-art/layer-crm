@@ -78,7 +78,12 @@ teamRouter.post("/territories", requireAuth, requireRole(ROLES.DIRECTEUR), async
 // colonne SQL `master_rep_id`, pour que toCamelList continue de produire
 // `masterRepId`) au lieu de `sr.master_rep_id` — cohérent avec le users.id
 // utilisé partout ailleurs.
-teamRouter.get("/members", requireAuth, requireRole(ROLES.DIRECTEUR), async (req, res) => {
+// FRONT_DESK ajouté (fiche corrective Front Desk V3, section 2 : "la création
+// d'un compte doit reprendre la même fiche complète que celle définie pour
+// les autres rôles autorisés" — le formulaire de création de compte du Front
+// Desk a besoin de cette même liste représentants/Master Reps pour choisir le
+// ownerRepId, exactement comme le Directeur).
+teamRouter.get("/members", requireAuth, requireRole(ROLES.DIRECTEUR, ROLES.FRONT_DESK), async (req, res) => {
   const { rows } = await query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.active,
             mr.user_id AS master_rep_id, sr.territory_ids,
