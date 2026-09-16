@@ -2026,6 +2026,86 @@ Corrections réellement apportées ce lot :
     Sauvegarde préalable : déclinée explicitement par le client pour cette opération ; un instantané
     JSON des lignes concernées (avant modification) a été conservé de mon côté par précaution.
 
+- **Décluttering complémentaire — 2 angles morts trouvés après coup (2026-09-16, demande directe :
+  "dans mon tableau de bord les anciens rep fictifs dans performance de l'équipe sont restés, tous
+  commes les ca des commande fictive dans l'app de data. retire les mais ne touche pas au reste")** :
+  le nettoyage précédent (entrée ci-dessus) couvrait l'écran Équipe, l'écran Utilisateurs et la
+  liste des commandes, mais deux autres endroits utilisaient leur propre requête/dérivation de
+  données, jamais touchée jusqu'ici — corrigés ici, strictement rien d'autre modifié.
+  - `frontend/src/pages/DirecteurDashboard.jsx` (bloc "Performance de l'équipe" du tableau de bord
+    Directeur — écran différent de l'écran Équipe corrigé précédemment, avec sa propre dérivation de
+    `members`) : même correctif que `TeamManagement.jsx` — comptes désactivés masqués par défaut,
+    bouton Afficher/Masquer désactivés. Le formulaire "Nouvel objectif" et la carte des comptes
+    (`AccountsMap`, sélecteur de représentant) continuent de proposer tout le monde (dérivation
+    séparée, non filtrée), volontairement non touchés.
+  - `backend/src/routes/dashboard.js` (`GET /api/dashboard/bestsellers` et `GET
+    /api/dashboard/analytics`, section "Data" de l'app) : ces deux endpoints filtrent déjà les
+    commandes par statut (`COUNTED_STATUSES` = VALIDEE/EXPORTEE_DOLIBARR, cf. `objectiveProgress.js`)
+    mais ne filtraient jamais par statut de COMPTE — une commande EXPORTEE_DOLIBARR rattachée à un
+    compte de test désormais archivé restait donc comptée dans les totaux CA (bestsellers ET
+    analytics), contrairement à la liste des commandes elle-même (déjà corrigée). Ajout d'une clause
+    `a.status != 'ARCHIVE'` aux deux requêtes (même logique que partout ailleurs) — aucun changement
+    pour un compte ACTIF/INACTIF. `GET /api/dashboard/extract.xlsx` (export Excel, bouton distinct de
+    ces deux onglets) n'a délibérément pas été touché, non demandé explicitement — à signaler si
+    besoin, il a probablement le même angle mort.
+  - Vérifié avant application : avec le compte de test "Boutique Via Rep" (déjà archivé dans
+    l'environnement de développement, VALIDEE + EXPORTEE_DOLIBARR représentant 190,50 € comptés à
+    tort) confirmé disparu des totaux Bestsellers ET Analytics après correctif (986,00 € restants
+    des deux côtés, montant identique en dev = comportement cohérent) ; bouton Afficher/Masquer du
+    tableau de bord Directeur vérifié dans les deux sens comme pour l'écran Équipe.
+  - Comme pour l'entrée précédente : purement du code (deux fichiers backend/frontend en plus),
+    aucune nouvelle opération sur les données de production — la sauvegarde déclinée précédemment
+    reste la situation actuelle, aucune nouvelle demande faite à ce sujet.
+
+- **Décluttering généralisé des reps fictifs (2026-09-16, demande directe : "il faut que tu retires
+  tous les reps fictifs luis elrey, Alex Rep, Joe Rep2, Bea Trice, sam Master Rep de tous les
+  filtres, et apparitions dans l'app")** : les deux correctifs précédents (entrées ci-dessus)
+  masquaient les comptes désactivés à deux endroits précis via des bascules d'affichage locales,
+  mais tout le reste de l'app (une dizaine d'écrans : Data, Règles commerciales, Liste clients,
+  création rapide de commande, fiche compte, écran Équipe du Master Rep, tableau de bord Master
+  Rep, formulaires de compte, formulaire "Nouvel objectif", carte des comptes...) consommait le
+  même endpoint `GET /api/team/members` (ou `GET /api/team/mine`) sans aucun filtre — les 5 reps
+  désactivés y réapparaissaient donc partout ailleurs. Plutôt que corriger chaque écran un par un,
+  le filtre a été déplacé à la source :
+  - `backend/src/routes/team.js` : `GET /team/members` exclut désormais les comptes désactivés par
+    défaut (`u.active = true`), avec une bascule d'opt-in `?includeInactive=true` réservée aux deux
+    seuls écrans qui ont un bouton explicite "Afficher les désactivés" (Équipe et tableau de bord
+    Directeur). `GET /team/mine` (Master Rep) filtre désormais aussi `active = true`, sans bascule
+    (aucun de ses deux écrans appelants n'en a besoin). Garantit qu'aucun écran, actuel ou futur, ne
+    peut plus faire réapparaître un compte désactivé par erreur.
+  - `frontend/src/pages/TeamManagement.jsx` : bascule sur `?includeInactive=true` (pour garder son
+    bouton "Afficher les désactivés" fonctionnel) ; le formulaire "Nouvel objectif", jusqu'ici
+    volontairement non filtré, filtre désormais lui aussi sur les comptes actifs uniquement.
+  - `frontend/src/pages/DirecteurDashboard.jsx` : même bascule `?includeInactive=true` (pour le bloc
+    "Performance de l'équipe" et son bouton Afficher/Masquer) ; le formulaire "Nouvel objectif" ET la
+    carte des comptes (`AccountsMap`, sélecteur de représentant) filtrent désormais eux aussi sur les
+    comptes actifs — ceci élargit volontairement le correctif précédent, qui les laissait
+    intentionnellement non filtrés ("ne touche pas au reste") : la nouvelle demande du client couvre
+    explicitement "tous les filtres, et apparitions dans l'app", ce qui inclut ces deux-là.
+  - Les ~10 autres écrans identifiés (Data, Règles commerciales, Liste clients, création rapide de
+    commande, fiche compte, Équipe Master Rep, tableau de bord Master Rep, formulaires de compte,
+    hook `useObjectiveForm`, carte des comptes côté Master Rep) n'ont nécessité aucune modification :
+    ils appellent déjà `/team/members` ou `/team/mine` sans paramètre, donc bénéficient automatiquement
+    du nouveau filtre par défaut — vérifié fichier par fichier, aucun ne passe `includeInactive=true`
+    ni ne contourne le filtre autrement.
+  - "Retire leur clients associé et leur commande également" : déjà accompli lors du premier
+    nettoyage (entrée plus haut, 2026-09-16) — les 7 clients fictifs archivés et les 12 commandes
+    associées annulées/exclues appartiennent précisément à ces 5 mêmes représentants fictifs, rien de
+    nouveau à faire de ce côté.
+  - Vérifié qu'aucun des 5 reps fictifs n'a d'objectif qui lui soit rattaché en production (un seul
+    objectif existe en production au total, sur un vrai commercial, non concerné) — pas de nettoyage
+    de données supplémentaire nécessaire pour cette demande.
+  - Vérifié localement (requêtes API directes + Playwright) : `GET /team/members` sans paramètre
+    exclut bien les comptes inactifs, `?includeInactive=true` les restitue tous ; `GET /team/mine`
+    exclut bien les comptes inactifs pour un Master Rep actif ; formulaire "Nouvel objectif" (écran
+    Équipe et tableau de bord Directeur) sans compte inactif dans ses listes déroulantes ; bouton
+    "Afficher les désactivés" toujours fonctionnel dans les deux sens sur les deux écrans qui en
+    disposent.
+  - Purement du code (backend + 2 fichiers frontend), aucune nouvelle opération sur les données de
+    production — la sauvegarde déclinée précédemment reste la situation actuelle, aucune nouvelle
+    demande faite à ce sujet. Ne prendra effet en production qu'après le prochain déploiement (upload
+    GitHub habituel de ce zip).
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
