@@ -4,20 +4,7 @@ import { MapPin, Search, UserPlus } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
-
-const TYPOLOGIES = [
-  "OPTICIEN",
-  "SURF_SHOP",
-  "FASHION_STORE",
-  "SKATE_SHOP",
-  "SKI_SHOP",
-  "CONCEPT_STORE",
-  "USHIP",
-  "BIKE_STORE",
-  "KEY_ACCOUNT",
-  "DISTRIBUTOR",
-  "AUTRE",
-];
+import AccountFormFields, { accountPayloadFromForm, emptyAccountForm } from "../components/AccountFormFields.jsx";
 
 // Liste des comptes (clients + prospects) — GET /api/accounts est déjà filtré
 // côté serveur selon le rôle (accountsScopeClause) : un représentant n'y voit
@@ -75,14 +62,10 @@ export default function ClientsList() {
   const [repFilter, setRepFilter] = useState("all");
 
   const [showNewAccount, setShowNewAccount] = useState(false);
-  const [newAccountForm, setNewAccountForm] = useState({
-    type: "PROSPECT",
-    name: "",
-    countryCode: "",
-    typology: "OPTICIEN",
-    ownerRepId: "",
-    masterRepId: "",
-  });
+  const [newAccountForm, setNewAccountForm] = useState(emptyAccountForm());
+  const setNewAccountField = useCallback((key, value) => {
+    setNewAccountForm((f) => ({ ...f, [key]: value }));
+  }, []);
   const [creating, setCreating] = useState(false);
   const [newAccountError, setNewAccountError] = useState(null);
   const [toast, setToast] = useState(null);
@@ -154,11 +137,12 @@ export default function ClientsList() {
     }
     setCreating(true);
     try {
+      // Correctif 2026-09-16 (spec "PROFIL REPRÉSENTANT" section 3) : tous
+      // les champs du formulaire (adresses, contact, informations légales,
+      // coordonnées bancaires) sont désormais envoyés — POST /api/accounts
+      // les accepte déjà tous tels quels (cf. createSchema, accounts.js).
       const created = await api.post("/accounts", {
-        type: newAccountForm.type,
-        name: newAccountForm.name.trim(),
-        countryCode: newAccountForm.countryCode,
-        typology: newAccountForm.typology,
+        ...accountPayloadFromForm(newAccountForm),
         // Pour le Représentant, ownerRepId/masterRepId ne sont ni affichés ni
         // pertinents : le serveur les détermine lui-même pour ce rôle (cf.
         // commentaire en tête de fichier) — on ne les envoie donc que quand
@@ -167,7 +151,7 @@ export default function ClientsList() {
           ? { ownerRepId: newAccountForm.ownerRepId, masterRepId: newAccountForm.masterRepId || null }
           : {}),
       });
-      setNewAccountForm({ type: "PROSPECT", name: "", countryCode: "", typology: "OPTICIEN", ownerRepId: "", masterRepId: "" });
+      setNewAccountForm(emptyAccountForm());
       setShowNewAccount(false);
       setToast(t("clients.accountCreated"));
       await load();
@@ -200,75 +184,15 @@ export default function ClientsList() {
         <div className="panel">
           <h3>{t("clients.newAccountTitle")}</h3>
           <form onSubmit={handleCreateAccount}>
-            <div className="cat-tabs" style={{ marginBottom: 10 }}>
-              <button
-                type="button"
-                className={`cat-tab ${newAccountForm.type === "PROSPECT" ? "active" : ""}`}
-                onClick={() => setNewAccountForm((f) => ({ ...f, type: "PROSPECT" }))}
-              >
-                {t("account.prospect")}
-              </button>
-              <button
-                type="button"
-                className={`cat-tab ${newAccountForm.type === "CLIENT" ? "active" : ""}`}
-                onClick={() => setNewAccountForm((f) => ({ ...f, type: "CLIENT" }))}
-              >
-                {t("account.client")}
-              </button>
-            </div>
-            <div className="field">
-              <label>{t("clients.newAccountName")}</label>
-              <input value={newAccountForm.name} onChange={(e) => setNewAccountForm((f) => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label>{t("clients.newAccountCountry")}</label>
-                <select value={newAccountForm.countryCode} onChange={(e) => setNewAccountForm((f) => ({ ...f, countryCode: e.target.value }))}>
-                  <option value="">{t("directeurDashboard.objectiveRepChoose")}</option>
-                  {countries.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>{t("clients.newAccountTypology")}</label>
-                <select value={newAccountForm.typology} onChange={(e) => setNewAccountForm((f) => ({ ...f, typology: e.target.value }))}>
-                  {TYPOLOGIES.map((ty) => (
-                    <option key={ty} value={ty}>
-                      {t(`typology.${ty}`)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {needsOwnerRepPicker && (
-              <div className="form-row">
-                <div className="field">
-                  <label>{t("clients.newAccountOwnerRep")}</label>
-                  <select value={newAccountForm.ownerRepId} onChange={(e) => setNewAccountForm((f) => ({ ...f, ownerRepId: e.target.value }))}>
-                    <option value="">{t("directeurDashboard.objectiveRepChoose")}</option>
-                    {reps.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.firstName} {r.lastName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>{t("clients.newAccountMasterRep")}</label>
-                  <select value={newAccountForm.masterRepId} onChange={(e) => setNewAccountForm((f) => ({ ...f, masterRepId: e.target.value }))}>
-                    <option value="">{t("teamManagement.noMasterRep")}</option>
-                    {masterReps.map((mr) => (
-                      <option key={mr.id} value={mr.id}>
-                        {mr.firstName} {mr.lastName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
+            <AccountFormFields
+              form={newAccountForm}
+              setField={setNewAccountField}
+              countries={countries}
+              showOwnerPicker={needsOwnerRepPicker}
+              reps={reps}
+              masterReps={masterReps}
+              t={t}
+            />
             {newAccountError && <p className="error-text">{newAccountError}</p>}
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               <button className="btn primary" type="submit" disabled={creating}>
