@@ -1527,6 +1527,77 @@ Corrections réellement apportées ce lot :
     au front desk). Ainsi que sur la création Front Desk/Administrateur depuis le même écran désormais
     unifié (mot de passe temporaire toujours auto-généré, aucune régression du comportement existant).
 
+- **Correctifs prioritaires — Visualisation des commandes + Export Dolibarr (2026-09-16, fiche corrective
+  "CORRECTIFS PRIORITAIRES — VISUALISATION DES COMMANDES + EXPORT DOLIBARR", fichier de référence joint
+  `exemple_export_pour_Doli.xlsx`)** : deux sujets, tous deux P0 selon la fiche — unifier l'affichage
+  d'une commande dans tout le CRM, et corriger le format du fichier d'export Dolibarr pour qu'il colle
+  strictement au fichier exemple fourni.
+  - **Un seul composant de visualisation de commande, réutilisé partout (gap comblé) :** jusqu'ici,
+    "Visualiser la commande" pouvait afficher un contenu différent du récapitulatif présenté au moment de
+    la validation du panier, et chaque écran de consultation (liste des commandes, Front Desk, fiche
+    client) avait sa propre présentation. Créé un composant de présentation unique en lecture seule,
+    `frontend/src/components/OrderSummary.jsx`, réutilisé à l'identique par `OrdersList.jsx` (vue
+    Représentant/Master Rep/Directeur), `FrontDesk.jsx` et `AccountDetail.jsx` (fiche client) — mêmes
+    classes CSS et mêmes clés de traduction que le récapitulatif du panier (`NewOrder.jsx`), pour un rendu
+    visuellement indiscernable. Choix d'ingénierie assumé et documenté dans le code : plutôt que de
+    fusionner ce composant avec le panier interactif de `NewOrder.jsx` (récemment corrigé et testé en
+    profondeur), la fiche panier reste un composant séparé, non modifié — seul l'affichage en lecture
+    seule des commandes déjà enregistrées a été unifié, ce qui couvre l'objectif fonctionnel réel de la
+    fiche (section 19 : comparer la vue Représentant/Master Rep/Directeur/Front Desk/Admin avec le
+    récapitulatif initial) sans reprendre le risque de régression sur la création de commande. Vérifié par
+    scripts Playwright dédiés pour chacun des trois écrans (Représentant/Master Rep/Directeur via
+    `OrdersList.jsx`, Front Desk via `FrontDesk.jsx`, fiche client via `AccountDetail.jsx`) sur une même
+    commande réelle multi-produits avec remise : 12/12 assertions, contenu identique dans les trois vues
+    (produit, remise 20 %, total commande, statut Exportée).
+  - **Une commande historique reflète l'état à la validation, jamais le catalogue actuel (gap comblé) :**
+    `GET /api/orders/:id` réécrit pour renvoyer, en plus des lignes, un bloc `totals` recalculé
+    uniquement à partir des valeurs déjà enregistrées sur la commande (`backend/src/routes/orders.js`,
+    nouvelle fonction `computeSavedOrderTotals`) — jamais depuis les règles de remise ou les prix catalogue
+    en vigueur au moment de la consultation. La réponse inclut aussi désormais le nom du compte, le nom du
+    représentant et les catalogues de chaque ligne, nécessaires à l'affichage unifié.
+  - **Commande exportée : conservée et re-téléchargeable (gap comblé) :** une commande passée au statut
+    "Exportée" restait déjà en base (aucune suppression), mais le bouton d'export devenait définitivement
+    désactivé ("Déjà exportée"), sans aucun moyen de récupérer à nouveau le fichier. Ajout d'une route
+    dédiée `GET /api/dolibarr/orders/:id/export-file` qui régénère à l'identique le fichier Dolibarr à
+    partir des données historiques de la commande (mêmes lignes, mêmes prix, mêmes remises — sans jamais
+    retoucher le statut, la date ou l'auteur de l'export d'origine), et un bouton "Retélécharger l'export
+    Dolibarr" dans Front Desk pour toute commande déjà exportée. Nouvelle colonne `orders.exported_by`
+    (migration `021_orders_exported_by.sql`) pour tracer qui a déclenché l'export, en plus de la date déjà
+    enregistrée.
+  - **Format du fichier d'export Dolibarr entièrement réécrit pour coller au fichier de référence (bug
+    fonctionnel majeur corrigé) :** le format précédent ne correspondait pas à celui attendu par l'import
+    Dolibarr. Le fichier exemple joint à la fiche (`exemple_export_pour_Doli.xlsx`) a été ouvert et ses
+    en-têtes copiés à l'identique, comme exigé par la fiche ("le fichier joint prime sur toute
+    interprétation") : colonnes `fk_product, qty, label, remise_percent, tva_tx, subprice`, dans cet ordre
+    exact, une ligne par ligne de commande. `fk_product` provient désormais strictement de l'identifiant
+    Dolibarr enregistré sur la fiche produit CRM (champ `products.dolibarr_ref`, préexistant), jamais de
+    l'identifiant interne CRM ni de la référence/SKU utilisée comme repli. `label` reprend la référence
+    produit telle qu'enregistrée sur la commande (pas le nom marketing, conformément au fichier exemple).
+    `remise_percent`, `tva_tx` et `subprice` proviennent tous des valeurs historiques réellement appliquées
+    à la ligne de commande au moment de la validation, jamais recalculées avec les règles ou prix en
+    vigueur au moment de l'export (`backend/src/lib/dolibarrExport.js`).
+  - **Blocage strict si l'identifiant Dolibarr manque sur une référence (gap comblé) :** le contrôle
+    pré-export exigeait auparavant un identifiant Dolibarr *ou à défaut* la référence CRM — ce repli a été
+    supprimé, conformément à la fiche ("ne pas utiliser le SKU à la place de l'ID Dolibarr"). L'export est
+    désormais bloqué avec un message explicite et exact
+    (`"Impossible d'exporter la commande : identifiant produit Dolibarr manquant pour la référence
+    XXXXX."`) si une seule ligne de la commande porte sur un produit sans identifiant Dolibarr enregistré ;
+    le taux de TVA applicable est lui aussi désormais un contrôle bloquant (colonne obligatoire du nouveau
+    format, plus de repli silencieux). Vérifié par script Playwright dédié (2/2) : le message exact
+    apparaît bien dans l'interface Front Desk au clic sur "Exporter vers Dolibarr". À noter : 159 des 415
+    références catalogue réelles n'ont pas encore d'identifiant Dolibarr renseigné — comportement attendu,
+    ces commandes seront bloquées à l'export tant qu'un administrateur n'aura pas complété l'identifiant
+    Dolibarr de la référence concernée (fiche produit ou import catalogue).
+  - **Aucune intégration API Dolibarr — confirmé conforme à la demande explicite de l'utilisateur en cours
+    de fiche** ("pas d'API level export, on reste sur du FTP tradi avec un dépôt de fichier ; une fois
+    l'export récupéré par le front desk il sera manuellement déposé dans la fiche client présente sur
+    Dolibarr") : le fonctionnement était déjà, avant comme après ce correctif, une pure génération de
+    fichier téléchargeable, sans aucun appel à une API Dolibarr — aucune modification de code nécessaire
+    sur ce point, uniquement une vérification qu'aucun appel API n'a été introduit.
+  - Non-régression vérifiée sur la suite de tests des lots précédents (création de commande, remise
+    catalogue/Premium/France, gestion des utilisateurs Directeur/Front Desk) : tous les scripts
+    précédemment écrits continuent de passer intégralement après ce correctif.
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
