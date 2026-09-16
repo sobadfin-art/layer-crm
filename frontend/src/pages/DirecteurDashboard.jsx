@@ -52,9 +52,29 @@ export default function DirecteurDashboard() {
   const { t, locale } = useI18n();
 
   const [members, setMembers] = useState([]);
-  const masterReps = members.filter((m) => m.role === "MASTER_REP");
-  const reps = members.filter((m) => m.role === "REPRESENTANT");
+
+  // Décluttering élargi (demande directe, 2026-09-16 : "retire tous les reps
+  // fictifs... de tous les filtres, et apparitions dans l'app") : /team/members
+  // exclut désormais les comptes désactivés par défaut (cf. team.js), donc ce
+  // tableau de bord passe ?includeInactive=true (voir load() ci-dessous) pour
+  // que le toggle "Afficher les désactivés" du bloc Performance ci-dessous
+  // garde quelque chose à révéler. En contrepartie, masterReps/reps — qui
+  // alimentent le formulaire "Nouvel objectif" (useObjectiveForm) et
+  // AccountsMap (repOptions/masterRepOptions) — filtrent maintenant
+  // explicitement .active, pour qu'un rep désactivé/fictif n'apparaisse plus
+  // nulle part dans l'app, comme demandé. Ceci remplace la portée volontairement
+  // limitée d'un précédent correctif ("n'affecte que le bloc Performance").
+  const masterReps = members.filter((m) => m.role === "MASTER_REP" && m.active);
+  const reps = members.filter((m) => m.role === "REPRESENTANT" && m.active);
   const unassignedReps = reps.filter((r) => !r.masterRepId);
+
+  // Bloc "Performance de l'équipe" : garde son propre toggle pour réafficher
+  // les comptes désactivés à la demande (masqués par défaut).
+  const [showInactivePerf, setShowInactivePerf] = useState(false);
+  const perfVisibleMembers = showInactivePerf ? members : members.filter((m) => m.active);
+  const perfMasterReps = perfVisibleMembers.filter((m) => m.role === "MASTER_REP");
+  const perfReps = perfVisibleMembers.filter((m) => m.role === "REPRESENTANT");
+  const perfUnassignedReps = perfReps.filter((r) => !r.masterRepId);
   const [objectivesWithProgress, setObjectivesWithProgress] = useState([]);
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -118,7 +138,13 @@ export default function DirecteurDashboard() {
     setError(null);
     try {
       const [membersData, objectivesData, pendingOrders] = await Promise.all([
-        api.get("/team/members"),
+        // includeInactive=true : nécessaire pour que le toggle "Afficher les
+        // désactivés" du bloc Performance de l'équipe (plus bas) ait quelque
+        // chose à révéler — /team/members exclut les désactivés par défaut
+        // depuis le correctif du 2026-09-16 (voir team.js backend). Les reps
+        // désactivés/fictifs sont ensuite explicitement retirés de
+        // masterReps/reps ci-dessus (formulaire objectif + AccountsMap).
+        api.get("/team/members?includeInactive=true"),
         api.get("/objectives"),
         api.get("/orders?status=ENVOYEE_FRONT_DESK"),
       ]);
@@ -306,17 +332,24 @@ export default function DirecteurDashboard() {
 
       {!loading && !error && (
         <div className="panel">
-          <h3>{t("directeurDashboard.teamPerfTitle")}</h3>
-          {members.length === 0 && <p className="empty-state">{t("teamManagement.noMasterReps")}</p>}
-          {masterReps.map((mr) => (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <h3 style={{ margin: 0 }}>{t("directeurDashboard.teamPerfTitle")}</h3>
+            <button type="button" className="btn-link" onClick={() => setShowInactivePerf((v) => !v)}>
+              {showInactivePerf ? t("teamManagement.hideInactive") : t("teamManagement.showInactive")}
+            </button>
+          </div>
+          {perfMasterReps.length === 0 && perfUnassignedReps.length === 0 && (
+            <p className="empty-state">{t("teamManagement.noMasterReps")}</p>
+          )}
+          {perfMasterReps.map((mr) => (
             <div key={mr.id}>
               <MemberPerfRow member={mr} />
-              {reps.filter((r) => r.masterRepId === mr.id).map((r) => (
+              {perfReps.filter((r) => r.masterRepId === mr.id).map((r) => (
                 <MemberPerfRow member={r} indent key={r.id} />
               ))}
             </div>
           ))}
-          {unassignedReps.map((r) => (
+          {perfUnassignedReps.map((r) => (
             <MemberPerfRow member={r} key={r.id} />
           ))}
         </div>

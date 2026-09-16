@@ -74,7 +74,11 @@ export default function TeamManagement() {
     setError(null);
     try {
       const [membersData, territoriesData, countriesData, objectivesData] = await Promise.all([
-        api.get("/team/members"),
+        // includeInactive=true : nécessaire pour que le bouton "Afficher les
+        // désactivés" de ce même écran (cf. showInactive plus bas) ait
+        // quelque chose à révéler — /team/members exclut les désactivés par
+        // défaut depuis le correctif du 2026-09-16 (voir team.js backend).
+        api.get("/team/members?includeInactive=true"),
         api.get("/team/territories"),
         api.get("/countries"),
         api.get("/objectives"),
@@ -113,13 +117,13 @@ export default function TeamManagement() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // useObjectiveForm ci-dessous a besoin de la liste complète (masterReps/reps
-  // non filtrés) pour que le formulaire "Nouvel objectif" continue de
-  // proposer tout le monde, y compris les comptes désactivés masqués du
-  // récap ci-dessous — le filtre showInactive ne doit affecter que l'affichage
-  // du récap, jamais les choix disponibles dans ce formulaire.
-  const allMasterReps = members.filter((m) => m.role === "MASTER_REP");
-  const allReps = members.filter((m) => m.role === "REPRESENTANT");
+  // useObjectiveForm ci-dessous : le sélecteur "Nouvel objectif" ne doit
+  // jamais proposer un compte désactivé (un objectif ne se fixe pas pour un
+  // représentant qui ne peut plus se connecter) — toujours actifs
+  // uniquement, indépendamment de showInactive (qui ne pilote que
+  // l'affichage du récap ci-dessous).
+  const activeMasterReps = members.filter((m) => m.role === "MASTER_REP" && m.active);
+  const activeReps = members.filter((m) => m.role === "REPRESENTANT" && m.active);
 
   const visibleMembers = showInactive ? members : members.filter((m) => m.active);
   const masterReps = visibleMembers.filter((m) => m.role === "MASTER_REP");
@@ -131,8 +135,8 @@ export default function TeamManagement() {
   // bouton « Objectifs » soit accessible aussi depuis l'onglet Équipe, avec
   // exactement le même moteur de création (aucun second formulaire).
   const { trigger: objectiveTrigger, panel: objectivePanel } = useObjectiveForm({
-    masterReps: allMasterReps,
-    reps: allReps,
+    masterReps: activeMasterReps,
+    reps: activeReps,
     onCreated: async () => {
       await load();
       setToast(t("directeurDashboard.objectiveCreated"));
