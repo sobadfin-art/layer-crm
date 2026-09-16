@@ -6,9 +6,19 @@
 
 const DEFAULT_SHIPPING_FEE = 9.6;
 
-// France et Espagne partagent la même grille tarifaire (priceFR) — section 5.
+// GROS BUG CORRIGÉ (2026-09-16, remontée directe utilisateur : "Quand un
+// représentant est dans un pays autre que la France, (Autre Prix) le prix
+// export ne s'applique pas") : cette fonction faisait bénéficier l'Espagne de
+// la grille tarifaire France (priceFR) — c'était même documenté ainsi dans le
+// handoff d'origine ("France et Espagne partagent la même grille tarifaire",
+// section 5), mais ce n'est PAS la règle commerciale réelle. Règle confirmée
+// par l'utilisateur : en Europe et DOM-TOM, seule la France a le prix France ;
+// tous les autres pays (dont l'Espagne) ont le prix Export ; la Suisse a son
+// propre prix Suisse. Basé sur le pays du COMPTE client (account.country_code,
+// déjà présent sur la fiche client), jamais celui du représentant — un
+// représentant peut avoir des clients dans plusieurs pays.
 export function resolveUnitPrice(product, countryCode) {
-  if (countryCode === "FR" || countryCode === "ES") return product.price_fr;
+  if (countryCode === "FR") return product.price_fr;
   if (countryCode === "CH") return product.price_ch;
   return product.price_export;
 }

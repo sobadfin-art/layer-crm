@@ -150,3 +150,24 @@ objectivesRouter.patch("/:id", requireAuth, requireRole(ROLES.DIRECTEUR), async 
 
   res.json(toCamel(rows[0]));
 });
+
+// Correctif 2026-09-16 (amendement Direction Commerciale : "Ajouter une icône
+// poubelle permettant de supprimer un objectif afin de pouvoir revenir en
+// arrière et modifier les éléments si nécessaire") — jusqu'ici il n'existait
+// aucun moyen de revenir sur un objectif mal saisi autrement qu'un PATCH champ
+// par champ. Réservé au directeur, comme la création (section 3 : "fixe les
+// objectifs").
+objectivesRouter.delete("/:id", requireAuth, requireRole(ROLES.DIRECTEUR), async (req, res) => {
+  const { rows } = await query("DELETE FROM objectives WHERE id = $1 RETURNING *", [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: "Objectif introuvable." });
+
+  await logAudit({
+    userId: req.user.id,
+    action: "OBJECTIVE_DELETED",
+    entity: "objectives",
+    entityId: req.params.id,
+    details: { repId: rows[0].rep_id, type: rows[0].type, targetAmount: rows[0].target_amount },
+  });
+
+  res.status(204).end();
+});

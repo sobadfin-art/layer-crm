@@ -59,6 +59,50 @@ teamRouter.post("/territories", requireAuth, requireRole(ROLES.DIRECTEUR), async
   }
 });
 
+// Correctif 2026-09-16 (amendement Direction Commerciale : "Même principe
+// [icône poubelle] pour les Territoires : il doit être possible de
+// sélectionner un territoire et de le supprimer") — jusqu'ici aucun moyen de
+// supprimer un territoire créé par erreur. `countries.territory_id` a une
+// contrainte FK simple (pas de ON DELETE) : on détache d'abord les pays
+// rattachés (repassent "sans territoire"), et on retire aussi l'id du
+// territoire des `sales_reps.territory_ids` (tableau, sans contrainte FK
+// possible côté Postgres, donc jamais nettoyé automatiquement) pour ne pas
+// laisser de référence orpheline. Le tout dans une transaction.
+teamRouter.delete("/territories/:id", requireAuth, requireRole(ROLES.DIRECTEUR), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query("SELECT * FROM territories WHERE id = $1", [req.params.id]);
+    const territory = rows[0];
+    if (!territory) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Territoire introuvable." });
+    }
+    await client.query("UPDATE countries SET territory_id = NULL WHERE territory_id = $1", [req.params.id]);
+    await client.query(
+      "UPDATE sales_reps SET territory_ids = array_remove(territory_ids, $1) WHERE $1 = ANY(territory_ids)",
+      [req.params.id]
+    );
+    await client.query("DELETE FROM territories WHERE id = $1", [req.params.id]);
+    await client.query("COMMIT");
+
+    await logAudit({
+      userId: req.user.id,
+      action: "TERRITORY_DELETED",
+      entity: "territories",
+      entityId: req.params.id,
+      details: { name: territory.name },
+    });
+
+    res.status(204).end();
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
 // -- Membres de l'équipe ---------------------------------------------------
 
 // BUG CORRIGÉ (fiche corrective V2 Direction commerciale, sections 2.2/4 —
