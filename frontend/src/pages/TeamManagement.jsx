@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
-import { money } from "../lib/format.js";
+import { money, shortDate } from "../lib/format.js";
+import { useObjectiveForm } from "../hooks/useObjectiveForm.jsx";
 
 // Mêmes helpers que DirecteurDashboard.jsx (objectifs actifs + somme
 // cible/réalisé) — reprises ici à l'identique pour le nouveau bloc
@@ -38,6 +40,13 @@ export default function TeamManagement() {
   // Objectifs actifs + progression — alimente le nouveau bloc "Performance de
   // l'équipe" ci-dessous (fiche corrective Direction Commerciale V3).
   const [objectivesWithProgress, setObjectivesWithProgress] = useState([]);
+  // Correctif 2026-09-16 (amendement Direction Commerciale : "Tous les
+  // objectifs doivent être visibles ici, par les représentant et par Master
+  // Rep") — liste brute, NON filtrée sur la période active, pour le
+  // récapitulatif éditable sous Territoires (contrairement à
+  // objectivesWithProgress ci-dessus qui reste réservé au bloc "Performance
+  // de l'équipe" et ne garde que les objectifs actifs).
+  const [allObjectives, setAllObjectives] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
@@ -66,6 +75,7 @@ export default function TeamManagement() {
       setMembers(membersData);
       setTerritories(territoriesData);
       setCountries(countriesData);
+      setAllObjectives(objectivesData);
 
       const activeObjectives = objectivesData.filter(isActivePeriod);
       const withProgress = await Promise.all(
@@ -99,6 +109,55 @@ export default function TeamManagement() {
   const masterReps = members.filter((m) => m.role === "MASTER_REP");
   const reps = members.filter((m) => m.role === "REPRESENTANT");
   const unassignedReps = reps.filter((r) => !r.masterRepId);
+
+  // Bouton + formulaire "Nouvel objectif" — cf. hooks/useObjectiveForm.jsx,
+  // extrait de DirecteurDashboard.jsx (correctif 2026-09-16) pour que le
+  // bouton « Objectifs » soit accessible aussi depuis l'onglet Équipe, avec
+  // exactement le même moteur de création (aucun second formulaire).
+  const { trigger: objectiveTrigger, panel: objectivePanel } = useObjectiveForm({
+    masterReps,
+    reps,
+    onCreated: async () => {
+      await load();
+      setToast(t("directeurDashboard.objectiveCreated"));
+    },
+  });
+
+  // Correctif 2026-09-16 — icône poubelle sur chaque objectif du
+  // récapitulatif ("afin de pouvoir revenir en arrière et modifier les
+  // éléments si nécessaire" : pas d'édition inline, on supprime puis on
+  // refixe l'objectif avec les bonnes valeurs). Même pattern direct
+  // action + toast que tout le reste de l'app (aucune boîte de confirmation
+  // window.confirm — cf. le reste de l'écran).
+  async function deleteObjective(objective) {
+    setBusyId(objective.id);
+    try {
+      await api.del(`/objectives/${objective.id}`);
+      setToast(t("teamManagement.objectiveDeleted"));
+      await load();
+    } catch (err) {
+      setToast(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Même principe pour les territoires ("il doit être possible de
+  // sélectionner un territoire et de le supprimer"). Le backend
+  // (DELETE /team/territories/:id) nettoie déjà les références dépendantes
+  // (countries.territory_id, sales_reps.territory_ids) dans une transaction.
+  async function deleteTerritory(territory) {
+    setBusyId(territory.id);
+    try {
+      await api.del(`/team/territories/${territory.id}`);
+      setToast(t("teamManagement.territoryDeleted"));
+      await load();
+    } catch (err) {
+      setToast(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function toggleActive(member) {
     setBusyId(member.id);
@@ -311,13 +370,18 @@ export default function TeamManagement() {
           <h1 className="page-title">{t("teamManagement.title")}</h1>
           <p className="page-sub">{t("teamManagement.subtitle")}</p>
         </div>
-        <button className="btn primary" onClick={() => setShowNewMember((v) => !v)}>
-          {t("teamManagement.newMember")}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn primary" onClick={() => setShowNewMember((v) => !v)}>
+            {t("teamManagement.newMember")}
+          </button>
+          {objectiveTrigger}
+        </div>
       </div>
 
       {loading && <p className="empty-state">{t("teamManagement.loading")}</p>}
       {error && <p className="error-text">{error}</p>}
+
+      {objectivePanel}
 
       {showNewMember && (
         <div className="panel">
@@ -497,9 +561,63 @@ export default function TeamManagement() {
           {territories.map((terr) => (
             <div className="task-row" key={terr.id}>
               <span>{terr.name}</span>
-              <span style={{ color: "var(--ink-soft)" }}>{(terr.countryCodes || []).join(", ") || "—"}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ color: "var(--ink-soft)" }}>{(terr.countryCodes || []).join(", ") || "—"}</span>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  disabled={busyId === terr.id}
+                  onClick={() => deleteTerritory(terr)}
+                  title={t("teamManagement.deleteTerritory")}
+                  aria-label={t("teamManagement.deleteTerritory")}
+                  style={{ background: "none", border: "none", cursor: busyId === terr.id ? "default" : "pointer", opacity: busyId === terr.id ? 0.5 : 1, color: "var(--danger)", display: "flex" }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Récapitulatif des objectifs — fiche corrective Direction Commerciale
+          V3, "à la suite de Territoire" : TOUS les objectifs (rep + Master
+          Rep, actifs ou non — cf. allObjectives, non filtré), avec une icône
+          poubelle pour pouvoir revenir en arrière et refixer un objectif
+          plutôt que l'éditer champ par champ. */}
+      {!loading && !error && (
+        <div className="panel">
+          <h3>{t("teamManagement.objectivesRecapTitle")}</h3>
+          {allObjectives.length === 0 && <p className="empty-state">{t("teamManagement.noObjectives")}</p>}
+          {allObjectives.map((o) => {
+            const owner = members.find((m) => m.id === o.repId);
+            return (
+              <div className="task-row" key={o.id}>
+                <span>
+                  {owner ? `${owner.firstName} ${owner.lastName}` : "—"}
+                  {owner && owner.role === "MASTER_REP" ? ` (${t("role.MASTER_REP")})` : ""}
+                  {" — "}
+                  {t(`dashboard.objectiveType.${o.type}`)}
+                  {" — "}
+                  {shortDate(o.periodStart, locale)} → {shortDate(o.periodEnd, locale)}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ color: "var(--ink-soft)" }}>{money(o.targetAmount, locale)}</span>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    disabled={busyId === o.id}
+                    onClick={() => deleteObjective(o)}
+                    title={t("teamManagement.deleteObjective")}
+                    aria-label={t("teamManagement.deleteObjective")}
+                    style={{ background: "none", border: "none", cursor: busyId === o.id ? "default" : "pointer", opacity: busyId === o.id ? 0.5 : 1, color: "var(--danger)", display: "flex" }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Globe, Target } from "lucide-react";
+import { Globe } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate, dateTime } from "../lib/format.js";
 import AccountsMap from "../components/AccountsMap.jsx";
 import { fiscalYearBounds, fiscalYearLabel } from "../lib/fiscalYear.js";
 import { useAgendaSummary } from "../hooks/useAgendaSummary.js";
+import { useObjectiveForm } from "../hooks/useObjectiveForm.jsx";
 import NewOrderQuickAccess from "../components/NewOrderQuickAccess.jsx";
 
 function isToday(dateStr) {
@@ -15,15 +16,6 @@ function isToday(dateStr) {
   const now = new Date();
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
 }
-
-// 11 typologies réelles (remplace l'ancien modèle à 2 "secteurs" agrégés
-// depuis la migration 015 — cf. PDF Directeur commercial section 4 :
-// "sélectionner une ou plusieurs typologies de clients / réseaux").
-const TYPOLOGIES = [
-  "OPTICIEN", "SURF_SHOP", "FASHION_STORE", "SKATE_SHOP", "SKI_SHOP",
-  "CONCEPT_STORE", "USHIP", "BIKE_STORE", "KEY_ACCOUNT", "DISTRIBUTOR", "AUTRE",
-];
-const CATEGORIES = ["PREMIUM", "CLASSIC", "OPTICS", "ACCESS", "DISPLAY", "MERCH", "GOGGLES", "KIDS"];
 
 // Un objectif est "actif" si la date du jour tombe dans sa période — même
 // règle que Equipe.jsx/Dashboard.jsx.
@@ -60,6 +52,9 @@ export default function DirecteurDashboard() {
   const { t, locale } = useI18n();
 
   const [members, setMembers] = useState([]);
+  const masterReps = members.filter((m) => m.role === "MASTER_REP");
+  const reps = members.filter((m) => m.role === "REPRESENTANT");
+  const unassignedReps = reps.filter((r) => !r.masterRepId);
   const [objectivesWithProgress, setObjectivesWithProgress] = useState([]);
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -116,18 +111,6 @@ export default function DirecteurDashboard() {
     loadPortfolio();
   }, [loadPortfolio]);
 
-  const [showNewObjective, setShowNewObjective] = useState(false);
-  const [form, setForm] = useState({
-    repId: "",
-    type: "CHIFFRE_AFFAIRES",
-    typologies: [],
-    categories: [],
-    periodStart: "",
-    periodEnd: "",
-    targetAmount: "",
-  });
-  const [formError, setFormError] = useState(null);
-  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
 
   const load = useCallback(async () => {
@@ -171,13 +154,20 @@ export default function DirecteurDashboard() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // Bouton + formulaire "Nouvel objectif" — cf. hooks/useObjectiveForm.jsx
+  // (partagé avec TeamManagement.jsx, correctif 2026-09-16).
+  const { trigger: objectiveTrigger, panel: objectivePanel } = useObjectiveForm({
+    masterReps,
+    reps,
+    onCreated: async () => {
+      await load();
+      setToast(t("directeurDashboard.objectiveCreated"));
+    },
+  });
+
   function objectivesFor(repId, type) {
     return objectivesWithProgress.filter((o) => o.repId === repId && o.type === type);
   }
-
-  const masterReps = members.filter((m) => m.role === "MASTER_REP");
-  const reps = members.filter((m) => m.role === "REPRESENTANT");
-  const unassignedReps = reps.filter((r) => !r.masterRepId);
 
   const activeClients = accounts.filter((a) => a.type === "CLIENT" && a.status === "ACTIF");
   const inactiveClients = accounts.filter((a) => a.type === "CLIENT" && a.status === "INACTIF");
@@ -190,46 +180,6 @@ export default function DirecteurDashboard() {
   const teamCaPct = teamCa.target > 0 ? Math.min(100, Math.round((teamCa.achieved / teamCa.target) * 100)) : 0;
   const teamPrecommandePct =
     teamPrecommande.target > 0 ? Math.min(100, Math.round((teamPrecommande.achieved / teamPrecommande.target) * 100)) : 0;
-
-  function toggleFormValue(field, value) {
-    setForm((f) => ({
-      ...f,
-      [field]: f[field].includes(value) ? f[field].filter((x) => x !== value) : [...f[field], value],
-    }));
-  }
-
-  async function handleCreateObjective(e) {
-    e.preventDefault();
-    setFormError(null);
-    if (!form.repId || !form.periodStart || !form.periodEnd || !form.targetAmount) {
-      setFormError(t("directeurDashboard.objectiveMissing"));
-      return;
-    }
-    if (new Date(form.periodEnd) <= new Date(form.periodStart)) {
-      setFormError(t("directeurDashboard.objectivePeriodInvalid"));
-      return;
-    }
-    setSaving(true);
-    try {
-      await api.post("/objectives", {
-        repId: form.repId,
-        type: form.type,
-        typologies: form.typologies,
-        categories: form.categories,
-        periodStart: new Date(form.periodStart).toISOString(),
-        periodEnd: new Date(form.periodEnd).toISOString(),
-        targetAmount: Number(form.targetAmount),
-      });
-      setForm({ repId: "", type: "CHIFFRE_AFFAIRES", typologies: [], categories: [], periodStart: "", periodEnd: "", targetAmount: "" });
-      setShowNewObjective(false);
-      setToast(t("directeurDashboard.objectiveCreated"));
-      await load();
-    } catch (err) {
-      setFormError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
 
   function MemberPerfRow({ member, indent }) {
     const caObjectives = objectivesFor(member.id, "CHIFFRE_AFFAIRES");
@@ -281,106 +231,14 @@ export default function DirecteurDashboard() {
           {/* Parcours C — accès rapide "Nouvelle commande" (fiche corrective
               Direction Commerciale V3, même parcours que le Représentant). */}
           <NewOrderQuickAccess />
-          <button className="btn primary" onClick={() => setShowNewObjective((v) => !v)}>
-            <Target size={15} /> {t("directeurDashboard.newObjective")}
-          </button>
+          {objectiveTrigger}
         </div>
       </div>
 
       {loading && <p className="empty-state">{t("directeurDashboard.loading")}</p>}
       {error && <p className="error-text">{error}</p>}
 
-      {showNewObjective && (
-        <div className="panel">
-          <h3>{t("directeurDashboard.newObjectiveTitle")}</h3>
-          <form onSubmit={handleCreateObjective}>
-            <div className="form-row">
-              <div className="field">
-                <label>{t("directeurDashboard.objectiveRep")}</label>
-                <select value={form.repId} onChange={(e) => setForm((f) => ({ ...f, repId: e.target.value }))}>
-                  <option value="">{t("directeurDashboard.objectiveRepChoose")}</option>
-                  {masterReps.map((mr) => (
-                    <option key={mr.id} value={mr.id}>
-                      {mr.firstName} {mr.lastName} ({t("role.MASTER_REP")})
-                    </option>
-                  ))}
-                  {reps.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.firstName} {r.lastName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>{t("directeurDashboard.objectiveType")}</label>
-                <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
-                  <option value="CHIFFRE_AFFAIRES">{t("dashboard.objectiveType.CHIFFRE_AFFAIRES")}</option>
-                  <option value="PRECOMMANDE">{t("dashboard.objectiveType.PRECOMMANDE")}</option>
-                </select>
-              </div>
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label>{t("directeurDashboard.objectivePeriodStart")}</label>
-                <input type="date" value={form.periodStart} onChange={(e) => setForm((f) => ({ ...f, periodStart: e.target.value }))} />
-              </div>
-              <div className="field">
-                <label>{t("directeurDashboard.objectivePeriodEnd")}</label>
-                <input type="date" value={form.periodEnd} onChange={(e) => setForm((f) => ({ ...f, periodEnd: e.target.value }))} />
-              </div>
-            </div>
-            <div className="field">
-              <label>{t("directeurDashboard.objectiveTarget")}</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.targetAmount}
-                onChange={(e) => setForm((f) => ({ ...f, targetAmount: e.target.value }))}
-              />
-            </div>
-            <div className="field">
-              <label>{t("directeurDashboard.objectiveTypologies")}</label>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {TYPOLOGIES.map((s) => (
-                  <span
-                    key={s}
-                    className="typology-badge"
-                    style={{ cursor: "pointer", background: form.typologies.includes(s) ? "var(--teal-soft, #d7ece7)" : undefined }}
-                    onClick={() => toggleFormValue("typologies", s)}
-                  >
-                    {t(`typology.${s}`)}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="field">
-              <label>{t("directeurDashboard.objectiveCategories")}</label>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {CATEGORIES.map((c) => (
-                  <span
-                    key={c}
-                    className="typology-badge"
-                    style={{ cursor: "pointer", background: form.categories.includes(c) ? "var(--teal-soft, #d7ece7)" : undefined }}
-                    onClick={() => toggleFormValue("categories", c)}
-                  >
-                    {c}
-                  </span>
-                ))}
-              </div>
-            </div>
-            {formError && <p className="error-text">{formError}</p>}
-            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <button className="btn primary" type="submit" disabled={saving}>
-                {saving ? t("teamManagement.creating") : t("teamManagement.create")}
-              </button>
-              <button className="btn outline" type="button" onClick={() => setShowNewObjective(false)}>
-                {t("teamManagement.cancel")}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      {objectivePanel}
 
       {!loading && !error && (
         <div className="cards-row">

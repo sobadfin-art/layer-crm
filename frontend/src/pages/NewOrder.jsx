@@ -29,8 +29,15 @@ function stockLine(p, t, locale) {
   };
 }
 
+// GROS BUG CORRIGÉ (2026-09-16) — même correction que lib/pricing.js côté
+// serveur (source de vérité) : l'Espagne bénéficiait à tort du prix France.
+// Règle confirmée : seule la France a le prix France, la Suisse a le prix
+// Suisse, tous les autres pays (Europe, DOM-TOM compris) ont le prix Export.
+// Ceci reste un APERÇU (cf. commentaire plus bas) — le serveur recalcule
+// toujours le prix réel à l'enregistrement, jamais fait confiance à ce calcul
+// client.
 function unitPriceFor(product, countryCode) {
-  if (countryCode === "FR" || countryCode === "ES") return Number(product.priceFr) || 0;
+  if (countryCode === "FR") return Number(product.priceFr) || 0;
   if (countryCode === "CH") return Number(product.priceCh) || 0;
   return Number(product.priceExport) || 0;
 }

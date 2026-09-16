@@ -1057,6 +1057,134 @@ body {
   padding: 32px;
 }
 
+/* Visuel d'intro (correctif 2026-09-16) — fond + accroche + logo repris du
+   visuel fourni par l'utilisateur (poster Moken "Now, Let's make millions."),
+   couleurs échantillonnées directement sur ce visuel :
+   fond #FDEE93, encre #042D13. Englobe les 3 écrans avant connexion (Login,
+   ForgotPassword, ResetPassword), qui restent chacun une simple carte
+   `.login-shell` — c'est ce conteneur qui leur ajoute le visuel autour,
+   aucun de ces 3 fichiers n'a besoin de connaître le poster.
+   Tout tient dans le viewport par défaut (clamp() sur les tailles de police
+   et les espacements, jamais de valeur fixe qui déborderait sur un petit
+   écran) ; si un écran est vraiment trop court (mobile en paysage, fenêtre
+   desktop réduite), .auth-poster défile plutôt que de couper un élément —
+   "tout doit être visible" prime sur "tout tient sans défiler". */
+.auth-poster {
+  min-height: 100vh;
+  width: 100%;
+  background: #fdee93;
+  display: flex;
+  justify-content: center;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: clamp(16px, 4vw, 40px) clamp(16px, 5vw, 32px);
+}
+
+.auth-poster-inner {
+  width: 100%;
+  max-width: 620px;
+  min-height: calc(100vh - clamp(32px, 8vw, 80px));
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-poster-top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: clamp(10px, 3vh, 22px);
+}
+
+.auth-poster-lang {
+  background: rgba(4, 45, 19, 0.06);
+  border-color: rgba(4, 45, 19, 0.25);
+  color: #042d13;
+}
+
+.auth-poster-headline {
+  /* Correctif 2026-09-16 (image de référence fournie directement, "reprend
+     exactement le modele de reference, ne fait pas d'interpretation") :
+     revenu à "Fraunces" — l'image de référence montre une empattée à fort
+     contraste (pleins/déliés marqués), pas du tout le registre épais/arrondi
+     de "Bevan"/Cooper Black tenté juste avant sur la seule foi du nom "Cooper
+     BOLD" ; l'image prime sur cette interprétation verbale. Couleur toujours
+     inchangée (#042D13). */
+  align-self: center;
+  width: 100%;
+  margin: 0;
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-style: normal;
+  color: #042d13;
+  font-size: clamp(30px, 8vw, 58px);
+  line-height: 0.98;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+
+.auth-poster-middle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 4vh, 40px) 0;
+}
+
+/* Le login-shell (et les cartes ForgotPassword/ResetPassword, même classe)
+   perd sa marge/centrage "page nue" une fois dans le poster : c'est
+   .auth-poster-middle qui le centre désormais, verticalement ET
+   horizontalement ("log in au milieu" — au milieu du visuel). La carte
+   ChangePassword.jsx (écran interne, hors intro) réutilise la même classe
+   .login-shell mais hors de .auth-poster : elle garde son style d'origine
+   inchangé, cf. règle de base ci-dessus. */
+.auth-poster-middle .login-shell {
+  margin: 0;
+  width: 100%;
+  box-shadow: 0 18px 40px rgba(4, 45, 19, 0.12);
+}
+
+.auth-poster-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Correctif 2026-09-16 : écart tagline ↔ logo ramené à la mesure exacte de
+     l'image de référence fournie (~2-4 % de la hauteur du visuel — petit
+     écart, la tagline est collée juste au-dessus du logo, pas éloignée).
+     Annule l'agrandissement fait juste avant sur la seule foi du mot
+     "éloignée", contredit par l'image elle-même une fois fournie. */
+  gap: clamp(8px, 2vh, 16px);
+  padding-top: clamp(8px, 3vh, 24px);
+}
+
+.auth-poster-tagline {
+  /* Correctif 2026-09-16 (image de référence) : revenu à "Fraunces" (même
+     raison que .auth-poster-headline ci-dessus). Dans l'image de référence,
+     la tagline est SANS parenthèses, SANS italique, dans une graisse plus
+     légère que l'accroche, et sensiblement PLUS PETITE (environ un quart de
+     la hauteur d'une ligne d'accroche, mesuré sur l'image fournie) — annule
+     l'agrandissement fait juste avant. Couleur toujours inchangée. */
+  align-self: center;
+  width: 100%;
+  margin: 0;
+  font-family: "Fraunces", Georgia, serif;
+  font-style: normal;
+  font-weight: 500;
+  color: #042d13;
+  font-size: clamp(12.5px, 2.6vw, 17px);
+  line-height: 1.3;
+  text-align: center;
+}
+
+.auth-poster-logo {
+  width: clamp(130px, 26vw, 200px);
+  height: auto;
+  /* Le fichier source est en doré (var(--butter)) — illisible sur le fond
+     jaune du poster. Ramené à un noir plein (transparence conservée) pour
+     retrouver le contraste sombre du visuel d'origine (encre #042D13, à
+     l'œil indissociable d'un noir sur un logo de cette taille). */
+  filter: brightness(0);
+}
+
 .login-shell h1 {
   font-size: 19px;
   margin: 0 0 6px;

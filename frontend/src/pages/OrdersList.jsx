@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
+import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, dateTime } from "../lib/format.js";
 import OrderSummary from "../components/OrderSummary.jsx";
+import NewOrderQuickAccess from "../components/NewOrderQuickAccess.jsx";
 
 // CORRECTIF (fiche corrective "VISUALISATION DES COMMANDES + EXPORT
 // DOLIBARR", sections 1/2/4) : le détail affiché ici au dépli d'une commande
@@ -24,7 +26,16 @@ const STATUS_KEY = {
 // depuis NewOrder.jsx) peuvent être renvoyées ici plutôt que perdues.
 export default function OrdersList() {
   const { t, locale } = useI18n();
+  const { user } = useAuth();
   const navigate = useNavigate();
+  // Correctif urgent 2026-09-16 (fiche "CORRECTIF URGENT — PROFIL
+  // REPRÉSENTANT", section 3) : bouton "Nouvelle commande" manquant sur cet
+  // écran — réutilise le même composant/parcours que le Dashboard (parcours
+  // C), pas un second moteur de commande. Réservé au Représentant : cet écran
+  // est aussi utilisé par le Master Rep (cf. App.jsx), qui reste strictement
+  // en lecture seule sur les commandes (décision produit distincte, non
+  // concernée par ce correctif) — jamais changé ici.
+  const canCreateOrder = user.role === "REPRESENTANT";
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   // Ouverture directe depuis une notification (?orderId=...) — PDF
@@ -129,8 +140,15 @@ export default function OrdersList() {
 
   return (
     <>
-      <h1 className="page-title">{t("orders.title")}</h1>
-      <p className="page-sub">{t("orders.subtitle")}</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h1 className="page-title">{t("orders.title")}</h1>
+          <p className="page-sub">{t("orders.subtitle")}</p>
+        </div>
+        {/* Parcours C bis — même composant/parcours que le Dashboard, cf.
+            commentaire sur canCreateOrder plus haut. */}
+        {canCreateOrder && <NewOrderQuickAccess />}
+      </div>
 
       <div className="search-bar">
         <input
