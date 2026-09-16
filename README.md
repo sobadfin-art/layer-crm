@@ -1195,10 +1195,9 @@ Desk).** Constat préalable important : en reprenant chaque point un par un dans
 partie de ce qui était signalé "cassé" ou "absent" (panneau de notifications mal positionné, actions
 Consulter/Valider/Export Dolibarr du front desk, accès global du front desk aux clients) s'est avérée
 déjà corrigée dans une session précédente — jamais déployée sur la bêta Render testée, qui reflétait
-donc une version plus ancienne du code que celle disponible ici. **Le mécanisme de déploiement de ce
-livrable vers `moken-crm.onrender.com` reste à clarifier avec vous** (cet environnement de travail
-n'est pas un dépôt git ; `render.yaml` suppose un déploiement git-based) — c'est le point sur lequel
-la vôtre est actuellement bloquée pour retester.
+donc une version plus ancienne du code que celle disponible ici. Mécanisme de déploiement clarifié
+depuis (2026-09-16) : le client pousse lui-même le code vers `github.com/sobadfin-art/layer-crm`
+(dépôt connecté à Render), déploiement confirmé fonctionnel sur `moken-crm.onrender.com`.
 
 Corrections réellement apportées ce lot :
 - **Parcours de création de commande (Représentant) :** le panier ne se vide plus lors d'un
@@ -1238,6 +1237,15 @@ Corrections réellement apportées ce lot :
 - **Administrateur — "Visualisation du catalogue" (déjà construite) :** l'écran demandé par la fiche
   V3 existait déjà (`CatalogueConsult.jsx`, route `/catalogue-produits`) avec son propre carrousel ;
   seul le lien "Modifier la référence" manquait pour boucler vers Admin produits — ajouté (`?editId=`).
+- **Représentant — création de client/prospect (2026-09-16, gap comblé suite à test bêta) :** `POST
+  /api/accounts` acceptait déjà ce rôle côté serveur (propriétaire auto-affecté, Master Rep dérivé
+  automatiquement — cf. `routes/accounts.js`), et le scénario était même documenté comme attendu dans
+  `docs/recap-acces-test-beta.md` ("Se connecter en Représentant, créer un client..."). Seule l'UI ne
+  l'exposait pas (`canCreateAccount` dans `ClientsList.jsx` limité à Directeur/Front Desk). Le
+  formulaire "Nouveau compte" est désormais aussi affiché pour ce rôle, sans les champs
+  représentant/Master Rep propriétaire (non pertinents ici, déterminés par le serveur) — vérifié de
+  bout en bout : création du prospect → fiche compte → "Nouvelle commande" → commande envoyée au
+  front desk.
 
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
