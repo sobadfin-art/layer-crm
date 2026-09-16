@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import PhotoLightbox from "./PhotoLightbox.jsx";
 
 // Carrousel photo pour les vignettes produit du catalogue (fiche corrective
 // Administrateur V3, section carrousel) : swipe mobile/trackpad, flèches sur
@@ -12,10 +13,17 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 // renvoyé pour tous les rôles (cf. routes/products.js) — `photoUrl` seul
 // reste utilisé en repli pour les produits sans galerie (aucune ligne dans
 // product_photos), pour ne jamais rien casser d'existant.
+//
+// Photo cliquable -> vue en grand (demande directe : "rendre cliquable la
+// photo et faire en sorte de pouvoir voir le produit en plus grand. On
+// pourra activer le carroussel en plus grand. prevoir une croix pour
+// fermer") : un clic sur l'image ouvre PhotoLightbox.jsx avec la galerie
+// complète, ouverte sur la photo actuellement affichée dans la vignette.
 export default function ProductPhotoCarousel({ photoUrls, fallbackUrl, alt }) {
   const urls = photoUrls && photoUrls.length > 0 ? photoUrls : fallbackUrl ? [fallbackUrl] : [];
   const [index, setIndex] = useState(0);
   const [touchStartX, setTouchStartX] = useState(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   if (urls.length === 0) {
     return <div style={{ height: 100, background: "var(--bg)" }} />;
@@ -60,7 +68,15 @@ export default function ProductPhotoCarousel({ photoUrls, fallbackUrl, alt }) {
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
     >
-      <img src={urls[safeIndex]} alt={alt} />
+      <img
+        src={urls[safeIndex]}
+        alt={alt}
+        style={{ cursor: "zoom-in" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setLightboxOpen(true);
+        }}
+      />
       {urls.length > 1 && (
         <>
           <button type="button" className="carousel-arrow left" onClick={(e) => go(-1, e)} aria-label="Previous photo">
@@ -75,6 +91,9 @@ export default function ProductPhotoCarousel({ photoUrls, fallbackUrl, alt }) {
             ))}
           </div>
         </>
+      )}
+      {lightboxOpen && (
+        <PhotoLightbox photos={urls} initialIndex={safeIndex} alt={alt} onClose={() => setLightboxOpen(false)} />
       )}
     </div>
   );

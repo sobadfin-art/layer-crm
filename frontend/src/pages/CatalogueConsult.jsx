@@ -4,6 +4,7 @@ import { Search, Pencil } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate } from "../lib/format.js";
+import PhotoLightbox from "../components/PhotoLightbox.jsx";
 
 const CATEGORIES = ["PREMIUM", "CLASSIC", "OPTICS", "ACCESS", "DISPLAY", "MERCH", "GOGGLES", "KIDS"];
 const AVAILABILITY = ["EN_STOCK", "RUPTURE", "REASSORT_PREVU"];
@@ -31,6 +32,10 @@ function photosFor(p) {
 function ProductPhoto({ product, alt }) {
   const photos = photosFor(product);
   const [index, setIndex] = useState(0);
+  // Photo cliquable -> vue en grand (demande directe : "rendre cliquable la
+  // photo... voir le produit en plus grand... croix pour fermer"), même
+  // composant partagé PhotoLightbox.jsx que Catalogue.jsx/NewOrder.jsx.
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   if (photos.length === 0) {
     return <div style={{ height: 140, background: "var(--bg)" }} />;
@@ -38,7 +43,18 @@ function ProductPhoto({ product, alt }) {
 
   return (
     <div style={{ position: "relative" }}>
-      <img src={photos[index]} alt={alt} style={{ height: 140, width: "100%", objectFit: "cover", display: "block" }} />
+      <img
+        src={photos[index]}
+        alt={alt}
+        style={{ height: 140, width: "100%", objectFit: "cover", display: "block", cursor: "zoom-in" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setLightboxOpen(true);
+        }}
+      />
+      {lightboxOpen && (
+        <PhotoLightbox photos={photos} initialIndex={index} alt={alt} onClose={() => setLightboxOpen(false)} />
+      )}
       {photos.length > 1 && (
         <>
           <button

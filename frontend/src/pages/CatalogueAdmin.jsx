@@ -6,6 +6,7 @@ import { useI18n } from "../i18n/I18nContext.jsx";
 import { shortDate } from "../lib/format.js";
 import { downloadFile } from "../lib/download.js";
 import ImportWizard from "../components/ImportWizard.jsx";
+import PhotoLightbox from "../components/PhotoLightbox.jsx";
 
 // Écran Administrateur — catalogue produits (gestion des catalogues + import
 // en masse, cf. docs/cahier-des-charges-import-catalogue.md et
@@ -107,6 +108,13 @@ export default function CatalogueAdmin() {
   const [photoGalleryLoading, setPhotoGalleryLoading] = useState(false);
   const [uploadingId, setUploadingId] = useState(null);
   const [uploadError, setUploadError] = useState(null);
+
+  // Vignette cliquable -> vue en grand (demande directe : "rendre cliquable
+  // la photo... voir le produit en plus grand... croix pour fermer"),
+  // distinct de la galerie de gestion ci-dessus (upload/réordonner/
+  // supprimer) : `lightboxProduct` ouvre PhotoLightbox.jsx en lecture
+  // seule, sans passer par le bouton "Gérer les photos".
+  const [lightboxProduct, setLightboxProduct] = useState(null);
   const fileInputRef = useRef(null);
 
   const [showProductForm, setShowProductForm] = useState(false);
@@ -776,7 +784,8 @@ export default function CatalogueAdmin() {
                               <img
                                 src={p.photoUrl}
                                 alt={p.label}
-                                style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, border: "1px solid var(--line)" }}
+                                style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, border: "1px solid var(--line)", cursor: "zoom-in" }}
+                                onClick={() => setLightboxProduct(p)}
                               />
                             ) : (
                               <div
@@ -969,6 +978,16 @@ export default function CatalogueAdmin() {
             )}
           </div>
         </div>
+      )}
+
+      {lightboxProduct && (
+        <PhotoLightbox
+          photos={
+            lightboxProduct.photoUrls?.length ? lightboxProduct.photoUrls : lightboxProduct.photoUrl ? [lightboxProduct.photoUrl] : []
+          }
+          alt={lightboxProduct.label}
+          onClose={() => setLightboxProduct(null)}
+        />
       )}
     </>
   );
