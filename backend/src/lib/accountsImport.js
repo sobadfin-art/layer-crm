@@ -218,6 +218,24 @@ async function resolveValidUserIds(client, rawValues, roles) {
   return new Set(rows.map((r) => r.id));
 }
 
+// Détail des lignes rejetées (point 14 de la fiche corrective "CORRECTIFS CRM
+// — PROFIL ADMINISTRATEUR" : même exigence que l'import catalogue, section
+// 13 — cf. `lib/catalogImport.js` pour le raisonnement complet). `dolibarrId`
+// sert d'identifiant de ligne ici (peut être vide pour une ligne rejetée
+// avant même sa lecture, ex. "Id manquant").
+const MAX_ERROR_DETAILS = 50;
+function extractErrorDetails(classified) {
+  const errorRows = classified.filter((r) => r.error);
+  return {
+    errorDetails: errorRows.slice(0, MAX_ERROR_DETAILS).map((r) => ({
+      row: r.rowIndex + 2,
+      ref: r.dolibarrId || null,
+      error: r.error,
+    })),
+    errorDetailsTruncated: errorRows.length > MAX_ERROR_DETAILS,
+  };
+}
+
 // Étape 8 : résumé sans écriture (nouvelles / mises à jour / erreurs / lignes
 // sans représentant reconnu -> repli sur le représentant par défaut).
 export async function summarizeImport(classified) {
@@ -246,7 +264,14 @@ export async function summarizeImport(classified) {
   const newCount = validRows.filter((r) => !existingIds.has(r.dolibarrId)).length;
   const updateCount = validRows.filter((r) => existingIds.has(r.dolibarrId)).length;
 
-  return { total: classified.length, newCount, updateCount, errorCount, repFallbackCount };
+  return {
+    total: classified.length,
+    newCount,
+    updateCount,
+    errorCount,
+    repFallbackCount,
+    ...extractErrorDetails(classified),
+  };
 }
 
 const SIMPLE_FIELD_COLUMNS = {
@@ -415,7 +440,7 @@ export async function applyImport({ classified, defaultRepId = null, mode, userI
     );
 
     await client.query("COMMIT");
-    return { created, updated, skipped, errors, total: classified.length };
+    return { created, updated, skipped, errors, total: classified.length, ...extractErrorDetails(classified) };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

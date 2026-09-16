@@ -199,6 +199,28 @@ export async function validateDolibarrIds(classified) {
   });
 }
 
+// Détail des lignes rejetées (point 13/14 de la fiche corrective "CORRECTIFS
+// CRM — PROFIL ADMINISTRATEUR" : "ne pas faire échouer silencieusement tout
+// le fichier ... afficher lignes rejetées + motif du rejet"). Jusqu'ici seul
+// le COMPTE des erreurs remontait jusqu'à l'écran (`errorCount`) — le motif
+// existait déjà par ligne (`row.error`, calculé par `classifyRows`/
+// `validateDolibarrIds`) mais n'était jamais renvoyé au client. Plafonné pour
+// ne jamais renvoyer une réponse démesurée sur un très gros fichier fautif.
+const MAX_ERROR_DETAILS = 50;
+function extractErrorDetails(classified) {
+  const errorRows = classified.filter((r) => r.error);
+  return {
+    errorDetails: errorRows.slice(0, MAX_ERROR_DETAILS).map((r) => ({
+      // +2 : +1 pour repasser en 1-indexé, +1 pour la ligne d'en-têtes
+      // elle-même — le numéro affiché correspond à la vraie ligne du fichier.
+      row: r.rowIndex + 2,
+      ref: r.ref || null,
+      error: r.error,
+    })),
+    errorDetailsTruncated: errorRows.length > MAX_ERROR_DETAILS,
+  };
+}
+
 // Étape 4 : résumé sans écriture (nouvelles / mises à jour / erreurs).
 export async function summarizeImport(classified) {
   const validRefs = classified.filter((r) => !r.error).map((r) => r.ref);
@@ -216,7 +238,7 @@ export async function summarizeImport(classified) {
   const newCount = validRefs.filter((ref) => !existingRefs.has(ref)).length;
   const updateCount = validRefs.filter((ref) => existingRefs.has(ref)).length;
 
-  return { total: classified.length, newCount, updateCount, errorCount };
+  return { total: classified.length, newCount, updateCount, errorCount, ...extractErrorDetails(classified) };
 }
 
 const COLUMN_FOR_FIELD = {
@@ -266,14 +288,15 @@ export async function applyImport({ classified, catalogId, mode, userId }) {
 
       if (!exists) {
         const label = [row.fields.model, row.fields.color].filter(Boolean).join(" ") || row.ref;
-        await client.query(
+        const { rows: insertedRows } = await client.query(
           `INSERT INTO products (
-            ref, label, model, color, category, collection, catalog_id,
+            ref, label, model, color, category, collection,
             price_fr, price_export, price_ch, rrp, qty,
             stock_status, product_status, restock_date, expected_qty,
             dolibarr_ref, description, modified_by_id
           )
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+           RETURNING id`,
           [
             row.ref,
             label,
@@ -281,7 +304,6 @@ export async function applyImport({ classified, catalogId, mode, userId }) {
             row.fields.color ?? null,
             row.fields.category ?? "NON_CLASSE",
             row.fields.collection ?? null,
-            catalogId,
             row.fields.price_fr ?? null,
             row.fields.price_export ?? null,
             row.fields.price_ch ?? null,
@@ -296,6 +318,15 @@ export async function applyImport({ classified, catalogId, mode, userId }) {
             userId,
           ]
         );
+        // Rattachement multi-catalogue (correctif 2026-09-16, fiche corrective
+        // "CORRECTIFS CRM — PROFIL ADMINISTRATEUR", point 8) : le catalogue
+        // choisi à l'étape 1 de l'assistant (section 3 du cahier des charges)
+        // devient une AFFILIATION parmi d'autres possibles, plus jamais la
+        // seule — cf. `product_catalogs` (migration 020).
+        await client.query(
+          "INSERT INTO product_catalogs (product_id, catalog_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+          [insertedRows[0].id, catalogId]
+        );
         created++;
         // Une même référence peut apparaître plusieurs fois dans un seul
         // fichier importé (doublon de ligne au sein d'un même onglet, cf.
@@ -305,17 +336,30 @@ export async function applyImport({ classified, catalogId, mode, userId }) {
         // au lieu d'une mise à jour, violant la contrainte UNIQUE(ref).
         existingRefs.add(row.ref);
       } else {
-        // Ne touche qu'aux colonnes réellement mappées + le rattachement au catalogue
-        // (l'import rattache toujours les références au catalogue choisi, section 3).
-        const sets = ["catalog_id = $1", "modified_by_id = $2", "last_modified = now()"];
-        const params = [catalogId, userId];
-        let i = 3;
+        // Ne touche qu'aux colonnes réellement mappées. Le rattachement au
+        // catalogue choisi (section 3) s'AJOUTE désormais aux catalogues déjà
+        // portés par cette référence au lieu de les remplacer (point 8/7 bis :
+        // une référence peut exister dans plusieurs catalogues à la fois) —
+        // c'est explicitement ce que permet la règle de cohérence Référence
+        // <-> ID Dolibarr du correctif précédent (section 7 bis du cahier des
+        // charges import catalogue) : réimporter une référence déjà présente
+        // ailleurs ne la lui retire plus, elle l'ajoute simplement ici aussi.
+        const sets = ["modified_by_id = $1", "last_modified = now()"];
+        const params = [userId];
+        let i = 2;
         for (const [field, value] of Object.entries(row.fields)) {
           sets.push(`${COLUMN_FOR_FIELD[field]} = $${i++}`);
           params.push(value);
         }
         params.push(row.ref);
-        await client.query(`UPDATE products SET ${sets.join(", ")} WHERE ref = $${i}`, params);
+        const { rows: updatedRows } = await client.query(
+          `UPDATE products SET ${sets.join(", ")} WHERE ref = $${i} RETURNING id`,
+          params
+        );
+        await client.query(
+          "INSERT INTO product_catalogs (product_id, catalog_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+          [updatedRows[0].id, catalogId]
+        );
         updated++;
       }
     }
@@ -327,7 +371,7 @@ export async function applyImport({ classified, catalogId, mode, userId }) {
     );
 
     await client.query("COMMIT");
-    return { created, updated, skipped, errors, total: classified.length };
+    return { created, updated, skipped, errors, total: classified.length, ...extractErrorDetails(classified) };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

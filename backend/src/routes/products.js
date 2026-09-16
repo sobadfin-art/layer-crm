@@ -71,6 +71,55 @@ const ALL_ROLES = [
   ROLES.ADMINISTRATEUR,
 ];
 
+// Rattachement multi-catalogue (correctif 2026-09-16, fiche corrective
+// "CORRECTIFS CRM — PROFIL ADMINISTRATEUR", points 8/9) : un produit peut
+// désormais appartenir SIMULTANÉMENT à plusieurs catalogues (les catalogues
+// ne sont plus mutuellement exclusifs — ex. une référence "2026 SUNGLASSES"
+// ET "OPTIC 2026" en même temps). Source de vérité = table de jointure
+// `product_catalogs` (migration 020) ; l'ancienne colonne `products.catalog_id`
+// (un seul catalogue à la fois) n'est plus lue ni écrite par ce fichier —
+// conservée telle quelle en base pour ne rien casser d'irréversible, mais
+// purement historique désormais. Toujours renvoyée en tableaux `catalogIds`/
+// `catalogNames` (même schéma que `photoUrls`), y compris tableau vide pour
+// une référence "Sans catalogue" (cf. section 11 du cahier des charges
+// import catalogue — suppression d'un catalogue).
+const PRODUCT_JOINS = `
+  LEFT JOIN LATERAL (
+    SELECT array_agg(pc.catalog_id ORDER BY c.name) AS catalog_ids,
+           array_agg(c.name ORDER BY c.name) AS catalog_names
+    FROM product_catalogs pc
+    JOIN catalogs c ON c.id = pc.catalog_id
+    WHERE pc.product_id = p.id
+  ) pcagg ON true
+  LEFT JOIN LATERAL (
+    SELECT array_agg(url ORDER BY position) AS photo_urls
+    FROM product_photos WHERE product_id = p.id
+  ) pp ON true
+`;
+const PRODUCT_SELECT = `
+  SELECT p.*,
+         COALESCE(pcagg.catalog_ids, ARRAY[]::uuid[]) AS catalog_ids,
+         COALESCE(pcagg.catalog_names, ARRAY[]::text[]) AS catalog_names,
+         COALESCE(pp.photo_urls, ARRAY[]::text[]) AS photo_urls
+  FROM products p
+  ${PRODUCT_JOINS}
+`;
+
+async function fetchProductById(id) {
+  const { rows } = await query(`${PRODUCT_SELECT} WHERE p.id = $1`, [id]);
+  return rows[0] || null;
+}
+
+async function setProductCatalogs(productId, catalogIds) {
+  await query("DELETE FROM product_catalogs WHERE product_id = $1", [productId]);
+  for (const catalogId of catalogIds) {
+    await query(
+      "INSERT INTO product_catalogs (product_id, catalog_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+      [productId, catalogId]
+    );
+  }
+}
+
 // Lecture ouverte (catalogue de référence + prise de commande ont besoin de tout voir).
 productsRouter.get("/", requireAuth, requireRole(...ALL_ROLES), async (req, res) => {
   const clauses = [];
@@ -79,11 +128,15 @@ productsRouter.get("/", requireAuth, requireRole(...ALL_ROLES), async (req, res)
 
   // Plusieurs catalogues doivent rester sélectionnables simultanément à la prise
   // de commande (section 2 handoff) : ?catalogId=A&catalogId=B ou ?catalogId=A,B
+  // — un produit matche dès qu'il appartient à AU MOINS UN des catalogues
+  // demandés (rattachement multi-catalogue, cf. commentaire plus haut).
   if (req.query.catalogId) {
     const catalogIds = Array.isArray(req.query.catalogId)
       ? req.query.catalogId
       : String(req.query.catalogId).split(",");
-    clauses.push(`p.catalog_id = ANY($${i++}::uuid[])`);
+    clauses.push(
+      `EXISTS (SELECT 1 FROM product_catalogs pc0 WHERE pc0.product_id = p.id AND pc0.catalog_id = ANY($${i++}::uuid[]))`
+    );
     params.push(catalogIds);
   }
   if (req.query.category) {
@@ -111,37 +164,14 @@ productsRouter.get("/", requireAuth, requireRole(...ALL_ROLES), async (req, res)
   }
 
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  const { rows } = await query(
-    `SELECT p.*, c.name AS catalog_name, c.active AS catalog_active,
-            COALESCE(pp.photo_urls, ARRAY[]::text[]) AS photo_urls
-     FROM products p
-     LEFT JOIN catalogs c ON c.id = p.catalog_id
-     LEFT JOIN LATERAL (
-       SELECT array_agg(url ORDER BY position) AS photo_urls
-       FROM product_photos WHERE product_id = p.id
-     ) pp ON true
-     ${where}
-     ORDER BY p.label`,
-    params
-  );
+  const { rows } = await query(`${PRODUCT_SELECT} ${where} ORDER BY p.label`, params);
   res.json(toCamelList(rows));
 });
 
 productsRouter.get("/:id", requireAuth, requireRole(...ALL_ROLES), async (req, res) => {
-  const { rows } = await query(
-    `SELECT p.*, c.name AS catalog_name,
-            COALESCE(pp.photo_urls, ARRAY[]::text[]) AS photo_urls
-     FROM products p
-     LEFT JOIN catalogs c ON c.id = p.catalog_id
-     LEFT JOIN LATERAL (
-       SELECT array_agg(url ORDER BY position) AS photo_urls
-       FROM product_photos WHERE product_id = p.id
-     ) pp ON true
-     WHERE p.id = $1`,
-    [req.params.id]
-  );
-  if (!rows[0]) return res.status(404).json({ error: "Référence introuvable." });
-  res.json(toCamel(rows[0]));
+  const product = await fetchProductById(req.params.id);
+  if (!product) return res.status(404).json({ error: "Référence introuvable." });
+  res.json(toCamel(product));
 });
 
 const productSchema = z.object({
@@ -155,7 +185,11 @@ const productSchema = z.object({
   // jamais alimenté par l'import en masse, uniquement par la création/
   // modification manuelle d'une référence (cf. migration 016).
   description: z.string().optional().nullable(),
-  catalogId: z.string().uuid().optional().nullable(),
+  // Rattachement multi-catalogue (point 8 de la fiche corrective) — remplace
+  // l'ancien `catalogId` unique. Tableau (éventuellement vide = "Sans
+  // catalogue") plutôt qu'une seule valeur, cf. commentaire au-dessus de
+  // `PRODUCT_JOINS`.
+  catalogIds: z.array(z.string().uuid()).optional(),
   photoUrl: photoUrlField,
   dolibarrRef: z.string().optional().nullable(), // correspondance Dolibarr (point 6) — utilisé si `ref` ne suffit pas
   priceFR: z.number().optional().nullable(),
@@ -183,28 +217,32 @@ productsRouter.post(
     try {
       const { rows } = await query(
         `INSERT INTO products (
-          ref, label, model, color, category, collection, description, catalog_id, photo_url,
+          ref, label, model, color, category, collection, description, photo_url,
           price_fr, price_export, price_ch, rrp, qty, stock_status, product_status,
           restock_date, expected_qty, dolibarr_ref, modified_by_id
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-        RETURNING *`,
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        RETURNING id`,
         [
           d.ref, d.label, d.model ?? null, d.color ?? null, d.category ?? "NON_CLASSE",
-          d.collection ?? null, d.description ?? null, d.catalogId ?? null, d.photoUrl ?? null,
+          d.collection ?? null, d.description ?? null, d.photoUrl ?? null,
           d.priceFR ?? null, d.priceExport ?? null, d.priceCH ?? null, d.rrp ?? null,
           d.qty ?? 0, d.stockStatus ?? "EN_STOCK", d.productStatus ?? "NOUVEAU",
           d.restockDate ?? null, d.expectedQty ?? null, d.dolibarrRef ?? null, req.user.id,
         ]
       );
+      const productId = rows[0].id;
+      if (d.catalogIds?.length) {
+        await setProductCatalogs(productId, d.catalogIds);
+      }
       await logAudit({
         userId: req.user.id,
         action: "PRODUCT_CREATED",
         entity: "products",
-        entityId: rows[0].id,
-        details: { ref: rows[0].ref, label: rows[0].label },
+        entityId: productId,
+        details: { ref: d.ref, label: d.label },
       });
 
-      res.status(201).json(toCamel(rows[0]));
+      res.status(201).json(toCamel(await fetchProductById(productId)));
     } catch (err) {
       if (err.code === "23505") {
         return res.status(409).json({ error: `La référence ${d.ref} existe déjà.` });
@@ -221,9 +259,44 @@ productsRouter.patch(
   async (req, res) => {
     const parsed = productSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const d = parsed.data;
+    const { catalogIds, ...d } = parsed.data;
 
-    const columnFor = (f) => f.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+    // Bug réel corrigé (2026-09-16, fiche corrective "CORRECTIFS CRM — PROFIL
+    // ADMINISTRATEUR", point 4) : une conversion camelCase -> snake_case
+    // générique ("priceFR" -> "price_f_r" au lieu de "price_fr", "priceCH" ->
+    // "price_c_h" au lieu de "price_ch") produisait un UPDATE sur des colonnes
+    // inexistantes dès que le formulaire complet de la fiche produit était
+    // enregistré (il envoie toujours ces deux champs), et donc une erreur 500
+    // systématique — perçue par l'administrateur comme un bug de changement de
+    // statut de stock, alors qu'elle touchait en réalité N'IMPORTE QUELLE
+    // modification via ce formulaire (Rupture/Réassort n'étaient que les
+    // statuts testés). Remplacé par une correspondance explicite, jamais
+    // recalculée, pour ne plus jamais dépendre d'une règle de casse implicite.
+    const COLUMN_FOR_FIELD = {
+      ref: "ref",
+      label: "label",
+      model: "model",
+      color: "color",
+      category: "category",
+      collection: "collection",
+      description: "description",
+      photoUrl: "photo_url",
+      dolibarrRef: "dolibarr_ref",
+      priceFR: "price_fr",
+      priceExport: "price_export",
+      priceCH: "price_ch",
+      rrp: "rrp",
+      qty: "qty",
+      stockStatus: "stock_status",
+      productStatus: "product_status",
+      restockDate: "restock_date",
+      expectedQty: "expected_qty",
+    };
+    const columnFor = (f) => {
+      const column = COLUMN_FOR_FIELD[f];
+      if (!column) throw new Error(`Champ produit inconnu pour la mise à jour : ${f}`);
+      return column;
+    };
     const sets = [];
     const params = [];
     let i = 1;
@@ -231,27 +304,48 @@ productsRouter.patch(
       sets.push(`${columnFor(field)} = $${i++}`);
       params.push(value);
     }
-    if (sets.length === 0) return res.status(400).json({ error: "Aucun champ à mettre à jour." });
-    sets.push(`modified_by_id = $${i++}`);
-    params.push(req.user.id);
-    sets.push(`last_modified = now()`);
+    if (sets.length === 0 && catalogIds === undefined) {
+      return res.status(400).json({ error: "Aucun champ à mettre à jour." });
+    }
 
-    params.push(req.params.id);
-    const { rows } = await query(
-      `UPDATE products SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`,
-      params
-    );
-    if (!rows[0]) return res.status(404).json({ error: "Référence introuvable." });
+    if (sets.length > 0) {
+      sets.push(`modified_by_id = $${i++}`);
+      params.push(req.user.id);
+      sets.push(`last_modified = now()`);
+      params.push(req.params.id);
+      const { rows } = await query(
+        `UPDATE products SET ${sets.join(", ")} WHERE id = $${i} RETURNING id`,
+        params
+      );
+      if (!rows[0]) return res.status(404).json({ error: "Référence introuvable." });
+    } else {
+      const { rows } = await query("SELECT id FROM products WHERE id = $1", [req.params.id]);
+      if (!rows[0]) return res.status(404).json({ error: "Référence introuvable." });
+    }
+
+    // Rattachement multi-catalogue (point 8) : remplace l'ensemble complet des
+    // catalogues de la référence par celui envoyé — jamais un ajout/retrait
+    // partiel implicite, pour que le formulaire (bulles cochées/décochées)
+    // reflète exactement ce qui est enregistré.
+    if (catalogIds !== undefined) {
+      await setProductCatalogs(req.params.id, catalogIds);
+      if (sets.length === 0) {
+        await query(
+          "UPDATE products SET modified_by_id = $1, last_modified = now() WHERE id = $2",
+          [req.user.id, req.params.id]
+        );
+      }
+    }
 
     await logAudit({
       userId: req.user.id,
       action: "PRODUCT_UPDATED",
       entity: "products",
       entityId: req.params.id,
-      details: { fields: Object.keys(d) },
+      details: { fields: Object.keys(d), catalogIds: catalogIds !== undefined ? catalogIds : undefined },
     });
 
-    res.json(toCamel(rows[0]));
+    res.json(toCamel(await fetchProductById(req.params.id)));
   }
 );
 
@@ -342,8 +436,8 @@ productsRouter.post(
       details: { fields: ["photoUrls"], via: "url" },
     });
 
-    const { rows: productRows } = await query("SELECT * FROM products WHERE id = $1", [req.params.id]);
-    res.status(201).json({ product: toCamel(productRows[0]), photos: await getPhotos(req.params.id) });
+    const productRow = await fetchProductById(req.params.id);
+    res.status(201).json({ product: toCamel(productRow), photos: await getPhotos(req.params.id) });
   }
 );
 
@@ -395,8 +489,8 @@ productsRouter.post(
       details: { fields: ["photoUrls"], via: "upload" },
     });
 
-    const { rows: productRows } = await query("SELECT * FROM products WHERE id = $1", [req.params.id]);
-    res.status(201).json({ product: toCamel(productRows[0]), photos: await getPhotos(req.params.id) });
+    const productRow = await fetchProductById(req.params.id);
+    res.status(201).json({ product: toCamel(productRow), photos: await getPhotos(req.params.id) });
   }
 );
 
@@ -430,8 +524,8 @@ productsRouter.delete(
       details: { fields: ["photoUrls"], via: "delete" },
     });
 
-    const { rows: productRows } = await query("SELECT * FROM products WHERE id = $1", [req.params.id]);
-    res.json({ product: toCamel(productRows[0]), photos: await getPhotos(req.params.id) });
+    const productRow = await fetchProductById(req.params.id);
+    res.json({ product: toCamel(productRow), photos: await getPhotos(req.params.id) });
   }
 );
 
@@ -476,7 +570,7 @@ productsRouter.patch(
     }
     await syncCoverPhoto(req.params.id, req.user.id);
 
-    const { rows: productRows } = await query("SELECT * FROM products WHERE id = $1", [req.params.id]);
-    res.json({ product: toCamel(productRows[0]), photos: await getPhotos(req.params.id) });
+    const productRow = await fetchProductById(req.params.id);
+    res.json({ product: toCamel(productRow), photos: await getPhotos(req.params.id) });
   }
 );

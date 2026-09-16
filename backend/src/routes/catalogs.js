@@ -20,10 +20,15 @@ const READ_ROLES = [
 ];
 
 catalogsRouter.get("/", requireAuth, requireRole(...READ_ROLES), async (req, res) => {
+  // Comptage via la table de jointure `product_catalogs` (rattachement
+  // multi-catalogue, correctif 2026-09-16 point 8) — une référence présente
+  // dans plusieurs catalogues compte dans chacun d'eux, ce qui est le
+  // comportement attendu ("un catalogue peut avoir des références qui
+  // existent déjà dans un autre catalogue").
   const { rows } = await query(
-    `SELECT c.*, COUNT(p.id)::int AS product_count
+    `SELECT c.*, COUNT(pc.product_id)::int AS product_count
      FROM catalogs c
-     LEFT JOIN products p ON p.catalog_id = c.id
+     LEFT JOIN product_catalogs pc ON pc.catalog_id = c.id
      GROUP BY c.id
      ORDER BY c.name`
   );
@@ -102,9 +107,12 @@ catalogsRouter.patch(
   }
 );
 
-// Suppression d'un catalogue : les références rattachées repassent en
-// "Sans catalogue" (catalog_id = NULL), jamais supprimées — section 11 du
-// cahier des charges import catalogue.
+// Suppression d'un catalogue : les références rattachées ne sont jamais
+// supprimées — seule cette affiliation précise disparaît (section 11 du
+// cahier des charges import catalogue). Depuis le rattachement multi-catalogue
+// (point 8, migration 020), une référence présente dans plusieurs catalogues
+// reste normalement affichée dans les autres ; seule une référence qui
+// n'était QUE dans celui-ci repasse "Sans catalogue".
 catalogsRouter.delete(
   "/:id",
   requireAuth,
@@ -113,7 +121,7 @@ catalogsRouter.delete(
     const { rows } = await query("SELECT * FROM catalogs WHERE id = $1", [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: "Catalogue introuvable." });
 
-    await query("UPDATE products SET catalog_id = NULL WHERE catalog_id = $1", [req.params.id]);
+    await query("DELETE FROM product_catalogs WHERE catalog_id = $1", [req.params.id]);
     await query("DELETE FROM catalogs WHERE id = $1", [req.params.id]);
     res.json({ ok: true });
   }
