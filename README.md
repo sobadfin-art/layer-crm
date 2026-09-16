@@ -1917,6 +1917,115 @@ Corrections réellement apportées ce lot :
     quels à la demande du client, à supprimer une fois les vrais comptes de son équipe créés depuis
     l'application (écran Utilisateurs ou Équipe, selon le rôle).
 
+- **Lightbox photo — agrandissement mobile insuffisant, corrigé (2026-09-16, demande directe :
+  "quand on clique sur une image produit pour l'agrandir, la taille d'affichage actuelle n'est pas
+  suffisante — augmente-la. Prends le téléphone comme référence d'affichage principale... l'image
+  agrandie doit occuper l'essentiel de l'écran")** : deux causes distinctes trouvées et corrigées,
+  aucune nouvelle infrastructure nécessaire.
+  - **Cause n°1 (le vrai bug) — conflit CSS de spécificité** : le lightbox (`PhotoLightbox.jsx`) est
+    monté à l'intérieur de la carte produit qui l'ouvre (`.product-card`, `.product-photo-carousel`),
+    et des règles déjà en place pour les vignettes (`.product-card img { width:100%; height:100px;
+    object-fit:cover; }`) ont une spécificité CSS plus forte qu'une simple classe `.lightbox-image` —
+    elles l'emportaient donc silencieusement et plafonnaient l'image agrandie à 100px de haut, quelle
+    que soit la taille de `.lightbox-content` autour. Corrigé en ciblant `.lightbox-content
+    .lightbox-image` (sélecteur composé, spécificité supérieure) plutôt que la classe seule.
+  - **Cause n°2 — résolution de la source insuffisante pour un vrai plein écran** : comme demandé
+    ("si l'image source stockée est trop petite... dis-le-moi"), vérifié et confirmé — les photos
+    scrapées mokenvision.com sont stockées en variante `home_default` (280×280), bien trop petite pour
+    un zoom plein écran net sur mobile. **Il n'existe pas de pipeline miniature + version standard**
+    dans le projet actuel (contrairement à ce qui était supposé) : le seul traitement d'image existant
+    est l'upload direct Administrateur (`products.js`, fichier stocké tel quel, sans redimensionnement).
+    Plutôt que de construire cette infrastructure, une solution sans aucun changement serveur a été
+    trouvée : mokenvision.com sert déjà les mêmes photos en variante `superlarge_default` (1191×1191,
+    soit ~4,25× plus grand), à une URL prévisible (`.../{id}-home_default/...` → `.../{id}-
+    superlarge_default/...`). Nouveau helper `frontend/src/lib/photoUrl.js` (`largePhotoUrl()`) qui
+    fait cette substitution uniquement à l'affichage du lightbox — les vignettes de la grille catalogue
+    continuent d'utiliser `home_default` (plus léger, important pour la 4G/5G sur le terrain). Les URLs
+    qui ne suivent pas ce format (photos ajoutées à la main par un Administrateur, ou toute autre URL
+    externe) ne sont pas modifiées. Les **128 fiches sans correspondance mokenvision.com** (voir entrée
+    précédente) ne bénéficient pas de cet upgrade — leur netteté en grand dépend de la résolution
+    d'origine de l'upload, ce qui est attendu et ne nécessite pas de correctif.
+  - **CSS retravaillé mobile-first**, téléphone pris comme référence principale comme demandé :
+    `.lightbox-content` remplit désormais l'essentiel de l'écran (largeur/hauteur explicites plutôt
+    qu'un simple plafond `max-width`/`max-height`, qui ne faisait jamais grossir une image plus petite
+    que ce plafond — c'était une contribution supplémentaire au problème). Sur ordinateur/tablette
+    (`min-width: 860px`), la même logique s'applique mais dans une fenêtre centrée nettement plus
+    petite que le plein écran. Fermeture par la croix (repositionnée en z-index au-dessus de l'image
+    agrandie — un risque de chevauchement existait, la croix étant avant le contenu dans le DOM sans
+    z-index explicite) ou par clic/tap en dehors de l'image, inchangée par ailleurs. Flèches de
+    navigation repositionnées pour rester visibles à l'écran une fois le contenu proche du plein écran
+    sur mobile.
+  - **Vérifié personnellement, comme demandé, en émulant un vrai viewport téléphone (390×844, iPhone
+    13) avant de considérer que c'était fait** — pas seulement en réduisant la fenêtre du navigateur,
+    mais avec un contexte Playwright dédié à l'émulation mobile (tap tactile inclus, pas seulement clic
+    souris) : image agrandie à 95 % de la largeur d'écran et 85 % de la hauteur (avant le correctif :
+    plafonnée à 100px de haut, soit 15 %), `object-fit: contain` confirmé (proportions jamais déformées,
+    vérifié aussi visuellement par capture d'écran), croix visible entièrement à l'écran et bien
+    l'élément cliquable du dessus (pas masquée par l'image), fermeture confirmée par tap tactile sur la
+    croix ET par tap en dehors de l'image. Non-régression confirmée en parallèle sur viewport ordinateur
+    (1440×900, fenêtre centrée à ~57 % de la largeur — ni plein écran ni minuscule — fermeture souris
+    croix/clic-extérieur). Re-vérifié aussi la suite de tests d'origine de la fonctionnalité lightbox
+    (ouverture/fermeture sur les quatre écrans, non-régression mini-carrousel/quantité/boutons Modifier
+    et Gérer les photos, touche Échap) : 17/19 — les 2 seuls échecs viennent de l'absence, dans la base
+    de développement actuelle, d'une fiche de test à plusieurs photos pour exercer le carrousel en
+    grand, une limitation de données de test préexistante et sans lien avec ce correctif.
+    Le réseau sortant de cet environnement ne pouvant pas atteindre mokenvision.com directement, cette
+    vérification a intercepté la requête de l'image pour lui substituer une image locale de contrôle
+    (dimensions et proportions connues) — les dimensions réelles mokenvision.com (home_default=280×280,
+    superlarge_default=1191×1191) avaient déjà été confirmées séparément en conditions réelles via le
+    navigateur du poste relié à la session.
+  - Changement 100 % frontend (CSS + un nouveau helper JS + `PhotoLightbox.jsx`) : aucune route
+    serveur, aucune migration, se déploie comme un simple build statique (identique au déploiement de
+    la fonctionnalité lightbox elle-même, v4.7).
+
+- **Nettoyage des données de démonstration en production + décluttering de trois écrans
+  (2026-09-16, demande directe : "nettoie toutes les données de démonstration de la base de
+  production... Retire les clients fictif, les utilisateur fictifs, et le representant que j'ai
+  desactivé. Pareil pour les commandes")** : opération en deux temps, données puis affichage.
+  - **Données (via l'API existante uniquement, aucun accès SQL direct utilisé, aucune donnée
+    réelle touchée)** : en production, 2 comptes de démo encore actifs désactivés
+    (`admin@moken.demo`, `frontdesk@moken.demo` — les autres comptes `@moken.demo` l'étaient déjà) ;
+    7 clients/prospects fictifs archivés (statut ARCHIVE, terminal — los pollos Hermanos, el tio de
+    la plancha, Je Suis A côté, aloa, je suis un client du coin, Super Enseigne, Layer Agency) ; 3
+    règles commerciales déjà désactivées supprimées (essais remplacés) ; 5 commandes rattachées à
+    ces clients annulées (les seules où l'app autorise encore une transition de statut). **Limites
+    techniques constatées et respectées** : aucune route de suppression n'existe pour les clients
+    (cycle de vie volontairement à sens unique, jamais de suppression), pour les commandes, ni pour
+    les utilisateurs (désactivation seulement) — donc rien n'a été supprimé en base au sens strict
+    pour ces trois catégories, uniquement archivé/désactivé/annulé, au maximum de ce que l'API
+    autorise. 6 commandes de test avaient déjà été exportées vers Dolibarr avant cette opération
+    (références O-e42eca7b, O-b40b52cd, O-9611fc8e, O-3727cd45, O-c32db169, O-6dc24286) — hors de
+    portée de l'application, à nettoyer côté Dolibarr séparément si besoin. Les 3 catalogues
+    (OPTICS26, SUN26, SUN27) et l'unique objectif trouvés en production sont réels (le premier
+    rattaché à des volumes de produits réels, le second à un vrai commercial) — non touchés.
+  - **Affichage (exception ciblée au "pas de changement de code" de cette tâche, demandée et
+    confirmée explicitement)** : les comptes désactivés et clients archivés restant en base
+    (suppression impossible, cf. ci-dessus) continuaient à encombrer certains écrans faute de
+    filtre — corrigé à trois endroits, uniquement de l'affichage, aucun changement de schéma :
+    - `frontend/src/pages/UsersAdmin.jsx` : le filtre "Statut" (déjà existant) s'ouvre désormais sur
+      "Actifs" par défaut au lieu de "Tous" — toujours modifiable en un clic.
+    - `frontend/src/pages/TeamManagement.jsx` (récap "Master Reps & leurs représentants") : n'avait
+      aucun filtre du tout jusqu'ici — nouveau bouton "Afficher/Masquer les désactivés", masqués par
+      défaut. Le formulaire "Nouvel objectif" continue de proposer tout le monde (liste non filtrée
+      dédiée), seul le récap visuel change.
+    - `backend/src/routes/orders.js` (`GET /api/orders`) : les commandes n'ont ni statut "archivé"
+      ni notion de compte associé filtrable — une commande rattachée à un compte désormais ARCHIVE
+      sort donc par défaut de la liste (même logique que `accounts.js`, qui exclut déjà ARCHIVE de
+      sa propre liste), sans condition supplémentaire ni bascule possible pour la réafficher : une
+      commande liée à un compte ACTIF/INACTIF n'est elle jamais concernée. Toujours consultable
+      individuellement via `GET /api/orders/:id` si jamais nécessaire.
+  - Vérifié localement (Playwright + requêtes API directes) avant application en production :
+    filtre Utilisateurs par défaut sur Actifs confirmé, bouton Afficher/Masquer désactivés de
+    l'écran Équipe confirmé dans les deux sens (masque puis réaffiche bien les comptes inactifs),
+    commandes d'un compte archivé confirmées absentes de la liste par défaut ET d'un filtre explicite
+    par compte, tout en restant accessibles via leur URL directe (`GET /:id`) — non-régression
+    confirmée sur un compte réel encore actif (ses commandes restent visibles normalement).
+  - Opération de données appliquée directement en production via l'API (session Directeur, comme la
+    fois précédente) ; le changement d'affichage, lui, est un changement de code — il ne prendra
+    effet en production qu'après le prochain déploiement (upload GitHub habituel de ce zip).
+    Sauvegarde préalable : déclinée explicitement par le client pour cette opération ; un instantané
+    JSON des lignes concernées (avant modification) a été conservé de mon côté par précaution.
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
