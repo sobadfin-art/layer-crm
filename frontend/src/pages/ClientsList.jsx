@@ -35,6 +35,17 @@ const TYPOLOGIES = [
 //    de données qui n'existent pas) ;
 //  - la création de compte (POST /api/accounts, déjà supporté pour DIRECTEUR
 //    côté serveur avec ownerRepId obligatoire — cf. accounts.js).
+//
+// Représentant (correctif 2026-09-16, demande client directe : "je veux
+// qu'un Rep puisse créer un client/prospect et saisir une commande") :
+// POST /api/accounts a TOUJOURS accepté ce rôle côté serveur (ownerRepId
+// auto-affecté à lui-même, masterRepId dérivé automatiquement — cf.
+// accounts.js), et le scénario est même documenté comme attendu dans
+// docs/recap-acces-test-beta.md ("Se connecter en Représentant, créer un
+// client..."). Seule l'UI ne l'exposait pas. Le formulaire est donc
+// disponible ici aussi pour ce rôle, mais SANS les champs
+// représentant/Master Rep (non pertinents : le serveur les détermine
+// lui-même pour ce rôle, cf. plus haut) — cf. rendu conditionnel plus bas.
 export default function ClientsList() {
   const { t } = useI18n();
   const { user } = useAuth();
@@ -45,7 +56,13 @@ export default function ClientsList() {
   // complet (ownerRepId obligatoire côté serveur pour ce rôle, cf.
   // accounts.js) et la même liste représentants/Master Reps que ci-dessous.
   const isFrontDesk = user.role === "FRONT_DESK";
-  const canCreateAccount = isDirecteur || isFrontDesk;
+  const isRepresentant = user.role === "REPRESENTANT";
+  // Directeur/Front Desk choisissent le représentant propriétaire du compte
+  // (champ obligatoire côté serveur pour ces deux rôles) ; le Représentant,
+  // lui, n'a pas ce choix à faire — le serveur l'affecte automatiquement à
+  // lui-même, donc ce bloc de champs ne lui est jamais montré (cf. rendu).
+  const needsOwnerRepPicker = isDirecteur || isFrontDesk;
+  const canCreateAccount = isDirecteur || isFrontDesk || isRepresentant;
   const seesAllAccounts = isDirecteur || user.role === "ADMINISTRATEUR" || isFrontDesk;
 
   const [accounts, setAccounts] = useState([]);
@@ -74,7 +91,7 @@ export default function ClientsList() {
     setLoading(true);
     setError(null);
     try {
-      if (isDirecteur || isFrontDesk) {
+      if (needsOwnerRepPicker) {
         const [accountsData, membersData, countriesData] = await Promise.all([
           api.get("/accounts"),
           api.get("/team/members"),
@@ -82,6 +99,16 @@ export default function ClientsList() {
         ]);
         setAccounts(accountsData);
         setMembers(membersData);
+        setCountries(countriesData);
+      } else if (isRepresentant) {
+        // Pas besoin de /team/members ici (pas de sélecteur représentant/
+        // Master Rep pour ce rôle, cf. plus haut) mais /countries reste
+        // nécessaire pour le formulaire "Nouveau compte".
+        const [accountsData, countriesData] = await Promise.all([
+          api.get("/accounts"),
+          api.get("/countries"),
+        ]);
+        setAccounts(accountsData);
         setCountries(countriesData);
       } else {
         setAccounts(await api.get("/accounts"));
@@ -91,7 +118,7 @@ export default function ClientsList() {
     } finally {
       setLoading(false);
     }
-  }, [isDirecteur, isFrontDesk]);
+  }, [needsOwnerRepPicker, isRepresentant]);
 
   useEffect(() => {
     load();
@@ -120,7 +147,8 @@ export default function ClientsList() {
   async function handleCreateAccount(e) {
     e.preventDefault();
     setNewAccountError(null);
-    if (!newAccountForm.name.trim() || !newAccountForm.countryCode || !newAccountForm.ownerRepId) {
+    const missingOwnerRep = needsOwnerRepPicker && !newAccountForm.ownerRepId;
+    if (!newAccountForm.name.trim() || !newAccountForm.countryCode || missingOwnerRep) {
       setNewAccountError(t("clients.newAccountMissing"));
       return;
     }
@@ -131,8 +159,13 @@ export default function ClientsList() {
         name: newAccountForm.name.trim(),
         countryCode: newAccountForm.countryCode,
         typology: newAccountForm.typology,
-        ownerRepId: newAccountForm.ownerRepId,
-        masterRepId: newAccountForm.masterRepId || null,
+        // Pour le Représentant, ownerRepId/masterRepId ne sont ni affichés ni
+        // pertinents : le serveur les détermine lui-même pour ce rôle (cf.
+        // commentaire en tête de fichier) — on ne les envoie donc que quand
+        // le sélecteur correspondant est réellement affiché.
+        ...(needsOwnerRepPicker
+          ? { ownerRepId: newAccountForm.ownerRepId, masterRepId: newAccountForm.masterRepId || null }
+          : {}),
       });
       setNewAccountForm({ type: "PROSPECT", name: "", countryCode: "", typology: "OPTICIEN", ownerRepId: "", masterRepId: "" });
       setShowNewAccount(false);
@@ -210,30 +243,32 @@ export default function ClientsList() {
                 </select>
               </div>
             </div>
-            <div className="form-row">
-              <div className="field">
-                <label>{t("clients.newAccountOwnerRep")}</label>
-                <select value={newAccountForm.ownerRepId} onChange={(e) => setNewAccountForm((f) => ({ ...f, ownerRepId: e.target.value }))}>
-                  <option value="">{t("directeurDashboard.objectiveRepChoose")}</option>
-                  {reps.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.firstName} {r.lastName}
-                    </option>
-                  ))}
-                </select>
+            {needsOwnerRepPicker && (
+              <div className="form-row">
+                <div className="field">
+                  <label>{t("clients.newAccountOwnerRep")}</label>
+                  <select value={newAccountForm.ownerRepId} onChange={(e) => setNewAccountForm((f) => ({ ...f, ownerRepId: e.target.value }))}>
+                    <option value="">{t("directeurDashboard.objectiveRepChoose")}</option>
+                    {reps.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.firstName} {r.lastName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>{t("clients.newAccountMasterRep")}</label>
+                  <select value={newAccountForm.masterRepId} onChange={(e) => setNewAccountForm((f) => ({ ...f, masterRepId: e.target.value }))}>
+                    <option value="">{t("teamManagement.noMasterRep")}</option>
+                    {masterReps.map((mr) => (
+                      <option key={mr.id} value={mr.id}>
+                        {mr.firstName} {mr.lastName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="field">
-                <label>{t("clients.newAccountMasterRep")}</label>
-                <select value={newAccountForm.masterRepId} onChange={(e) => setNewAccountForm((f) => ({ ...f, masterRepId: e.target.value }))}>
-                  <option value="">{t("teamManagement.noMasterRep")}</option>
-                  {masterReps.map((mr) => (
-                    <option key={mr.id} value={mr.id}>
-                      {mr.firstName} {mr.lastName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            )}
             {newAccountError && <p className="error-text">{newAccountError}</p>}
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               <button className="btn primary" type="submit" disabled={creating}>
