@@ -1189,6 +1189,56 @@ modification :
   qui restent volontairement en année civile (Data/RepData.jsx, historique de la fiche compte,
   extraction Directeur...).
 
+**Corrections V3 (2026-09-16), suite aux 6 fiches correctives transmises le même jour (Représentant,
+Parcours de création de commande, Master Rep Backend, Administrateur, Direction Commerciale, Front
+Desk).** Constat préalable important : en reprenant chaque point un par un dans le code, une bonne
+partie de ce qui était signalé "cassé" ou "absent" (panneau de notifications mal positionné, actions
+Consulter/Valider/Export Dolibarr du front desk, accès global du front desk aux clients) s'est avérée
+déjà corrigée dans une session précédente — jamais déployée sur la bêta Render testée, qui reflétait
+donc une version plus ancienne du code que celle disponible ici. **Le mécanisme de déploiement de ce
+livrable vers `moken-crm.onrender.com` reste à clarifier avec vous** (cet environnement de travail
+n'est pas un dépôt git ; `render.yaml` suppose un déploiement git-based) — c'est le point sur lequel
+la vôtre est actuellement bloquée pour retester.
+
+Corrections réellement apportées ce lot :
+- **Parcours de création de commande (Représentant) :** le panier ne se vide plus lors d'un
+  changement de catalogue et les produits d'un catalogue quitté restent résolubles au récapitulatif
+  (`NewOrder.jsx`, accumulateur `productsById`) — jusqu'ici, changer de catalogue effaçait le panier
+  et perdait silencieusement les articles d'un catalogue précédent, ce qui explique probablement le
+  ressenti "commande impossible à finaliser". Ajout d'une saisie directe de quantité en plus des
+  boutons +/-, conforme au document de référence "Parcours de création de commande" (section 4).
+- **Directeur — création de commande (nouveau) :** override explicite documenté par la fiche
+  Direction Commerciale V3 ("remplacent les règles antérieures... notamment sur la capacité à créer
+  une commande") pour ce rôle uniquement — **le Master Rep reste strictement en lecture seule, décision
+  client distincte non concernée**. Route `/clients/:id/commande` + bouton "Nouvelle commande" sur la
+  fiche compte + `ORDER_CREATE_ROLES` côté serveur (`routes/orders.js`), qui n'autorisait jusqu'ici que
+  le Représentant.
+- **Accès rapide "Nouvelle commande" depuis le dashboard (nouveau) :** bouton en haut à droite du
+  Dashboard Représentant et du Dashboard Directeur, sélection obligatoire d'un client existant avant
+  d'ouvrir le catalogue (`components/NewOrderQuickAccess.jsx`) — n'existait nulle part auparavant.
+- **Master Rep — comptes de l'équipe pas correctement affichés (bug réel corrigé) :** le scope
+  `MASTER_REP` s'appuyait sur `accounts.master_rep_id`, un champ jamais renseigné quand un
+  représentant crée lui-même son compte (le cas normal) et jamais mis à jour lors d'une réaffectation
+  d'équipe. Le scope repose désormais sur une jointure vivante contre `sales_reps`/`master_reps`
+  (`lib/scope.js`), + migration `019_backfill_accounts_master_rep.sql` pour les comptes existants.
+- **Directeur — "Rendez-vous du jour"/"Tâches du jour" (dashboard) et "Performance de l'équipe"
+  (Équipe) :** nouveaux blocs, vision globale tous représentants, réutilisant les endpoints agenda
+  déjà scopés globalement pour ce rôle côté serveur.
+- **Front Desk / Administrateur — création de client par le Front Desk (nouveau) :** `POST
+  /api/accounts` acceptait déjà ce rôle côté serveur ; seul le formulaire de création (déjà construit
+  pour le Directeur) n'était pas affiché pour Front Desk — corrigé, `GET /team/members` ouvert à ce
+  rôle pour le choix du représentant propriétaire.
+- **Administrateur — désignation de la photo principale (gap comblé) :** l'endpoint de
+  réordonnancement (`PATCH /products/:id/photos/reorder`) existait déjà côté serveur sans aucun
+  contrôle côté client ; bouton "Définir comme couverture" ajouté à la galerie photo.
+- **Administrateur — carrousel photo dans la grille catalogue (nouveau) :** `components/
+  ProductPhotoCarousel.jsx`, utilisé dans `Catalogue.jsx` et `NewOrder.jsx` — swipe tactile/trackpad,
+  flèches desktop, indicateur de position, jamais de déclenchement de la sélection produit
+  (stopPropagation systématique).
+- **Administrateur — "Visualisation du catalogue" (déjà construite) :** l'écran demandé par la fiche
+  V3 existait déjà (`CatalogueConsult.jsx`, route `/catalogue-produits`) avec son propre carrousel ;
+  seul le lien "Modifier la référence" manquait pour boucler vers Admin produits — ajouté (`?editId=`).
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section

@@ -205,3 +205,71 @@ modèle), puis relancer
 `node backend/scripts/mokenvision-photos/match-photos-to-catalog.mjs
 --dry-run` pour vérifier l'impact avant d'appliquer l'écriture réelle
 (tâche séparée, cf. le plan de correction Administrateur).
+
+## 8. Extension 2026-09-16 — Optiques et Sport complétés
+
+Reprise exactement là où la section 7 s'était arrêtée, en une seule séance :
+
+- **Optiques** : les 5 pages de listing ont été récupérées pour obtenir les
+  URLs de fiches individuelles, puis une fiche représentative par modèle
+  (52 modèles) a été ouverte pour en extraire l'image de couverture réelle,
+  normalisée `superlarge_default` → `home_default` comme d'habitude.
+- **Sport** : même méthode sur les 3 pages de listing (24 modèles
+  représentatifs). En comparant au fichier existant avant d'écrire, il
+  s'est avéré qu'une partie de Sport (Strato, Walter, Lina, Muddy, Santo,
+  One, Two, Rover, Skyfoil, Cosmos, Bruce, ainsi que Rover II et les deux
+  fiches Hawkins Covers manquantes listées en section 7) **était déjà
+  intégralement couverte** dans `moken_photos_map.json` avec plusieurs
+  variantes de couleur chacune — vraisemblablement scrapée lors d'une
+  séance antérieure non documentée ici. Ces entrées existantes (plus
+  complètes que la version "une couleur représentative" qui aurait été
+  récupérée à nouveau) ont été conservées telles quelles ; seules les
+  variantes réellement nouvelles (URL produit absente de la liste
+  existante) ont été fusionnées dedans, le reste a été ignoré pour ne rien
+  dégrader.
+- Les deux fiches manquantes citées en section 7 (housse Hawkins bleue et
+  "Magic Mountain Mask") sont donc bien couvertes : la housse bleue
+  (produit 779) était déjà présente dans l'entrée `hawkinscovers`
+  existante, et le Magic Mountain Mask (produit 873) y a été ajouté comme
+  variante supplémentaire.
+- **60 nouveaux modèles** ont été ajoutés à `moken_photos_map.json` (tous
+  Optiques sauf 10 Sport réellement inédits : Kurtiss, Hawkins, Hawkins
+  Vintage, Rockett, Hawkins SMK, Hawkins: The Helias Pro Model, Kutbak,
+  Moana, Olina, Keli), portant le fichier à **142 entrées / 278 variantes**
+  au total (contre 82 avant cette extension).
+
+**Piège rencontré et corrigé — format des clés JSON :** le script
+`match-photos-to-catalog.mjs` recherche une entrée par
+`photoMap[normalize(p.model)]`, où `normalize()` retire **tous** les
+caractères non alphanumériques, y compris les tirets. Une clé écrite en
+kebab-case (ex. `"josephine-ii"`, `"hawkins-vintage"`, `"the-rockett"`) ne
+peut donc jamais être trouvée par ce lookup — il faut coller très
+précisément au format déjà utilisé partout ailleurs dans le fichier
+(minuscules, collées, sans séparateur : `"josephineii"`,
+`"hawkinsvintage"`, `"rockett"`, etc.). Ce bug a été introduit puis détecté
+via un premier `--dry-run` (114 rapprochements) anormalement bas par
+rapport aux modèles réellement ajoutés, corrigé (renommage des 5 clés
+concernées), puis confirmé par un second `--dry-run` (130 rapprochements,
++16). **Pour toute future extension de ce fichier : ne jamais utiliser de
+tiret dans une clé de modèle — toujours `normalize(nomDuModèle)` sans
+séparateur.**
+
+**Résultat appliqué (écriture réelle, sans `--dry-run`) :**
+130 nouvelles photos posées, 0 erreur. Le catalogue passe de 122 à **252
+fiches sur 348 avec photo** (72 %). Les 96 fiches restantes n'ont
+délibérément reçu aucune photo (jamais de correspondance approximative) :
+il s'agit soit de fiches sans champ Modèle renseigné, soit de modèles dont
+le nom en base ne correspond à aucune entrée du fichier — présentoirs et
+accessoires de PLV (`WOODENFLOORDISPLAY`, `LARGECITYDISPLAY`,
+`PREMIUMWOODENDISPLAY`, ...), packs/kits (`Starter Pack`,
+`CORD STARTED PACK`), variantes "-DH" non scrapées (`KURTISS-DH`,
+`STRATO-DH`), et une quinzaine de modèles Optiques dont l'orthographe en
+base diffère de celle du site (`GEORGES` vs `George`, `JESSIE` vs `Jessy`,
+`ALANI`, `ALMA`, `ARI`, `AUGUST`, `BIGDUDE`, `EDWARD`, `EZ`, `GERRY`,
+`GILMOR`, `GRIFFIN`, `JASON`, `JILL`, `JOSY`, `KIMO`, `LEO`, `MILTON`,
+`SCOTTY`, `SHARPER`, `SPENCER`, `TAILOR`, `SVEN`, `Comet`, `Nova`, `Rocket`
+— aucun de ces cas n'a été forcé par ressemblance, conformément à la règle
+du script). Une reprise future pourrait vérifier fiche par fiche si
+certains de ces noms correspondent à un modèle mokenvision.com déjà
+présent sous une autre orthographe, plutôt que de les considérer comme
+définitivement non couvrables.
