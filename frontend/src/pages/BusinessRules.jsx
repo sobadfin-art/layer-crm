@@ -262,7 +262,14 @@ export default function BusinessRules() {
                     </div>
                     <div className="field">
                       <label>{t("businessRules.ratePct")}</label>
-                      <input type="number" min="0" max="100" step="0.1" value={form.ratePct} onChange={(e) => setForm((f) => ({ ...f, ratePct: e.target.value }))} />
+                      {/* Correctif 2026-09-16 (demande directe Direction Commerciale : "Le niveau de
+                          remise peut avoir deux decimale") — step passé de 0.1 à 0.01 : la colonne
+                          business_rules.rate_pct est NUMERIC(5,2) et le schéma serveur (Zod, ratePct
+                          z.number().min(0).max(100)) acceptait déjà les décimales, mais avec step="0.1"
+                          la validation native du navigateur refusait la saisie d'un deuxième chiffre
+                          après la virgule (ex. 12,34) et bloquait silencieusement l'envoi du
+                          formulaire. */}
+                      <input type="number" min="0" max="100" step="0.01" value={form.ratePct} onChange={(e) => setForm((f) => ({ ...f, ratePct: e.target.value }))} />
                     </div>
                   </>
                 )}

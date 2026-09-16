@@ -129,6 +129,15 @@ export default function NewOrder() {
 
   // cart: Map productId -> { qty, isGift }
   const [cart, setCart] = useState(new Map());
+  // Correctif 2026-09-16 (demande directe Direction Commerciale : "dans la
+  // partie representant, le niveau de remise (bouton) est par défaut non
+  // enclanché. Le représentant l'enclenchera lui meme manuellement si il
+  // veut l'enclencher") — objet toujours vide au départ, mais désormais lu
+  // partout ci-dessous avec `=== true` (et non plus `!== false`) : une
+  // catégorie absente de cet objet (donc `undefined`) vaut maintenant
+  // "remise NON appliquée" par défaut, jamais l'inverse. Le représentant
+  // doit cliquer le bouton pour l'activer lui-même, catégorie par
+  // catégorie ; rien n'est présélectionné.
   const [discountApplied, setDiscountApplied] = useState({}); // par catégorie
   const [shippingOffered, setShippingOffered] = useState(false);
   const [isPrecommande, setIsPrecommande] = useState(false);
@@ -309,7 +318,7 @@ export default function NewOrder() {
 
   const totalAmount = cartItems.reduce((s, i) => {
     if (i.isGift) return s;
-    const rate = discountApplied[i.product.category] !== false ? discountRateFor(i.product.category) : 0;
+    const rate = discountApplied[i.product.category] === true ? discountRateFor(i.product.category) : 0;
     return s + i.unitPrice * i.qty * (1 - rate / 100);
   }, 0);
   const shippingAutoEligible = shippingThreshold !== null && totalAmount >= shippingThreshold;
@@ -321,7 +330,7 @@ export default function NewOrder() {
     setSubmitError(null);
     try {
       const lines = cartItems.map((item) => {
-        const applied = discountApplied[item.product.category] !== false;
+        const applied = discountApplied[item.product.category] === true;
         const isReliquat = !isPrecommande && item.product.stockStatus === "REASSORT_PREVU";
         return {
           productId: item.productId,
@@ -483,7 +492,7 @@ export default function NewOrder() {
 
           {Object.entries(byCategory).map(([cat, g]) => {
             const rate = discountRateFor(cat);
-            const applied = discountApplied[cat] !== false;
+            const applied = discountApplied[cat] === true;
             return (
               <div className="cat-block panel" key={cat}>
                 <div className="cat-head">
