@@ -210,10 +210,11 @@ et « Ajustements suite au retour client détaillé » pour la règle définitiv
 - `GET/PATCH /api/dolibarr/settings` — réglages configurables. Mis à jour en détail dans la section
   "Ajustements" plus bas suite à la configuration Dolibarr réelle communiquée (version 23.0.3,
   fichier uniquement, pas de TVA, conditions/mode de paiement avec de vraies valeurs par défaut).
-- `POST /api/dolibarr/orders/export` — génère un CSV (une ligne par ligne de commande, plusieurs
+- `POST /api/dolibarr/orders/export` — génère un fichier (une ligne par ligne de commande, plusieurs
   commandes combinables en un seul fichier pour un export par lot), marque les commandes
   `EXPORTEE_DOLIBARR` avec horodatage et `ref_client`, journalise dans `audit_logs`. Une commande déjà
-  exportée ou non validée est rejetée avec le motif exact (testé).
+  exportée ou non validée est rejetée avec le motif exact (testé). *Mise à jour (corrections V2,
+  section "Prochaine étape" plus bas) : ce fichier était initialement un CSV, désormais un .xlsx.*
 - `PATCH /api/accounts/:id` accepte toujours `dolibarrCodeClient` (champ conservé en base pour
   utilité historique éventuelle), mais ce champ est **optionnel et n'intervient plus du tout** dans
   le flux d'export Dolibarr — ni contrôle, ni avertissement, ni rapprochement automatique (règle
@@ -1160,6 +1161,33 @@ catalogue, champs facultatifs au-delà du strict nécessaire — cf. les deux ca
 `champs-import-*`), le rapprochement automatique des photos produit avec mokenvision.com, et le
 téléversement direct d'une photo produit sans passer par une URL, pour les produits pas encore
 vendus en ligne (voir `docs/rapprochement-photos-mokenvision.md` section 5 bis).
+
+**Corrections V2 (2026-09-16), suite aux 5 fiches correctives par rôle transmises le 15/09/2026.**
+La quasi-totalité des points P0/P1 relevés (détail des commandes, badge "à traiter", stock/réassort
+visible à la prise de commande, ouverture directe de l'élément depuis une notification) a été
+corrigée directement, sans qu'il y ait matière à trancher. Deux points remettaient en cause des
+décisions déjà actées avec vous et ont donc fait l'objet d'une question explicite avant toute
+modification :
+- **Fichier Dolibarr : CSV → .xlsx.** Le PDF Front Desk demande littéralement un "Fichier Dolibarr
+  (.xlsx)" alors que le Lot 4 avait délibérément retenu un CSV (voir plus haut). Sur confirmation,
+  le front desk télécharge désormais un vrai classeur Excel (`lib/dolibarrExport.js#buildDolibarrXlsx`,
+  bibliothèque `xlsx` déjà utilisée par `GET /api/dashboard/extract.xlsx`) — mêmes colonnes/valeurs
+  que le CSV, qui reste disponible dans le code (`buildDolibarrCsv`) pour un usage outillage éventuel
+  mais n'est plus ce qui est proposé au téléchargement. Le réglage "délimiteur CSV" a été retiré de
+  l'écran de configuration Directeur (`BusinessRules.jsx`), devenu sans objet pour ce flux.
+- **Année commerciale (01/11-31/10) sur les tableaux de bord.** Le PDF Représentant fixe cette règle
+  pour le "portefeuille annuel et les indicateurs annuels" — jusqu'ici codée en année civile
+  (1er janvier) sur le Dashboard Représentant, et délibérément laissée en année civile sur le
+  Dashboard Directeur (décision documentée dans une version antérieure de ce code, désormais
+  remplacée). Sur confirmation explicite, et **strictement cantonné à la lisibilité des indicateurs
+  cumulés des trois tableaux de bord** (Représentant/Master Rep/Directeur) — portefeuille
+  gagné/perdu/actifs (a) commandé/(n'a) pas commandé, et CA ferme/précommandes cumulés vs objectif :
+  nouveau `frontend/src/lib/fiscalYear.js` (bornes 01/11-31/10), utilisé pour la fenêtre de calcul du
+  portefeuille (Dashboard.jsx, DirecteurDashboard.jsx) et pour une étiquette "Année commerciale
+  2025–2026" affichée à côté de ces blocs cumulés (les trois dashboards). Rien d'autre ne change : ni
+  les dates explicites que le Directeur choisit lui-même pour chaque objectif, ni les autres écrans
+  qui restent volontairement en année civile (Data/RepData.jsx, historique de la fiche compte,
+  extraction Directeur...).
 
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
