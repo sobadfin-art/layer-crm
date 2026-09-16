@@ -1779,6 +1779,38 @@ Corrections réellement apportées ce lot :
     membre) et sur le Tableau de bord Directeur (indicateurs, performance d'équipe, rendez-vous/tâches
     du jour, carte).
 
+- **Ajustements sur les remises (2026-09-16, demande directe : "changement concernant les remises,
+  dans la partie direction commerciale. Le niveau de remise peut avoir deux decimale et dans la
+  partie representant, le niveau de remise (bouton) est par défaut non enclanché. Le représentant
+  l'enclenchera lui meme manuellement si il veut l'enclencher")** : deux changements distincts.
+  - **Taux de remise catégorie saisi par le Directeur (Règles commerciales) : deux décimales
+    désormais réellement utilisables.** La colonne base `business_rules.rate_pct` (`NUMERIC(5,2)`) et
+    le schéma serveur (`ratePct: z.number().min(0).max(100)`, `backend/src/routes/business-rules.js`)
+    acceptaient déjà les décimales — le vrai verrou était le champ de saisie côté écran
+    (`frontend/src/pages/BusinessRules.jsx`), dont l'attribut `step="0.1"` faisait échouer
+    silencieusement la validation native du navigateur dès qu'un deuxième chiffre après la virgule
+    était saisi (ex. 12,34), bloquant l'envoi du formulaire avant même d'atteindre le serveur. Corrigé
+    en passant ce `step` à `0.01`. Vérifié : la saisie "12.34" est désormais acceptée par la
+    validation native du champ (`checkValidity()` renvoie vrai), alors qu'elle échouait avec
+    l'ancien `step`.
+  - **Bouton "Remise" du Représentant désormais désactivé par défaut sur une commande.** Jusqu'ici,
+    dès qu'une règle de remise catégorie active existait pour le représentant/pays/catégorie
+    concernés, la remise était appliquée automatiquement à l'ouverture du panier — le bouton n'avait
+    qu'à être décoché pour la retirer. Inversé : le bouton part maintenant toujours décoché (aucune
+    remise appliquée par défaut), et c'est au représentant de l'activer lui-même, catégorie par
+    catégorie, s'il souhaite l'appliquer à cette commande (`frontend/src/pages/NewOrder.jsx` —
+    logique de lecture de l'état du bouton inversée à trois endroits : calcul du total affiché dans le
+    panier, construction des lignes envoyées au serveur, et rendu visuel du bouton lui-même ; le
+    serveur, qui reste la seule source de vérité du taux réellement appliqué
+    (`backend/src/lib/pricing.js`), n'a pas eu besoin d'être modifié — il continue de respecter
+    fidèlement ce que le client lui envoie, qu'il s'agisse d'un 0 explicite ou d'un taux calculé).
+    Vérifié de bout en bout, remise réelle activée pour ce représentant sur la catégorie Premium
+    (25 %) : commande envoyée sans toucher au bouton → remise à 0 % appliquée sur la ligne ; même
+    commande avec le bouton activé manuellement → remise à 25 % bien appliquée sur la ligne — les deux
+    commandes de test ont été supprimées après vérification pour ne pas polluer la file du front desk.
+  - Non-régression vérifiée sur le reste de l'écran de commande (ajout au panier, cadeaux, franco de
+    port, reliquats) et sur l'ensemble des parcours Représentant/Master Rep/Directeur déjà testés.
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
