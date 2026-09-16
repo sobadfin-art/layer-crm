@@ -286,3 +286,71 @@ adminUsersRouter.post("/:userId/force-password-reset", async (req, res) => {
   });
   res.json({ ok: true, temporaryPassword: tempPassword });
 });
+
+// -- Remplacement d'identité (email/nom) — usage opérationnel : remplacer un
+// compte de démo/placeholder par le vrai titulaire (demande explicite du
+// client, ex. "remplace le compte de démo directeur par mon vrai compte"),
+// ou corriger l'email/nom d'un compte existant. Aucune route n'existait pour
+// éditer l'email d'un utilisateur (seuls création, activation, rôle et mot
+// de passe l'étaient) — ajoutée ici plutôt qu'en écriture SQL directe pour
+// que l'opération passe par l'API comme toute autre (validation, unicité de
+// l'email, journal d'audit), y compris en production où aucun accès SQL
+// direct n'est possible depuis l'extérieur.
+//
+// Combine volontairement le changement d'identité ET un nouveau mot de passe
+// temporaire (comme force-password-reset ci-dessus) en une seule opération
+// atomique : remplacer l'identité d'un compte doit toujours invalider
+// l'ancien mot de passe, pour qu'un ancien titulaire (ou quiconque connaît un
+// mot de passe de démo) ne puisse jamais se connecter sous la nouvelle
+// identité.
+//
+// Volontairement PAS exposée dans l'écran Utilisateurs (UsersAdmin.jsx) :
+// les lignes DIRECTEUR y sont affichées en lecture seule sans aucune action
+// (cf. commentaire en tête de ce fichier), choix délibéré conservé tel quel.
+// Cette route reste donc un outil de maintenance ponctuelle, appelée
+// directement (cf. procédure documentée dans le README), jamais depuis un
+// bouton de l'interface.
+const identitySchema = z.object({
+  email: z.string().email(),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+});
+
+adminUsersRouter.patch("/:userId/identity", async (req, res) => {
+  const parsed = identitySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Email, prénom et nom sont obligatoires (email valide)." });
+  }
+  const { email, firstName, lastName } = parsed.data;
+
+  const { rows } = await query(`SELECT id, email FROM users WHERE id = $1`, [req.params.userId]);
+  const target = rows[0];
+  if (!target) return res.status(404).json({ error: "Utilisateur introuvable." });
+
+  const tempPassword = generateTempPassword();
+  const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+  try {
+    const { rows: updated } = await query(
+      `UPDATE users
+       SET email = $1, first_name = $2, last_name = $3, password_hash = $4,
+           must_change_password = TRUE, updated_at = now()
+       WHERE id = $5
+       RETURNING id, email, first_name, last_name, role, active, must_change_password`,
+      [email.toLowerCase(), firstName, lastName, passwordHash, req.params.userId]
+    );
+    await logAudit({
+      userId: req.user.id,
+      action: "USER_IDENTITY_REPLACED",
+      entity: "users",
+      entityId: req.params.userId,
+      details: { fromEmail: target.email, toEmail: email.toLowerCase() },
+    });
+    res.json({ ...toCamel(updated[0]), temporaryPassword: tempPassword });
+  } catch (err) {
+    if (err.code === "23505") {
+      return res.status(409).json({ error: "Un utilisateur avec cet email existe déjà." });
+    }
+    throw err;
+  }
+});
