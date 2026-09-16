@@ -4,6 +4,7 @@ import { Plus, Trash2, Search, ImageUp, Pencil, ChevronLeft, ChevronRight, X, Im
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { shortDate } from "../lib/format.js";
+import { downloadFile } from "../lib/download.js";
 import ImportWizard from "../components/ImportWizard.jsx";
 
 // Écran Administrateur — catalogue produits (gestion des catalogues + import
@@ -25,7 +26,7 @@ const FIELD_LABELS = {
   priceCH: "Prix Suisse",
   rrp: "Prix conseillé (RRP)",
   qty: "Quantité en stock",
-  dolibarrRef: "Code Dolibarr (correspondance retour client)",
+  dolibarrRef: "ID Dolibarr",
   // --- Enrichi ---
   collection: "Collection",
   stockStatus: "Statut stock",
@@ -489,22 +490,27 @@ export default function CatalogueAdmin() {
           <ImportWizard
             fieldLabels={FIELD_LABELS}
             requiredFields={REQUIRED_FIELDS}
-            onPreview={async (file) => {
+            allowSheetSelection
+            onDownloadTemplate={() => downloadFile("/catalogs/import-template", "modele-import-catalogue.xlsx")}
+            onPreview={async (file, sheetName) => {
               const form = new FormData();
               form.append("file", file);
+              if (sheetName) form.append("sheetName", sheetName);
               return api.post(`/catalogs/${selectedCatalogId}/import/preview`, form);
             }}
-            onSummary={async (file, mapping) => {
+            onSummary={async (file, mapping, sheetName) => {
               const form = new FormData();
               form.append("file", file);
               form.append("mapping", JSON.stringify(mapping));
+              if (sheetName) form.append("sheetName", sheetName);
               return api.post(`/catalogs/${selectedCatalogId}/import/summary`, form);
             }}
-            onCommit={async (file, mapping, mode) => {
+            onCommit={async (file, mapping, mode, sheetName) => {
               const form = new FormData();
               form.append("file", file);
               form.append("mapping", JSON.stringify(mapping));
               form.append("mode", mode);
+              if (sheetName) form.append("sheetName", sheetName);
               const result = await api.post(`/catalogs/${selectedCatalogId}/import/commit`, form);
               await loadCatalogs();
               loadProducts();

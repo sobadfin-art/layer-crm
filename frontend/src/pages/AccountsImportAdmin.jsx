@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
+import { downloadFile } from "../lib/download.js";
 import ImportWizard from "../components/ImportWizard.jsx";
 
 // Écran Administrateur — import en masse des fiches client depuis l'export
@@ -93,6 +94,7 @@ export default function AccountsImportAdmin() {
         fieldLabels={FIELD_LABELS}
         requiredFields={REQUIRED_FIELDS}
         modeChoiceLabel={t("accountsImportAdmin.modeLabel")}
+        onDownloadTemplate={() => downloadFile("/accounts-import/template", "modele-import-fiches-client.xlsx")}
         renderSummaryExtra={(summary) =>
           summary.repFallbackCount > 0 && (
             <div className="task-row">

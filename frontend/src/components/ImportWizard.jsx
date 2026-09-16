@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Upload, ArrowRight, CheckCircle2, Download } from "lucide-react";
 import { useI18n } from "../i18n/I18nContext.jsx";
 
 // Assistant d'import générique (aperçu -> mapping -> résumé -> application),
@@ -11,12 +11,21 @@ import { useI18n } from "../i18n/I18nContext.jsx";
 //
 // fieldLabels: { targetFieldKey: "Libellé affiché" }
 // requiredFields: [targetFieldKey, ...]
-// onPreview(file) -> { headers, suggestedMapping, previewRows, totalRows }
-// onSummary(file, mapping) -> résumé (forme libre, affiché via renderSummaryExtra)
-// onCommit(file, mapping, mode) -> résultat { created, updated, skipped, errors, total }
+// onPreview(file, sheetName?) -> { headers, suggestedMapping, previewRows, totalRows, sheetNames?, sheetName? }
+// onSummary(file, mapping, sheetName?) -> résumé (forme libre, affiché via renderSummaryExtra)
+// onCommit(file, mapping, mode, sheetName?) -> résultat { created, updated, skipped, errors, total }
 // beforeCommit() -> { ok, error } | true — dernière validation avant l'étape 4
 //   (ex. représentant par défaut choisi), appelée au passage résumé -> commit.
 // renderSummaryExtra(summary) -> JSX optionnel pour des champs propres à l'import
+// onDownloadTemplate() -> Promise<void> optionnel — bouton "Télécharger un
+//   modèle" affiché sur l'écran d'upload s'il est fourni (correctif
+//   2026-09-16, demande client explicite pour le catalogue ET les fiches
+//   client — cf. docs/cahier-des-charges-import-catalogue.md section 10 et
+//   docs/cahier-des-charges-import-fiches-client.md section 11).
+// allowSheetSelection: bool optionnel — affiche un sélecteur d'onglet dès
+//   que le fichier importé en contient plusieurs (fichiers catalogue "1
+//   onglet par catalogue", correctif 2026-09-16). Sans effet pour un import
+//   qui n'a jamais qu'un onglet (fiches client) : sheetNames restera vide/1.
 export default function ImportWizard({
   fieldLabels,
   requiredFields = [],
@@ -26,6 +35,8 @@ export default function ImportWizard({
   beforeCommit,
   renderSummaryExtra,
   modeChoiceLabel,
+  onDownloadTemplate,
+  allowSheetSelection = false,
 }) {
   const { t } = useI18n();
   const [step, setStep] = useState("upload"); // upload -> mapping -> summary -> done
@@ -37,6 +48,8 @@ export default function ImportWizard({
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [sheetName, setSheetName] = useState(null);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
   async function handleFileChange(e) {
     const f = e.target.files?.[0];
@@ -48,11 +61,42 @@ export default function ImportWizard({
       const data = await onPreview(f);
       setPreview(data);
       setMapping(data.suggestedMapping);
+      setSheetName(data.sheetName || null);
       setStep("mapping");
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Changement d'onglet (fichier multi-catalogue) : ré-analyse le même
+  // fichier sur l'onglet choisi — en-têtes, mapping suggéré et aperçu sont
+  // tous propres à cet onglet, jamais mélangés avec ceux d'un autre.
+  async function handleSheetChange(newSheetName) {
+    setError(null);
+    setBusy(true);
+    try {
+      const data = await onPreview(file, newSheetName);
+      setPreview(data);
+      setMapping(data.suggestedMapping);
+      setSheetName(data.sheetName || newSheetName);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDownloadTemplate() {
+    setError(null);
+    setDownloadingTemplate(true);
+    try {
+      await onDownloadTemplate();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDownloadingTemplate(false);
     }
   }
 
@@ -69,7 +113,7 @@ export default function ImportWizard({
     setError(null);
     setBusy(true);
     try {
-      const data = await onSummary(file, mapping);
+      const data = await onSummary(file, mapping, sheetName);
       setSummary(data);
       setStep("summary");
     } catch (err) {
@@ -90,7 +134,7 @@ export default function ImportWizard({
     setError(null);
     setBusy(true);
     try {
-      const data = await onCommit(file, mapping, mode);
+      const data = await onCommit(file, mapping, mode, sheetName);
       setResult(data);
       setStep("done");
     } catch (err) {
@@ -108,6 +152,7 @@ export default function ImportWizard({
     setSummary(null);
     setResult(null);
     setError(null);
+    setSheetName(null);
   }
 
   return (
@@ -118,10 +163,17 @@ export default function ImportWizard({
         <div style={{ textAlign: "center", padding: "24px 10px" }}>
           <Upload size={22} style={{ marginBottom: 8, opacity: 0.6 }} />
           <p className="page-sub" style={{ marginBottom: 12 }}>{t("importWizard.uploadHint")}</p>
-          <label className="btn primary" style={{ cursor: "pointer", display: "inline-flex" }}>
-            {busy ? t("importWizard.analyzing") : t("importWizard.chooseFile")}
-            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} disabled={busy} style={{ display: "none" }} />
-          </label>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+            <label className="btn primary" style={{ cursor: "pointer", display: "inline-flex" }}>
+              {busy ? t("importWizard.analyzing") : t("importWizard.chooseFile")}
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} disabled={busy} style={{ display: "none" }} />
+            </label>
+            {onDownloadTemplate && (
+              <button type="button" className="btn outline" onClick={handleDownloadTemplate} disabled={downloadingTemplate}>
+                <Download size={14} /> {downloadingTemplate ? t("importWizard.downloadingTemplate") : t("importWizard.downloadTemplate")}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -129,6 +181,24 @@ export default function ImportWizard({
         <>
           <h3>{t("importWizard.mappingTitle")}</h3>
           <p className="page-sub">{t("importWizard.mappingHint", { total: preview.totalRows })}</p>
+          {allowSheetSelection && preview.sheetNames && preview.sheetNames.length > 1 && (
+            <div className="field" style={{ maxWidth: 320 }}>
+              <label>{t("importWizard.sheetLabel")}</label>
+              <select
+                value={sheetName || preview.sheetName || ""}
+                onChange={(e) => handleSheetChange(e.target.value)}
+                disabled={busy}
+                style={{ padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 5, fontSize: 12, fontFamily: "inherit" }}
+              >
+                {preview.sheetNames.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <p style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 4 }}>{t("importWizard.sheetHint")}</p>
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8, marginBottom: 14 }}>
             {Object.keys(fieldLabels).map((field) => (
               <div className="field" key={field}>

@@ -74,6 +74,10 @@ export const translations = {
       doneTitle: "Import terminé",
       doneSummary: "{created} créée(s) · {updated} mise(s) à jour · {skipped} ignorée(s) · {errors} erreur(s).",
       newImport: "Nouvel import",
+      downloadTemplate: "Télécharger un modèle",
+      downloadingTemplate: "Téléchargement...",
+      sheetLabel: "Onglet à importer",
+      sheetHint: "Ce fichier contient plusieurs onglets — choisissez celui à importer dans ce catalogue.",
     },
     catalogueAdmin: {
       title: "Admin produits",
@@ -944,6 +948,10 @@ export const translations = {
       doneTitle: "Import complete",
       doneSummary: "{created} created · {updated} updated · {skipped} skipped · {errors} error(s).",
       newImport: "New import",
+      downloadTemplate: "Download a template",
+      downloadingTemplate: "Downloading...",
+      sheetLabel: "Sheet to import",
+      sheetHint: "This file has several sheets — pick the one to import into this catalogue.",
     },
     catalogueAdmin: {
       title: "Product admin",
@@ -1814,6 +1822,10 @@ export const translations = {
       doneTitle: "Importación completada",
       doneSummary: "{created} creada(s) · {updated} actualizada(s) · {skipped} omitida(s) · {errors} error(es).",
       newImport: "Nueva importación",
+      downloadTemplate: "Descargar una plantilla",
+      downloadingTemplate: "Descargando...",
+      sheetLabel: "Pestaña a importar",
+      sheetHint: "Este archivo tiene varias pestañas — elige la que se debe importar en este catálogo.",
     },
     catalogueAdmin: {
       title: "Admin de productos",
