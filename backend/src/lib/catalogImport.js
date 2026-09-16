@@ -123,6 +123,82 @@ export function classifyRows(rows, mapping) {
   });
 }
 
+// Règle de cohérence Référence <-> ID Dolibarr (correctif 2026-09-16, demande
+// client : "rajouter le code produit ID Dolibarr pour s'assurer des bonnes
+// connexions"). Deux principes, vérifiés dans les deux sens :
+//   1. Une référence donnée ne peut avoir qu'UN SEUL ID Dolibarr — jamais
+//      deux ID différents pour la même référence, que ce soit à l'intérieur
+//      du fichier importé (ex. deux onglets/catalogues qui se contredisent)
+//      ou entre le fichier et ce qui est déjà enregistré en base (tous
+//      catalogues confondus).
+//   2. Symétriquement, un ID Dolibarr donné ne peut être rattaché qu'à UNE
+//      SEULE référence — jamais deux références différentes partageant le
+//      même ID.
+// En revanche, et c'est explicitement toléré (demande client : "un catalogue
+// peut avoir des références qui existent sur plusieurs catalogues") : la
+// même référence peut parfaitement apparaître dans plusieurs catalogues (un
+// import ultérieur dans un autre catalogue la rattache simplement à ce
+// nouveau catalogue, cf. applyImport) — ce n'est un conflit QUE si l'ID
+// Dolibarr associé change. Les lignes en conflit sont rejetées (comptées
+// comme erreurs, jamais importées silencieusement avec un ID douteux) plutôt
+// que de bloquer tout le fichier — même philosophie que "Référence
+// manquante" dans classifyRows.
+export async function validateDolibarrIds(classified) {
+  const withId = classified.filter((r) => !r.error && r.fields?.dolibarr_ref);
+  if (withId.length === 0) return classified;
+
+  // 1) Cohérence interne au fichier/onglet en cours d'import.
+  const refToIds = new Map();
+  const idToRefs = new Map();
+  for (const row of withId) {
+    const id = row.fields.dolibarr_ref;
+    if (!refToIds.has(row.ref)) refToIds.set(row.ref, new Set());
+    refToIds.get(row.ref).add(id);
+    if (!idToRefs.has(id)) idToRefs.set(id, new Set());
+    idToRefs.get(id).add(row.ref);
+  }
+
+  // 2) Cohérence avec l'existant en base, tous catalogues confondus (c'est
+  // précisément ce qui permet de tolérer une référence déjà présente dans un
+  // autre catalogue : on ne compare que son ID Dolibarr, jamais son
+  // catalogue de rattachement).
+  const ids = [...new Set(withId.map((r) => r.fields.dolibarr_ref))];
+  const refs = [...new Set(withId.map((r) => r.ref))];
+  const [byId, byRef] = await Promise.all([
+    ids.length
+      ? pool.query("SELECT ref, dolibarr_ref FROM products WHERE dolibarr_ref = ANY($1::text[])", [ids])
+      : { rows: [] },
+    refs.length
+      ? pool.query("SELECT ref, dolibarr_ref FROM products WHERE ref = ANY($1::text[]) AND dolibarr_ref IS NOT NULL", [refs])
+      : { rows: [] },
+  ]);
+  const dbRefById = new Map(byId.rows.map((r) => [r.dolibarr_ref, r.ref]));
+  const dbIdByRef = new Map(byRef.rows.map((r) => [r.ref, r.dolibarr_ref]));
+
+  return classified.map((row) => {
+    if (row.error || !row.fields?.dolibarr_ref) return row;
+    const id = row.fields.dolibarr_ref;
+
+    const idsForThisRef = [...refToIds.get(row.ref)];
+    if (idsForThisRef.length > 1) {
+      return { ...row, error: `ID Dolibarr incohérent dans le fichier pour la référence "${row.ref}" (${idsForThisRef.join(" / ")}) — une seule référence ne peut avoir qu'un seul ID Dolibarr` };
+    }
+    const refsForThisId = [...idToRefs.get(id)].filter((r) => r !== row.ref);
+    if (refsForThisId.length > 0) {
+      return { ...row, error: `ID Dolibarr "${id}" utilisé par plusieurs références dans le fichier ("${row.ref}", "${refsForThisId.join('", "')}") — un ID Dolibarr ne peut correspondre qu'à un seul produit` };
+    }
+    const knownId = dbIdByRef.get(row.ref);
+    if (knownId && knownId !== id) {
+      return { ...row, error: `La référence "${row.ref}" est déjà enregistrée avec l'ID Dolibarr "${knownId}" — correction manuelle requise avant de la réimporter avec "${id}"` };
+    }
+    const knownRef = dbRefById.get(id);
+    if (knownRef && knownRef !== row.ref) {
+      return { ...row, error: `L'ID Dolibarr "${id}" est déjà utilisé par la référence "${knownRef}"` };
+    }
+    return row;
+  });
+}
+
 // Étape 4 : résumé sans écriture (nouvelles / mises à jour / erreurs).
 export async function summarizeImport(classified) {
   const validRefs = classified.filter((r) => !r.error).map((r) => r.ref);
@@ -221,6 +297,13 @@ export async function applyImport({ classified, catalogId, mode, userId }) {
           ]
         );
         created++;
+        // Une même référence peut apparaître plusieurs fois dans un seul
+        // fichier importé (doublon de ligne au sein d'un même onglet, cf.
+        // fichier réel du 2026-09-16) — sans cette mise à jour immédiate,
+        // `existingRefs` resterait périmé pour le reste de la boucle et une
+        // seconde occurrence de la même référence tenterait un second INSERT
+        // au lieu d'une mise à jour, violant la contrainte UNIQUE(ref).
+        existingRefs.add(row.ref);
       } else {
         // Ne touche qu'aux colonnes réellement mappées + le rattachement au catalogue
         // (l'import rattache toujours les références au catalogue choisi, section 3).

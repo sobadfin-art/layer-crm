@@ -14,7 +14,16 @@ function isCsv(originalName, buffer) {
   return !isZip && !isOle2;
 }
 
-export function parseSpreadsheet(buffer, originalName) {
+// sheetName (optionnel) : sélectionne l'onglet à lire — nécessaire depuis
+// que le client fournit ses fichiers catalogue avec "1 onglet par
+// catalogue" (correctif 2026-09-16, cf. docs/cahier-des-charges-import-
+// catalogue.md). Absent -> premier onglet du classeur (comportement
+// inchangé pour un fichier mono-onglet, ex. import fiches client). Le nom
+// d'onglet demandé mais introuvable est une erreur explicite plutôt qu'un
+// repli silencieux sur un autre onglet (jamais deviner quel catalogue
+// importer). `sheetNames` est toujours renvoyé pour permettre à l'appelant
+// de proposer un sélecteur d'onglet si le fichier en contient plusieurs.
+export function parseSpreadsheet(buffer, originalName, sheetName) {
   // SheetJS devine parfois mal l'encodage d'un CSV brut (mojibake sur les
   // accents). On décode nous-mêmes le CSV en UTF-8 et on le passe en tant que
   // chaîne, ce qui contourne complètement sa détection de codepage.
@@ -26,17 +35,37 @@ export function parseSpreadsheet(buffer, originalName) {
   } else {
     workbook = XLSX.read(buffer, { type: "buffer" });
   }
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
+  const sheetNames = workbook.SheetNames;
+  let targetSheet;
+  if (sheetName) {
+    if (!sheetNames.includes(sheetName)) {
+      throw new Error(`L'onglet "${sheetName}" est introuvable dans ce fichier (onglets disponibles : ${sheetNames.join(", ")}).`);
+    }
+    targetSheet = sheetName;
+  } else {
+    targetSheet = sheetNames[0];
+  }
+  const sheet = workbook.Sheets[targetSheet];
 
   // header:1 -> tableau de tableaux, pour récupérer les en-têtes bruts tels quels.
   const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
   if (matrix.length === 0) {
-    throw new Error(`Le fichier ${originalName} semble vide.`);
+    throw new Error(`L'onglet "${targetSheet}" du fichier ${originalName} semble vide.`);
   }
 
-  const headers = matrix[0].map((h) => String(h ?? "").trim());
-  const rows = matrix.slice(1)
+  // Ignore toute ligne entièrement vide en haut de l'onglet avant de
+  // chercher la ligne d'en-têtes (motif réel observé le 2026-09-16 : les 3
+  // onglets du fichier catalogue fourni par le client ont chacun une ligne
+  // vide au-dessus des en-têtes) — jamais deviné plus loin qu'une ligne
+  // strictement vide, pour ne jamais sauter une vraie ligne de données par
+  // erreur.
+  const headerRowIndex = matrix.findIndex((r) => r.some((cell) => String(cell ?? "").trim() !== ""));
+  if (headerRowIndex === -1) {
+    throw new Error(`L'onglet "${targetSheet}" du fichier ${originalName} semble vide.`);
+  }
+
+  const headers = matrix[headerRowIndex].map((h) => String(h ?? "").trim());
+  const rows = matrix.slice(headerRowIndex + 1)
     .filter((r) => r.some((cell) => String(cell ?? "").trim() !== ""))
     .map((r) => {
       const obj = {};
@@ -46,5 +75,5 @@ export function parseSpreadsheet(buffer, originalName) {
       return obj;
     });
 
-  return { headers, rows };
+  return { headers, rows, sheetNames, sheetName: targetSheet };
 }

@@ -24,9 +24,14 @@ const PATTERNS = {
   priceCH: ["swissprice", "chprice", "prixsuisse"],
   rrp: ["rrp", "prixconseille", "recommendedretailprice"],
   qty: ["stock", "qty", "quantite", "quantité"],
-  // Correspondance produit CRM <-> Dolibarr (point 6, retour client) : utilisé
-  // seulement si la référence produit existante ne suffit pas.
-  dolibarrRef: ["codedolibarr", "dolibarrref", "refdolibarr", "dolibarrcode"],
+  // Correspondance produit CRM <-> Dolibarr. Historiquement une colonne de
+  // secours facultative (point 6, retour client) ; devenue le 2026-09-16, à
+  // la demande du client, une clé de contrôle de cohérence à part entière
+  // (cf. validateDolibarrIds dans catalogImport.js et la section dédiée de
+  // docs/cahier-des-charges-champs-import-catalogue.md) : "ID Dolibarr" est
+  // désormais le nom de colonne fourni par le client dans ses fichiers réels
+  // (1 onglet par catalogue), reconnu ici au même titre que les anciens motifs.
+  dolibarrRef: ["codedolibarr", "dolibarrref", "refdolibarr", "dolibarrcode", "iddolibarr", "dolibarrid", "idproduitdolibarr"],
   // Champs enrichis supplémentaires — jamais dans l'export standard à 9
   // colonnes, mais reconnus si le fichier les fournit.
   collection: ["collection", "collectionname", "gamme"],

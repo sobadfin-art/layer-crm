@@ -6,7 +6,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { ROLES } from "../lib/roles.js";
 import { parseSpreadsheet } from "../lib/fileParsing.js";
 import { suggestMapping, IMPORT_TARGET_FIELDS } from "../lib/importMapping.js";
-import { classifyRows, summarizeImport, applyImport } from "../lib/catalogImport.js";
+import { classifyRows, summarizeImport, applyImport, validateDolibarrIds } from "../lib/catalogImport.js";
 
 export const catalogImportRouter = Router({ mergeParams: true });
 
@@ -38,12 +38,22 @@ catalogImportRouter.post(
     if (!req.file) return res.status(400).json({ error: "Fichier requis (champ 'file')." });
 
     try {
-      const { headers, rows } = parseSpreadsheet(req.file.buffer, req.file.originalname);
+      // sheetName (optionnel) : ré-appelée par le front quand l'utilisateur
+      // change d'onglet dans le sélecteur (fichier "1 onglet par catalogue",
+      // cf. fileParsing.js) — sheetNames est toujours renvoyé pour afficher
+      // ce sélecteur dès qu'un fichier en contient plusieurs.
+      const { headers, rows, sheetNames, sheetName } = parseSpreadsheet(
+        req.file.buffer,
+        req.file.originalname,
+        req.body.sheetName || undefined
+      );
       res.json({
         headers,
         suggestedMapping: suggestMapping(headers),
         previewRows: rows.slice(0, 10),
         totalRows: rows.length,
+        sheetNames,
+        sheetName,
       });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -70,8 +80,9 @@ catalogImportRouter.post(
     }
 
     try {
-      const { rows } = parseSpreadsheet(req.file.buffer, req.file.originalname);
-      const classified = classifyRows(rows, mapping);
+      const { rows } = parseSpreadsheet(req.file.buffer, req.file.originalname, req.body.sheetName || undefined);
+      let classified = classifyRows(rows, mapping);
+      classified = await validateDolibarrIds(classified);
       const summary = await summarizeImport(classified);
       res.json(summary);
     } catch (err) {
@@ -104,8 +115,9 @@ catalogImportRouter.post(
     const { mode } = commitBodySchema.parse({ mode: req.body.mode });
 
     try {
-      const { rows } = parseSpreadsheet(req.file.buffer, req.file.originalname);
-      const classified = classifyRows(rows, mapping);
+      const { rows } = parseSpreadsheet(req.file.buffer, req.file.originalname, req.body.sheetName || undefined);
+      let classified = classifyRows(rows, mapping);
+      classified = await validateDolibarrIds(classified);
       const result = await applyImport({
         classified,
         catalogId: req.params.catalogId,

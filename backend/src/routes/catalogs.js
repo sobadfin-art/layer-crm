@@ -4,6 +4,7 @@ import { query } from "../lib/db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { ROLES } from "../lib/roles.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
+import { buildCatalogImportTemplate } from "../lib/importTemplates.js";
 
 export const catalogsRouter = Router();
 
@@ -28,6 +29,24 @@ catalogsRouter.get("/", requireAuth, requireRole(...READ_ROLES), async (req, res
   );
   res.json(toCamelList(rows));
 });
+
+// Modèle Excel vierge à télécharger avant import — un onglet par catalogue
+// existant (correctif 2026-09-16, section 10 du cahier des charges import
+// catalogue). Placée avant "/:id" pour ne jamais être confondue avec un id
+// de catalogue par erreur de routage (aucun souci ici en pratique, ce
+// routeur n'a pas de GET "/:id", mais gardé par prudence/lisibilité).
+catalogsRouter.get(
+  "/import-template",
+  requireAuth,
+  requireRole(ROLES.ADMINISTRATEUR),
+  async (req, res) => {
+    const { rows } = await query("SELECT name FROM catalogs ORDER BY name");
+    const xlsx = buildCatalogImportTemplate(rows.map((c) => c.name));
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="modele-import-catalogue.xlsx"`);
+    res.send(xlsx);
+  }
+);
 
 // Catalogue produits (admin uniquement) — cf. section 3 handoff.
 catalogsRouter.post(

@@ -8,6 +8,7 @@ import { parseSpreadsheet } from "../lib/fileParsing.js";
 import { suggestMapping, IMPORT_TARGET_FIELDS } from "../lib/importMappingAccounts.js";
 import { classifyRows, summarizeImport, applyImport, loadCountriesByName } from "../lib/accountsImport.js";
 import { toCamelList } from "../lib/serialize.js";
+import { buildAccountsImportTemplate } from "../lib/importTemplates.js";
 
 export const accountsImportRouter = Router();
 
@@ -15,6 +16,22 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 
 const mappingSchema = z.object(
   Object.fromEntries(IMPORT_TARGET_FIELDS.map((f) => [f, z.string().nullable().optional()]))
+);
+
+// Modèle Excel vierge à télécharger avant import (correctif 2026-09-16,
+// demande client explicite — cf. section 11 du cahier des charges import
+// fiches client, décision revue : utile comme aide-mémoire même si le
+// fichier réel est d'ordinaire un export direct Dolibarr).
+accountsImportRouter.get(
+  "/template",
+  requireAuth,
+  requireRole(ROLES.ADMINISTRATEUR),
+  async (req, res) => {
+    const xlsx = buildAccountsImportTemplate();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="modele-import-fiches-client.xlsx"`);
+    res.send(xlsx);
+  }
 );
 
 // Liste des représentants disponibles pour l'étape 1 (représentant par
