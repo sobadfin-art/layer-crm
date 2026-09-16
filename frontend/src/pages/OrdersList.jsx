@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
-import { money, dateTime } from "../lib/format.js";
+import { money, dateTime, shortDate } from "../lib/format.js";
 
 const STATUS_KEY = {
   BROUILLON: "statusBROUILLON",
@@ -20,6 +20,11 @@ export default function OrdersList() {
   const { t, locale } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Ouverture directe depuis une notification (?orderId=...) — PDF
+  // Représentant/Master Rep : même exigence "ouvrir directement l'élément
+  // correspondant" que côté Front Desk (SavQueue.jsx/FrontDesk.jsx).
+  const targetOrderId = searchParams.get("orderId");
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,18 +34,32 @@ export default function OrdersList() {
   const [busyId, setBusyId] = useState(null);
   const [toast, setToast] = useState(location.state?.toast || null);
 
+  // Filtres demandés par la fiche corrective V2 (section 5, Historique des
+  // commandes) : date de début, date de fin et recherche/filtre par client.
+  // Le backend (GET /api/orders) supporte déjà search/dateFrom/dateTo — cf.
+  // routes/orders.js — cet écran ne faisait qu'un chargement non filtré.
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.get("/orders");
+      const params = new URLSearchParams();
+      if (search.trim()) params.set("search", search.trim());
+      if (dateFrom) params.set("dateFrom", new Date(dateFrom).toISOString());
+      if (dateTo) params.set("dateTo", new Date(`${dateTo}T23:59:59`).toISOString());
+      const qs = params.toString();
+      const data = await api.get(`/orders${qs ? `?${qs}` : ""}`);
       setOrders(data);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     load();
@@ -57,6 +76,21 @@ export default function OrdersList() {
     const timer = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!targetOrderId || loading) return;
+    if (orders.some((o) => o.id === targetOrderId)) {
+      toggleDetail({ id: targetOrderId });
+    }
+    setSearchParams(
+      (params) => {
+        params.delete("orderId");
+        return params;
+      },
+      { replace: true }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetOrderId, loading, orders]);
 
   async function toggleDetail(order) {
     if (expandedId === order.id) {
@@ -91,6 +125,22 @@ export default function OrdersList() {
     <>
       <h1 className="page-title">{t("orders.title")}</h1>
       <p className="page-sub">{t("orders.subtitle")}</p>
+
+      <div className="search-bar">
+        <input
+          placeholder={t("orders.searchPlaceholder")}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && load()}
+        />
+      </div>
+      <div className="filter-row">
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} title={t("orders.dateFrom")} />
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} title={t("orders.dateTo")} />
+        <button className="btn outline" onClick={load}>
+          {t("orders.refresh")}
+        </button>
+      </div>
 
       {loading && <p className="empty-state">{t("orders.loading")}</p>}
       {error && <p className="error-text">{error}</p>}
@@ -131,32 +181,61 @@ export default function OrdersList() {
               {!details[order.id] ? (
                 <p className="empty-state">{t("frontDesk.loadingDetail")}</p>
               ) : (
-                <div className="table-scroll">
-                  <table className="lines-table">
-                    <thead>
-                      <tr>
-                        <th>{t("frontDesk.colRef")}</th>
-                        <th>{t("frontDesk.colCategory")}</th>
-                        <th>{t("frontDesk.colQty")}</th>
-                        <th>{t("frontDesk.colUnitPrice")}</th>
-                        <th>{t("frontDesk.colDiscount")}</th>
-                        <th>{t("frontDesk.colGift")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {details[order.id].lines.map((line) => (
-                        <tr key={line.id || line.productId}>
-                          <td>{line.ref}</td>
-                          <td>{line.category}</td>
-                          <td>{line.qty}</td>
-                          <td>{money(line.unitPriceHt, locale)}</td>
-                          <td>{line.discountPct ? `${line.discountPct}%` : "—"}</td>
-                          <td>{line.isGift ? t("frontDesk.yes") : "—"}</td>
+                <>
+                  <div className="order-summary-grid" style={{ display: "flex", flexWrap: "wrap", gap: "6px 24px", fontSize: 12, margin: "8px 0 10px" }}>
+                    <div>
+                      <strong>{t("frontDesk.summaryShippingFee")}:</strong>{" "}
+                      {details[order.id].shippingOffered
+                        ? t("frontDesk.summaryShippingOffered")
+                        : money(details[order.id].shippingFeeHt, locale)}
+                    </div>
+                    {details[order.id].desiredDeliveryDate && (
+                      <div>
+                        <strong>{t("frontDesk.summaryDeliveryDate")}:</strong>{" "}
+                        {shortDate(details[order.id].desiredDeliveryDate, locale)}
+                      </div>
+                    )}
+                    {details[order.id].note && (
+                      <div>
+                        <strong>{t("frontDesk.summaryNote")}:</strong> {details[order.id].note}
+                      </div>
+                    )}
+                  </div>
+                  <div className="table-scroll">
+                    <table className="lines-table">
+                      <thead>
+                        <tr>
+                          <th>{t("frontDesk.colRef")}</th>
+                          <th>{t("frontDesk.colCategory")}</th>
+                          <th>{t("frontDesk.colQty")}</th>
+                          <th>{t("frontDesk.colUnitPrice")}</th>
+                          <th>{t("frontDesk.colDiscount")}</th>
+                          <th>{t("frontDesk.colGift")}</th>
+                          <th>{t("frontDesk.colReliquat")}</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {details[order.id].lines.map((line) => (
+                          <tr key={line.id || line.productId}>
+                            <td>{line.ref}</td>
+                            <td>{line.category}</td>
+                            <td>{line.qty}</td>
+                            <td>{money(line.unitPriceHt, locale)}</td>
+                            <td>{line.discountPct ? `${line.discountPct}%` : "—"}</td>
+                            <td>{line.isGift ? t("frontDesk.yes") : "—"}</td>
+                            <td>
+                              {line.isReliquat
+                                ? line.reliquatShipDate
+                                  ? t("frontDesk.reliquatWithDate", { date: shortDate(line.reliquatShipDate, locale) })
+                                  : t("frontDesk.yes")
+                                : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           )}

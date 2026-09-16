@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money } from "../lib/format.js";
@@ -22,6 +22,7 @@ export default function RepData() {
   const [bsError, setBsError] = useState(null);
   const [generated, setGenerated] = useState(false);
 
+  const [custYear, setCustYear] = useState(String(new Date().getFullYear()));
   const [customers, setCustomers] = useState(null);
   const [custLoading, setCustLoading] = useState(true);
   const [custError, setCustError] = useState(null);
@@ -30,15 +31,27 @@ export default function RepData() {
     api.get("/accounts").then(setAccounts).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (tab !== "customers" || customers) return;
+  const loadCustomerPerformance = useCallback((yr) => {
     setCustLoading(true);
+    setCustError(null);
     api
-      .get("/dashboard/customer-performance")
+      .get(`/dashboard/customer-performance?year=${yr}`)
       .then(setCustomers)
       .catch((err) => setCustError(err.message))
       .finally(() => setCustLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (tab !== "customers" || customers) return;
+    loadCustomerPerformance(custYear);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, customers]);
+
+  // Contribution au portefeuille (part du CA de l'année sélectionnée) —
+  // critère demandé par la fiche corrective V2 section 8 ("contribution au
+  // portefeuille selon les données réellement disponibles"), dérivé côté
+  // client à partir du classement déjà renvoyé par le serveur.
+  const portfolioTotal = (customers || []).reduce((s, r) => s + Number(r.caAnneeCourante || 0), 0);
 
   async function handleGenerate() {
     setBsLoading(true);
@@ -136,35 +149,67 @@ export default function RepData() {
       )}
 
       {tab === "customers" && (
-        <div className="panel">
-          {custLoading && <p className="empty-state">{t("data.loading")}</p>}
-          {custError && <p className="error-text">{custError}</p>}
-          {!custLoading && customers && customers.length === 0 && <p className="empty-state">{t("data.empty")}</p>}
-          {!custLoading && customers && customers.length > 0 && (
-            <div className="table-scroll">
-              <table className="lines-table">
-                <thead>
-                  <tr>
-                    <th>{t("data.colAccount")}</th>
-                    <th>{t("data.colStage")}</th>
-                    <th>{t("data.colCaCurrent")}</th>
-                    <th>{t("data.colCaPrevious")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {customers.map((row) => (
-                    <tr key={row.accountId}>
-                      <td>{row.accountName}</td>
-                      <td>{row.pipelineStage}</td>
-                      <td>{money(row.caAnneeCourante, locale)}</td>
-                      <td>{money(row.caAnneePrecedente, locale)}</td>
-                    </tr>
+        <>
+          <div className="panel">
+            <div className="form-row">
+              <div className="field">
+                <label>{t("repData.year")}</label>
+                <select value={custYear} onChange={(e) => setCustYear(e.target.value)}>
+                  {years.map((y) => (
+                    <option key={y} value={y}>{y}</option>
                   ))}
-                </tbody>
-              </table>
+                </select>
+              </div>
             </div>
-          )}
-        </div>
+            <button className="btn primary" onClick={() => loadCustomerPerformance(custYear)} disabled={custLoading}>
+              {custLoading ? t("data.generating") : t("data.generate")}
+            </button>
+          </div>
+
+          <div className="panel">
+            {custLoading && <p className="empty-state">{t("data.loading")}</p>}
+            {custError && <p className="error-text">{custError}</p>}
+            {!custLoading && customers && customers.length === 0 && <p className="empty-state">{t("data.empty")}</p>}
+            {!custLoading && customers && customers.length > 0 && (
+              <div className="table-scroll">
+                <table className="lines-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>{t("data.colAccount")}</th>
+                      <th>{t("data.colStage")}</th>
+                      <th>{t("data.colCaCurrent")}</th>
+                      <th>{t("data.colCaPrevious")}</th>
+                      <th>{t("repData.colEvolution")}</th>
+                      <th>{t("repData.colOrderCount")}</th>
+                      <th>{t("repData.colContribution")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {customers.map((row, idx) => {
+                      const current = Number(row.caAnneeCourante || 0);
+                      const previous = Number(row.caAnneePrecedente || 0);
+                      const evolution = previous > 0 ? ((current - previous) / previous) * 100 : null;
+                      const contribution = portfolioTotal > 0 ? (current / portfolioTotal) * 100 : 0;
+                      return (
+                        <tr key={row.accountId}>
+                          <td>{idx + 1}</td>
+                          <td>{row.accountName}</td>
+                          <td>{row.pipelineStage}</td>
+                          <td>{money(current, locale)}</td>
+                          <td>{money(previous, locale)}</td>
+                          <td>{evolution === null ? "—" : `${evolution >= 0 ? "+" : ""}${evolution.toFixed(0)}%`}</td>
+                          <td>{row.orderCount ?? 0}</td>
+                          <td>{contribution.toFixed(0)}%</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </>
   );

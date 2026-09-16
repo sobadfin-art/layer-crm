@@ -24,6 +24,31 @@ import { dateTime, shortDate, money } from "../lib/format.js";
 
 const PIPELINE_STAGES = ["Nouveau", "Contacté", "RDV prévu", "Devis en cours", "Négociation", "Gagné", "Perdu"];
 
+// Les 11 typologies officielles (cf. backend/src/lib/typology.js) — mêmes
+// valeurs que ClientsList.jsx (création de compte), reprises ici pour rendre
+// la typologie modifiable depuis la fiche client (fiche corrective V2 Front
+// Desk section 5 : "Le Front Desk doit également pouvoir modifier la
+// typologie du client").
+const TYPOLOGIES = [
+  "OPTICIEN",
+  "SURF_SHOP",
+  "FASHION_STORE",
+  "SKATE_SHOP",
+  "SKI_SHOP",
+  "CONCEPT_STORE",
+  "USHIP",
+  "BIKE_STORE",
+  "KEY_ACCOUNT",
+  "DISTRIBUTOR",
+  "AUTRE",
+];
+
+// Statut d'activité du compte (fiche corrective V2 Front Desk section 5,
+// point primordial) — bascule ACTIF <-> INACTIF ouverte à tout rôle ayant
+// accès à la fiche (cf. ACCOUNTS_MODULE_ROLES côté serveur) ; l'archivage
+// (INACTIF -> ARCHIVE, terminal) reste un parcours distinct non couvert ici.
+const STATUS_LABEL_KEY = { ACTIF: "account.statusActif", INACTIF: "account.statusInactif", ARCHIVE: "account.statusArchive" };
+
 // Référentiel fusionné type interaction/RDV (cf. backend/src/lib/interactionTypes.js
 // et la décision utilisateur "liste fusionnée complète" — un seul référentiel
 // réutilisé aussi bien pour le sélecteur d'interaction que pour le sélecteur
@@ -90,6 +115,7 @@ export default function AccountDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stageBusy, setStageBusy] = useState(false);
+  const [statusBusy, setStatusBusy] = useState(false);
 
   const [members, setMembers] = useState([]);
   const [reassignBusy, setReassignBusy] = useState(false);
@@ -256,6 +282,7 @@ export default function AccountDetail() {
     setEditForm({
       name: account.name || "",
       storeName: account.storeName || "",
+      typology: account.typology || "AUTRE",
       billingStreet: account.billingStreet || "",
       billingZip: account.billingZip || "",
       billingCity: account.billingCity || "",
@@ -297,6 +324,21 @@ export default function AccountDetail() {
       setEditError(err.message);
     } finally {
       setSavingEdit(false);
+    }
+  }
+
+  async function handleToggleStatus() {
+    if (!account || account.status === "ARCHIVE") return;
+    const target = account.status === "INACTIF" ? "ACTIF" : "INACTIF";
+    setStatusBusy(true);
+    try {
+      const updated = await api.patch(`/accounts/${id}/status`, { status: target });
+      setAccount((a) => ({ ...a, status: updated.status }));
+      setToast(t("account.statusSaved"));
+    } catch (err) {
+      setToast(err.message);
+    } finally {
+      setStatusBusy(false);
     }
   }
 
@@ -486,9 +528,30 @@ export default function AccountDetail() {
             {account.type === "CLIENT" ? t("account.client") : t("account.prospect")} · {account.countryName}
             <span className="stage-badge">{t(`pipelineStage.${account.pipelineStage}`) || account.pipelineStage}</span>
             <span className="typology-badge">{t(`typology.${account.typology}`)}</span>
+            <span
+              className="typology-badge"
+              style={
+                account.status === "INACTIF"
+                  ? { background: "var(--danger-soft, #fde8e8)", color: "var(--danger, #c0392b)" }
+                  : account.status === "ARCHIVE"
+                  ? { opacity: 0.6 }
+                  : undefined
+              }
+            >
+              {t(STATUS_LABEL_KEY[account.status] || "account.statusActif")}
+            </span>
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {account.status !== "ARCHIVE" && (
+            <button className="btn outline" disabled={statusBusy} onClick={handleToggleStatus}>
+              {statusBusy
+                ? t("account.statusSaving")
+                : account.status === "INACTIF"
+                ? t("account.statusSetActif")
+                : t("account.statusSetInactif")}
+            </button>
+          )}
           {!editMode && (
             <button className="btn outline" onClick={startEdit}>
               <Pencil size={14} /> {t("account.editButton")}
@@ -630,6 +693,18 @@ export default function AccountDetail() {
                 <div className="field">
                   <label>{t("account.storeName")}</label>
                   <input value={editForm.storeName} onChange={(e) => setEditForm((f) => ({ ...f, storeName: e.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label>{t("clients.newAccountTypology")}</label>
+                  <select value={editForm.typology} onChange={(e) => setEditForm((f) => ({ ...f, typology: e.target.value }))}>
+                    {TYPOLOGIES.map((ty) => (
+                      <option key={ty} value={ty}>
+                        {t(`typology.${ty}`)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="form-row">

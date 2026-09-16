@@ -13,6 +13,26 @@ function parsePgArray(str) {
   return inner ? inner.split(",").filter(Boolean) : [];
 }
 
+// Même règle d'affichage du stock que Catalogue.jsx (stockLine) — reprise ici
+// telle quelle car la fiche corrective Représentant demande que le statut
+// stock/réassort soit visible directement au moment de la prise de commande,
+// pas seulement dans le catalogue de consultation séparé.
+function stockLine(p, t, locale) {
+  if (p.stockStatus === "EN_STOCK") {
+    return { text: t("catalogue.stockEnStock"), color: "var(--teal)" };
+  }
+  if (p.stockStatus === "REASSORT_PREVU") {
+    return {
+      text: p.restockDate ? t("catalogue.restockOn", { date: shortDate(p.restockDate, locale) }) : t("catalogue.restockUnknown"),
+      color: "var(--danger)",
+    };
+  }
+  return {
+    text: p.restockDate ? t("catalogue.outOfStockReturn", { date: shortDate(p.restockDate, locale) }) : t("catalogue.outOfStockUnknown"),
+    color: "var(--danger)",
+  };
+}
+
 function unitPriceFor(product, countryCode) {
   if (countryCode === "FR" || countryCode === "ES") return Number(product.priceFr) || 0;
   if (countryCode === "CH") return Number(product.priceCh) || 0;
@@ -55,10 +75,17 @@ export default function NewOrder() {
   const [account, setAccount] = useState(null);
   const [products, setProducts] = useState([]);
   const [rules, setRules] = useState([]);
+  const [catalogs, setCatalogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [subview, setSubview] = useState("browse");
+  // Sélection du catalogue actif ("bulles" — cf. fiche corrective V2, section
+  // 6.2) : étape obligatoire avant la saisie des produits. catalogId === null
+  // tant qu'aucun catalogue n'a été choisi ; subview reste sur "catalog".
+  const [catalogId, setCatalogId] = useState(null);
+  const [catalogsLoading, setCatalogsLoading] = useState(false);
+
+  const [subview, setSubview] = useState("catalog");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
 
@@ -76,15 +103,49 @@ export default function NewOrder() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    Promise.all([api.get(`/accounts/${id}`), api.get("/products"), api.get("/business-rules")])
-      .then(([accountData, productsData, rulesData]) => {
+    setSubview("catalog");
+    setCatalogId(null);
+    setProducts([]);
+    Promise.all([api.get(`/accounts/${id}`), api.get("/catalogs"), api.get("/business-rules")])
+      .then(([accountData, catalogsData, rulesData]) => {
         setAccount(accountData);
-        setProducts(productsData);
+        setCatalogs(catalogsData);
         setRules(rulesData);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Les catalogues proposés à la sélection sont les catalogues actifs
+  // contenant au moins une référence. On garde toujours en dernier recours
+  // une bulle "Tous les produits" pour ne jamais bloquer la saisie si un
+  // produit n'est rattaché à aucun catalogue (ancienne donnée, import
+  // partiel...).
+  const selectableCatalogs = useMemo(
+    () => catalogs.filter((c) => c.active && (c.productCount ?? 0) > 0),
+    [catalogs]
+  );
+
+  function selectCatalog(nextCatalogId) {
+    setCatalogsLoading(true);
+    setError(null);
+    const qs = nextCatalogId ? `?catalogId=${nextCatalogId}` : "";
+    api
+      .get(`/products${qs}`)
+      .then((productsData) => {
+        setProducts(productsData);
+        setCatalogId(nextCatalogId);
+        setSearch("");
+        setCategory("all");
+        // Un changement de catalogue repart d'un panier vide : les articles
+        // précédents référencent des produits d'un autre catalogue et ne
+        // doivent pas se mélanger dans la même commande.
+        setCart(new Map());
+        setSubview("browse");
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setCatalogsLoading(false));
+  }
 
   useEffect(() => {
     if (!toast) return;
@@ -222,10 +283,50 @@ export default function NewOrder() {
         <ArrowLeft size={14} /> {t("newOrder.backToClient")}
       </button>
 
+      {subview === "catalog" && (
+        <>
+          <h1 className="page-title">{t("newOrder.catalogStepTitle", { name: account.name })}</h1>
+          <p className="page-sub">{t("newOrder.catalogStepSubtitle")}</p>
+
+          {catalogsLoading && <p className="empty-state">{t("newOrder.catalogLoading")}</p>}
+
+          {!catalogsLoading && (
+            <div className="catalog-bubbles">
+              {selectableCatalogs.map((c) => (
+                <button key={c.id} type="button" className="catalog-bubble" onClick={() => selectCatalog(c.id)}>
+                  <span className="catalog-bubble-name">{c.name}</span>
+                  <span className="catalog-bubble-count">{t("newOrder.catalogProductCount", { count: c.productCount })}</span>
+                </button>
+              ))}
+              <button type="button" className="catalog-bubble catalog-bubble-all" onClick={() => selectCatalog(null)}>
+                <span className="catalog-bubble-name">{t("newOrder.allProductsBubble")}</span>
+              </button>
+            </div>
+          )}
+
+          {selectableCatalogs.length === 0 && !catalogsLoading && (
+            <p className="empty-state">{t("newOrder.catalogEmpty")}</p>
+          )}
+        </>
+      )}
+
       {subview === "browse" && (
         <>
           <h1 className="page-title">{t("newOrder.title", { name: account.name })}</h1>
-          <p className="page-sub">{t("newOrder.subtitle")}</p>
+          <p className="page-sub">
+            {t("newOrder.subtitle")}
+            {catalogId && catalogs.find((c) => c.id === catalogId) && (
+              <> — {t("newOrder.currentCatalogue", { catalogue: catalogs.find((c) => c.id === catalogId).name })}</>
+            )}
+          </p>
+          <button
+            type="button"
+            className="btn outline"
+            style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}
+            onClick={() => setSubview("catalog")}
+          >
+            <ArrowLeft size={14} /> {t("newOrder.changeCatalogue")}
+          </button>
 
           <div className="search-bar">
             <Search size={15} color="#8892a0" />
@@ -248,6 +349,7 @@ export default function NewOrder() {
             {filtered.map((p) => {
               const entry = cart.get(p.id);
               const price = account ? unitPriceFor(p, account.countryCode) : null;
+              const stock = stockLine(p, t, locale);
               return (
                 <div className="product-card" key={p.id}>
                   {p.photoUrl ? <img src={p.photoUrl} alt={p.label} /> : <div style={{ height: 100, background: "var(--bg)" }} />}
@@ -255,6 +357,9 @@ export default function NewOrder() {
                     <div className="product-ref">{p.ref}</div>
                     <div className="product-name">{p.label}</div>
                     <div className="product-price">{price ? money(price, locale) : t("catalogue.priceUnset")}</div>
+                    <div className="product-stock" style={{ color: stock.color }}>
+                      {stock.text}
+                    </div>
                     <div className="qty-row">
                       <button type="button" disabled={!entry} onClick={() => changeQty(p.id, -1)}>
                         <Minus size={13} />

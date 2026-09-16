@@ -79,50 +79,52 @@ export default function AccountsImportAdmin() {
             ))}
           </select>
         </div>
+        {!defaultRepId && (
+          <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 8 }}>
+            {t("accountsImportAdmin.noRepModeHint")}
+          </p>
+        )}
         <p style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 8 }}>
           {t("accountsImportAdmin.repIdHint")}
         </p>
       </div>
 
-      {!defaultRepId && <p className="empty-state">{t("accountsImportAdmin.chooseRepFirst")}</p>}
-
-      {defaultRepId && (
-        <ImportWizard
-          fieldLabels={FIELD_LABELS}
-          requiredFields={REQUIRED_FIELDS}
-          modeChoiceLabel={t("accountsImportAdmin.modeLabel")}
-          renderSummaryExtra={(summary) =>
-            summary.repFallbackCount > 0 && (
-              <div className="task-row">
-                <span>{t("accountsImportAdmin.summaryRepFallback")}</span>
-                <span>{summary.repFallbackCount}</span>
-              </div>
-            )
-          }
-          beforeCommit={() =>
-            defaultRepId ? true : { ok: false, error: t("accountsImportAdmin.chooseRepFirst") }
-          }
-          onPreview={async (file) => {
-            const form = new FormData();
-            form.append("file", file);
-            return api.post("/accounts-import/preview", form);
-          }}
-          onSummary={async (file, mapping) => {
-            const form = new FormData();
-            form.append("file", file);
-            form.append("mapping", JSON.stringify(mapping));
-            return api.post("/accounts-import/summary", form);
-          }}
-          onCommit={async (file, mapping, mode) => {
-            const form = new FormData();
-            form.append("file", file);
-            form.append("mapping", JSON.stringify(mapping));
-            form.append("mode", mode);
-            form.append("defaultRepId", defaultRepId);
-            return api.post("/accounts-import/commit", form);
-          }}
-        />
-      )}
+      <ImportWizard
+        fieldLabels={FIELD_LABELS}
+        requiredFields={REQUIRED_FIELDS}
+        modeChoiceLabel={t("accountsImportAdmin.modeLabel")}
+        renderSummaryExtra={(summary) =>
+          summary.repFallbackCount > 0 && (
+            <div className="task-row">
+              <span>
+                {defaultRepId
+                  ? t("accountsImportAdmin.summaryRepFallback")
+                  : t("accountsImportAdmin.summaryRepUnassigned")}
+              </span>
+              <span>{summary.repFallbackCount}</span>
+            </div>
+          )
+        }
+        onPreview={async (file) => {
+          const form = new FormData();
+          form.append("file", file);
+          return api.post("/accounts-import/preview", form);
+        }}
+        onSummary={async (file, mapping) => {
+          const form = new FormData();
+          form.append("file", file);
+          form.append("mapping", JSON.stringify(mapping));
+          return api.post("/accounts-import/summary", form);
+        }}
+        onCommit={async (file, mapping, mode) => {
+          const form = new FormData();
+          form.append("file", file);
+          form.append("mapping", JSON.stringify(mapping));
+          form.append("mode", mode);
+          if (defaultRepId) form.append("defaultRepId", defaultRepId);
+          return api.post("/accounts-import/commit", form);
+        }}
+      />
     </>
   );
 }

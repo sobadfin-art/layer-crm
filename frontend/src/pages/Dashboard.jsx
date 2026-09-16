@@ -5,6 +5,7 @@ import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate, dateTime } from "../lib/format.js";
 import { useAgendaSummary } from "../hooks/useAgendaSummary.js";
 import AccountsMap from "../components/AccountsMap.jsx";
+import { fiscalYearBounds, fiscalYearLabel } from "../lib/fiscalYear.js";
 
 function isToday(dateStr) {
   if (!dateStr) return false;
@@ -43,6 +44,11 @@ export default function Dashboard() {
   // nombre total de comptes clients actifs affectés. Calculé à partir des
   // données déjà scopées au représentant côté serveur (GET /accounts,
   // GET /orders), jamais d'appel élargi.
+  //
+  // Période = l'année COMMERCIALE (01/11-31/10), pas l'année civile — règle
+  // explicite du PDF Représentant ("Période commerciale par défaut : du 1er
+  // novembre au 31 octobre... pour le portefeuille annuel et les indicateurs
+  // annuels du représentant"), cf. lib/fiscalYear.js.
   const [accounts, setAccounts] = useState([]);
   const [ordersThisYear, setOrdersThisYear] = useState([]);
   const [loadingPortfolio, setLoadingPortfolio] = useState(true);
@@ -50,10 +56,10 @@ export default function Dashboard() {
   const loadPortfolio = useCallback(async () => {
     setLoadingPortfolio(true);
     try {
-      const yearStart = `${new Date().getFullYear()}-01-01T00:00:00.000Z`;
+      const { start } = fiscalYearBounds();
       const [accountsData, ordersData] = await Promise.all([
         api.get("/accounts"),
-        api.get(`/orders?dateFrom=${encodeURIComponent(yearStart)}`),
+        api.get(`/orders?dateFrom=${encodeURIComponent(start.toISOString())}`),
       ]);
       setAccounts(accountsData);
       setOrdersThisYear(ordersData);
@@ -74,10 +80,14 @@ export default function Dashboard() {
   const todayTasks = pendingTasks.filter((t) => isToday(t.dueDate));
   const todayRdv = rdv.filter((r) => isToday(r.dueDate));
 
-  const currentYear = new Date().getFullYear();
+  const { start: fyStart, end: fyEnd } = fiscalYearBounds();
   const activeClients = accounts.filter((a) => a.type === "CLIENT" && a.status !== "ARCHIVE" && a.status !== "INACTIF");
-  const wonThisYear = accounts.filter((a) => a.wonDate && new Date(a.wonDate).getFullYear() === currentYear);
-  const lostThisYear = accounts.filter((a) => a.lostDate && new Date(a.lostDate).getFullYear() === currentYear);
+  const wonThisYear = accounts.filter(
+    (a) => a.wonDate && new Date(a.wonDate) >= fyStart && new Date(a.wonDate) <= fyEnd
+  );
+  const lostThisYear = accounts.filter(
+    (a) => a.lostDate && new Date(a.lostDate) >= fyStart && new Date(a.lostDate) <= fyEnd
+  );
   const accountIdsWithOrder = new Set(ordersThisYear.map((o) => o.accountId));
   const activeClientsWithOrder = activeClients.filter((a) => accountIdsWithOrder.has(a.id));
   const activeClientsWithoutOrder = activeClients.filter((a) => !accountIdsWithOrder.has(a.id));
@@ -179,7 +189,12 @@ export default function Dashboard() {
       {agendaError && <p className="error-text">{agendaError}</p>}
 
       <div className="panel">
-        <h3>{t("dashboard.portfolioTitle")}</h3>
+        <h3>
+          {t("dashboard.portfolioTitle")}{" "}
+          <span style={{ fontWeight: 500, color: "var(--ink-soft)", fontSize: 12 }}>
+            — {t("dashboard.fiscalYearLabel", { range: fiscalYearLabel() })}
+          </span>
+        </h3>
         <div className="task-row">
           <span>{t("dashboard.portfolioWon")}</span>
           <span>{loadingPortfolio ? "…" : wonThisYear.length}</span>

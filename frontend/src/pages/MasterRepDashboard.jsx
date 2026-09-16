@@ -4,13 +4,22 @@ import { Globe } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
-import { money } from "../lib/format.js";
+import { money, dateTime } from "../lib/format.js";
+import { useAgendaSummary } from "../hooks/useAgendaSummary.js";
 import AccountsMap from "../components/AccountsMap.jsx";
+import { fiscalYearLabel } from "../lib/fiscalYear.js";
 
 // Un objectif est "actif" si la date du jour tombe dans sa période.
 function isActivePeriod(o) {
   const now = Date.now();
   return new Date(o.periodStart).getTime() <= now && now <= new Date(o.periodEnd).getTime();
+}
+
+function isToday(dateStr) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
 }
 
 function sumTargetAchieved(list) {
@@ -43,6 +52,18 @@ export default function MasterRepDashboard() {
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // RDV du jour / tâches du jour de toute l'équipe affiliée — bloc manquant
+  // signalé par la fiche corrective V2 (section 2.3), à insérer entre
+  // "Performance par représentant" et "Carte & tournées". GET /dashboard/rdv
+  // et GET /tasks scopent déjà eux-mêmes sur le Master Rep + ses représentants
+  // rattachés (getManagedRepUserIds côté serveur) — même hook que le Dashboard
+  // Représentant, en lecture seule ici (le Master Rep ne coche pas les tâches
+  // de son équipe, cf. règle de permissions confirmée : accès agenda en
+  // lecture seule pour ce rôle).
+  const { rdv, pendingTasks, loading: loadingAgenda, error: agendaError } = useAgendaSummary();
+  const todayRdv = rdv.filter((r) => isToday(r.dueDate));
+  const todayTasks = pendingTasks.filter((tk) => isToday(tk.dueDate));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,7 +123,12 @@ export default function MasterRepDashboard() {
       {!loading && !error && (
         <div className="cards-row">
           <div className="stat-card">
-            <div className="stat-label">{t("masterRepDashboard.statCa")}</div>
+            <div className="stat-label">
+              {t("masterRepDashboard.statCa")}
+              <div style={{ fontSize: 10.5, fontWeight: 500, color: "var(--ink-soft)" }}>
+                {t("masterRepDashboard.fiscalYearLabel", { range: fiscalYearLabel() })}
+              </div>
+            </div>
             <div className="stat-value">
               {money(teamCa.achieved, locale)}
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}> / {money(teamCa.target, locale)}</span>
@@ -112,7 +138,12 @@ export default function MasterRepDashboard() {
             </div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">{t("masterRepDashboard.statPrecommande")}</div>
+            <div className="stat-label">
+              {t("masterRepDashboard.statPrecommande")}
+              <div style={{ fontSize: 10.5, fontWeight: 500, color: "var(--ink-soft)" }}>
+                {t("masterRepDashboard.fiscalYearLabel", { range: fiscalYearLabel() })}
+              </div>
+            </div>
             <div className="stat-value" style={{ color: "var(--gold)" }}>
               {money(teamPrecommande.achieved, locale)}
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}> / {money(teamPrecommande.target, locale)}</span>
@@ -173,9 +204,46 @@ export default function MasterRepDashboard() {
         </div>
       )}
 
-      {/* Carte & tournées — directement sous la performance par représentant
-          (PDF Master Rep section 2), filtrée à l'équipe affiliée uniquement
-          (accountsScopeClause côté serveur garantit déjà ce périmètre). */}
+      {agendaError && <p className="error-text">{agendaError}</p>}
+
+      <div className="panel">
+        <h3>{t("masterRepDashboard.rdvTitle")}</h3>
+        {todayRdv.map((r) => (
+          <div className="task-row" key={r.id}>
+            <span>
+              {r.repFirstName || r.repLastName ? `${r.repFirstName || ""} ${r.repLastName || ""} — ` : ""}
+              {r.accountName || t("masterRepDashboard.noAccount")} — {r.title}
+            </span>
+            <span>{r.dueDate ? dateTime(r.dueDate, locale) : t("masterRepDashboard.noDate")}</span>
+          </div>
+        ))}
+        {!loadingAgenda && todayRdv.length === 0 && <p className="empty-state">{t("masterRepDashboard.noRdv")}</p>}
+      </div>
+
+      <div className="panel">
+        <h3>{t("masterRepDashboard.tasksTitle")}</h3>
+        {todayTasks.map((tk) => {
+          const overdue = tk.dueDate && new Date(tk.dueDate).getTime() < Date.now();
+          return (
+            <div className="task-row" key={tk.id}>
+              <span>
+                {tk.assigneeFirstName || tk.assigneeLastName ? `${tk.assigneeFirstName || ""} ${tk.assigneeLastName || ""} — ` : ""}
+                {tk.title}
+              </span>
+              <span style={{ color: overdue ? "var(--danger)" : "inherit" }}>
+                {overdue ? t("masterRepDashboard.overdue") : tk.dueDate ? dateTime(tk.dueDate, locale) : t("masterRepDashboard.noDate")}
+              </span>
+            </div>
+          );
+        })}
+        {!loadingAgenda && todayTasks.length === 0 && <p className="empty-state">{t("masterRepDashboard.noTasks")}</p>}
+      </div>
+
+      {/* Carte & tournées — sous Rendez-vous du jour / Tâches du jour (PDF
+          Master Rep section 2.4 : "Conserver le bloc directement sous
+          Rendez-vous du jour / Tâches du jour"), filtrée à l'équipe affiliée
+          uniquement (accountsScopeClause côté serveur garantit déjà ce
+          périmètre). */}
       {!loading && !error && <AccountsMap scope="masterrep" repOptions={reps} />}
     </>
   );

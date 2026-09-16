@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate } from "../lib/format.js";
 import AccountsMap from "../components/AccountsMap.jsx";
+import { fiscalYearBounds, fiscalYearLabel } from "../lib/fiscalYear.js";
 
 // 11 typologies réelles (remplace l'ancien modèle à 2 "secteurs" agrégés
 // depuis la migration 015 — cf. PDF Directeur commercial section 4 :
@@ -54,6 +55,47 @@ export default function DirecteurDashboard() {
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // 4 KPI clients (fiche corrective V2 Direction commerciale, section 2.3 :
+  // "Réintégrer dans le dashboard Direction commerciale les indicateurs qui
+  // existaient dans le dashboard des représentants" — actifs / inactifs /
+  // commandé depuis le début de la période / pas commandé depuis le début de
+  // la période). Portée globale (tous les comptes, pas de scoping par rep :
+  // GET /accounts et GET /orders ne filtrent rien pour un DIRECTEUR — cf.
+  // lib/scope.js / routes/orders.js).
+  //
+  // Mise à jour (2026-09-16, confirmation explicite du client) : ces deux
+  // indicateurs "année en cours" basculent de l'année CIVILE (1er janvier) à
+  // l'année COMMERCIALE (01/11-31/10, cf. lib/fiscalYear.js), pour rester
+  // lisibles avec le même repère que le portefeuille du Dashboard
+  // Représentant, qui utilisait déjà cette période. Périmètre volontairement
+  // limité à la lisibilité de ces indicateurs cumulés du Dashboard (ici et le
+  // bloc CA ferme/précommande cumulés plus bas) — aucune autre donnée
+  // Directeur (Data/extraction, historique fiche compte...) n'est concernée.
+  const [accounts, setAccounts] = useState([]);
+  const [ordersThisYear, setOrdersThisYear] = useState([]);
+  const [loadingPortfolio, setLoadingPortfolio] = useState(true);
+
+  const loadPortfolio = useCallback(async () => {
+    setLoadingPortfolio(true);
+    try {
+      const { start } = fiscalYearBounds();
+      const [accountsData, ordersData] = await Promise.all([
+        api.get("/accounts"),
+        api.get(`/orders?dateFrom=${encodeURIComponent(start.toISOString())}`),
+      ]);
+      setAccounts(accountsData);
+      setOrdersThisYear(ordersData);
+    } catch {
+      // Non bloquant — le reste du tableau de bord reste utilisable.
+    } finally {
+      setLoadingPortfolio(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPortfolio();
+  }, [loadPortfolio]);
 
   const [showNewObjective, setShowNewObjective] = useState(false);
   const [form, setForm] = useState({
@@ -117,6 +159,12 @@ export default function DirecteurDashboard() {
   const masterReps = members.filter((m) => m.role === "MASTER_REP");
   const reps = members.filter((m) => m.role === "REPRESENTANT");
   const unassignedReps = reps.filter((r) => !r.masterRepId);
+
+  const activeClients = accounts.filter((a) => a.type === "CLIENT" && a.status === "ACTIF");
+  const inactiveClients = accounts.filter((a) => a.type === "CLIENT" && a.status === "INACTIF");
+  const accountIdsWithOrderThisYear = new Set(ordersThisYear.map((o) => o.accountId));
+  const activeClientsOrdered = activeClients.filter((a) => accountIdsWithOrderThisYear.has(a.id));
+  const activeClientsNotOrdered = activeClients.filter((a) => !accountIdsWithOrderThisYear.has(a.id));
 
   const teamCa = sumTargetAchieved(objectivesWithProgress.filter((o) => o.type === "CHIFFRE_AFFAIRES"));
   const teamPrecommande = sumTargetAchieved(objectivesWithProgress.filter((o) => o.type === "PRECOMMANDE"));
@@ -313,7 +361,12 @@ export default function DirecteurDashboard() {
       {!loading && !error && (
         <div className="cards-row">
           <div className="stat-card">
-            <div className="stat-label">{t("directeurDashboard.statCa")}</div>
+            <div className="stat-label">
+              {t("directeurDashboard.statCa")}
+              <div style={{ fontSize: 10.5, fontWeight: 500, color: "var(--ink-soft)" }}>
+                {t("directeurDashboard.fiscalYearLabel", { range: fiscalYearLabel() })}
+              </div>
+            </div>
             <div className="stat-value">
               {money(teamCa.achieved, locale)}
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}> / {money(teamCa.target, locale)}</span>
@@ -323,7 +376,12 @@ export default function DirecteurDashboard() {
             </div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">{t("directeurDashboard.statPrecommande")}</div>
+            <div className="stat-label">
+              {t("directeurDashboard.statPrecommande")}
+              <div style={{ fontSize: 10.5, fontWeight: 500, color: "var(--ink-soft)" }}>
+                {t("directeurDashboard.fiscalYearLabel", { range: fiscalYearLabel() })}
+              </div>
+            </div>
             <div className="stat-value" style={{ color: "var(--gold)" }}>
               {money(teamPrecommande.achieved, locale)}
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}> / {money(teamPrecommande.target, locale)}</span>
@@ -338,6 +396,31 @@ export default function DirecteurDashboard() {
           </div>
         </div>
       )}
+
+      <div className="panel">
+        <h3>
+          {t("directeurDashboard.clientKpiTitle")}{" "}
+          <span style={{ fontWeight: 500, color: "var(--ink-soft)", fontSize: 12 }}>
+            — {t("directeurDashboard.fiscalYearLabel", { range: fiscalYearLabel() })}
+          </span>
+        </h3>
+        <div className="task-row">
+          <span>{t("directeurDashboard.clientKpiActive")}</span>
+          <span>{loadingPortfolio ? "…" : activeClients.length}</span>
+        </div>
+        <div className="task-row">
+          <span>{t("directeurDashboard.clientKpiInactive")}</span>
+          <span>{loadingPortfolio ? "…" : inactiveClients.length}</span>
+        </div>
+        <div className="task-row">
+          <span>{t("directeurDashboard.clientKpiOrdered")}</span>
+          <span>{loadingPortfolio ? "…" : activeClientsOrdered.length}</span>
+        </div>
+        <div className="task-row">
+          <span>{t("directeurDashboard.clientKpiNotOrdered")}</span>
+          <span>{loadingPortfolio ? "…" : activeClientsNotOrdered.length}</span>
+        </div>
+      </div>
 
       {!loading && !error && (
         <div className="panel">

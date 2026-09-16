@@ -378,11 +378,13 @@ export default function BusinessRules() {
                     </select>
                   </div>
                 </div>
+                {/* Le champ "délimiteur CSV" a été retiré de cet écran : le fichier
+                    Dolibarr téléchargé par le front desk est désormais un .xlsx
+                    (bascule V2, cf. README), ce réglage ne s'y applique plus et
+                    n'aurait fait que prêter à confusion. La colonne backend
+                    (csv_delimiter) et buildDolibarrCsv restent en base/code pour
+                    un usage outillage éventuel, simplement plus exposés ici. */}
                 <div className="form-row">
-                  <div className="field">
-                    <label>{t("businessRules.csvDelimiter")}</label>
-                    <input maxLength={1} value={settingsForm.csvDelimiter} onChange={(e) => setSettingsForm((f) => ({ ...f, csvDelimiter: e.target.value }))} />
-                  </div>
                   <div className="field">
                     <label>{t("businessRules.vatRateFranceStandard")}</label>
                     <input type="number" min="0" max="100" step="0.1" value={settingsForm.vatRateFranceStandard} onChange={(e) => setSettingsForm((f) => ({ ...f, vatRateFranceStandard: e.target.value }))} />

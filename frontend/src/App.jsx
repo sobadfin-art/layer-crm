@@ -5,6 +5,7 @@ import {
   Users,
   UserCheck,
   Package,
+  Image,
   Award,
   CalendarDays,
   UserCog,
@@ -15,6 +16,7 @@ import {
 import { useAuth } from "./AuthContext.jsx";
 import { useI18n } from "./i18n/I18nContext.jsx";
 import { useAgendaSummary } from "./hooks/useAgendaSummary.js";
+import { useOrdersActionSummary } from "./hooks/useOrdersActionSummary.js";
 import Login from "./pages/Login.jsx";
 import ChangePassword from "./pages/ChangePassword.jsx";
 import FrontDesk from "./pages/FrontDesk.jsx";
@@ -33,6 +35,7 @@ import DirecteurDashboard from "./pages/DirecteurDashboard.jsx";
 import Data from "./pages/Data.jsx";
 import BusinessRules from "./pages/BusinessRules.jsx";
 import CatalogueAdmin from "./pages/CatalogueAdmin.jsx";
+import CatalogueConsult from "./pages/CatalogueConsult.jsx";
 import AccountsImportAdmin from "./pages/AccountsImportAdmin.jsx";
 import SavQueue from "./pages/SavQueue.jsx";
 import MasterRepDashboard from "./pages/MasterRepDashboard.jsx";
@@ -64,6 +67,12 @@ export default function App() {
   // rôles ont accès à GET /api/dashboard/rdv et GET /api/tasks (cf. DATA_ROLES
   // dans dashboard.js et le rôle MASTER_REP dans tasks.js).
   const agenda = useAgendaSummary({ enabled: user?.role === "REPRESENTANT" || user?.role === "MASTER_REP" });
+  // Badge "commandes à traiter" (statut ENVOYEE_FRONT_DESK) sur l'onglet
+  // Commandes du Front Desk et du Directeur — cf. PDF Front Desk, exigence
+  // "voir en un coup d'œil ce qu'il reste à traiter".
+  const ordersAction = useOrdersActionSummary({
+    enabled: user?.role === "FRONT_DESK" || user?.role === "DIRECTEUR",
+  });
 
   if (loading) return null;
   if (!user) return <Login />;
@@ -117,7 +126,12 @@ export default function App() {
       { to: "/dashboard", label: t("nav.dashboard"), icon: LayoutDashboard },
       { to: "/clients", label: t("nav.clients"), icon: Users },
       { to: "/equipe", label: t("nav.equipeAdmin"), icon: UserCheck },
-      { to: "/orders", label: t("nav.frontDesk"), icon: ClipboardCheck },
+      {
+        to: "/orders",
+        label: t("nav.frontDesk"),
+        icon: ClipboardCheck,
+        badge: ordersAction.badgeCount > 0 ? ordersAction.badgeCount : undefined,
+      },
       { to: "/sav", label: t("nav.sav"), icon: LifeBuoy },
       { to: "/data", label: t("nav.data"), icon: Award },
       { to: "/config", label: t("nav.config"), icon: Settings2 },
@@ -130,7 +144,12 @@ export default function App() {
     // prospects (accès global) + SAV — pas seulement la file de commandes
     // qui était, jusqu'ici, le seul écran routé pour ce rôle.
     navItems = [
-      { to: "/orders", label: t("nav.orders"), icon: ClipboardCheck },
+      {
+        to: "/orders",
+        label: t("nav.orders"),
+        icon: ClipboardCheck,
+        badge: ordersAction.badgeCount > 0 ? ordersAction.badgeCount : undefined,
+      },
       { to: "/clients", label: t("nav.clients"), icon: Users },
       { to: "/sav", label: t("nav.sav"), icon: LifeBuoy },
     ];
@@ -177,6 +196,7 @@ export default function App() {
     // déjà scopés côté serveur comme pour les autres rôles.
     navItems = [
       { to: "/catalogue", label: t("nav.catalogueAdmin"), icon: Package },
+      { to: "/catalogue-produits", label: t("nav.catalogueConsult"), icon: Image },
       { to: "/import-clients", label: t("nav.importClients"), icon: FileUp },
       { to: "/clients", label: t("nav.clients"), icon: Users },
     ];
@@ -240,6 +260,7 @@ export default function App() {
           {isAdministrateur && (
             <>
               <Route path="/catalogue" element={<CatalogueAdmin />} />
+              <Route path="/catalogue-produits" element={<CatalogueConsult />} />
               <Route path="/import-clients" element={<AccountsImportAdmin />} />
               <Route path="/clients" element={<ClientsList />} />
               <Route path="/clients/:id" element={<AccountDetail />} />

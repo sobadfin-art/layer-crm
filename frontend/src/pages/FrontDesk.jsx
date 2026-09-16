@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
-import { money } from "../lib/format.js";
+import { money, shortDate } from "../lib/format.js";
 
 function isDeliveryOverdue(order) {
   return (
@@ -22,11 +23,18 @@ const OFFLINE_CACHE_KEY = "moken_frontdesk_cache";
 
 export default function FrontDesk() {
   const { t, locale } = useI18n();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Ouverture directe depuis une notification (?orderId=...) — PDF Front Desk
+  // section 2 : "Un clic sur une notification doit ouvrir directement
+  // l'élément correspondant". On bascule sur "Toutes" le temps de le
+  // retrouver, au cas où la commande ciblée ne serait plus dans le statut du
+  // filtre par défaut ("À contrôler").
+  const targetOrderId = searchParams.get("orderId");
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isOfflineData, setIsOfflineData] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("ENVOYEE_FRONT_DESK");
+  const [statusFilter, setStatusFilter] = useState(targetOrderId ? "all" : "ENVOYEE_FRONT_DESK");
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -90,6 +98,23 @@ export default function FrontDesk() {
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    if (!targetOrderId || loading) return;
+    if (orders.some((o) => o.id === targetOrderId)) {
+      toggleDetail({ id: targetOrderId });
+    }
+    // Que la commande soit trouvée ou non, on retire le paramètre pour ne pas
+    // ré-ouvrir/refermer le détail à chaque re-render ou rafraîchissement.
+    setSearchParams(
+      (params) => {
+        params.delete("orderId");
+        return params;
+      },
+      { replace: true }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetOrderId, loading, orders]);
 
   const filtered = useMemo(() => orders, [orders]);
 
@@ -159,7 +184,7 @@ export default function FrontDesk() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `export-dolibarr-${order.id.slice(0, 8)}.csv`;
+      a.download = `export-dolibarr-${order.id.slice(0, 8)}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -284,32 +309,61 @@ export default function FrontDesk() {
                 {!details[order.id] ? (
                   <p className="empty-state">{t("frontDesk.loadingDetail")}</p>
                 ) : (
-                  <div className="table-scroll">
-                    <table className="lines-table">
-                      <thead>
-                        <tr>
-                          <th>{t("frontDesk.colRef")}</th>
-                          <th>{t("frontDesk.colCategory")}</th>
-                          <th>{t("frontDesk.colQty")}</th>
-                          <th>{t("frontDesk.colUnitPrice")}</th>
-                          <th>{t("frontDesk.colDiscount")}</th>
-                          <th>{t("frontDesk.colGift")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {details[order.id].lines.map((line) => (
-                          <tr key={line.id || line.productId}>
-                            <td>{line.ref}</td>
-                            <td>{line.category}</td>
-                            <td>{line.qty}</td>
-                            <td>{money(line.unitPriceHt, locale)}</td>
-                            <td>{line.discountPct ? `${line.discountPct}%` : "—"}</td>
-                            <td>{line.isGift ? t("frontDesk.yes") : "—"}</td>
+                  <>
+                    <div className="order-summary-grid" style={{ display: "flex", flexWrap: "wrap", gap: "6px 24px", fontSize: 12, margin: "8px 0 10px" }}>
+                      <div>
+                        <strong>{t("frontDesk.summaryShippingFee")}:</strong>{" "}
+                        {details[order.id].shippingOffered
+                          ? t("frontDesk.summaryShippingOffered")
+                          : money(details[order.id].shippingFeeHt, locale)}
+                      </div>
+                      {details[order.id].desiredDeliveryDate && (
+                        <div>
+                          <strong>{t("frontDesk.summaryDeliveryDate")}:</strong>{" "}
+                          {shortDate(details[order.id].desiredDeliveryDate, locale)}
+                        </div>
+                      )}
+                      {details[order.id].note && (
+                        <div>
+                          <strong>{t("frontDesk.summaryNote")}:</strong> {details[order.id].note}
+                        </div>
+                      )}
+                    </div>
+                    <div className="table-scroll">
+                      <table className="lines-table">
+                        <thead>
+                          <tr>
+                            <th>{t("frontDesk.colRef")}</th>
+                            <th>{t("frontDesk.colCategory")}</th>
+                            <th>{t("frontDesk.colQty")}</th>
+                            <th>{t("frontDesk.colUnitPrice")}</th>
+                            <th>{t("frontDesk.colDiscount")}</th>
+                            <th>{t("frontDesk.colGift")}</th>
+                            <th>{t("frontDesk.colReliquat")}</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {details[order.id].lines.map((line) => (
+                            <tr key={line.id || line.productId}>
+                              <td>{line.ref}</td>
+                              <td>{line.category}</td>
+                              <td>{line.qty}</td>
+                              <td>{money(line.unitPriceHt, locale)}</td>
+                              <td>{line.discountPct ? `${line.discountPct}%` : "—"}</td>
+                              <td>{line.isGift ? t("frontDesk.yes") : "—"}</td>
+                              <td>
+                                {line.isReliquat
+                                  ? line.reliquatShipDate
+                                    ? t("frontDesk.reliquatWithDate", { date: shortDate(line.reliquatShipDate, locale) })
+                                    : t("frontDesk.yes")
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
               </div>
             )}

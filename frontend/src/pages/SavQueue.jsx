@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
@@ -18,12 +18,20 @@ export default function SavQueue() {
   const { user } = useAuth();
   const { t, locale } = useI18n();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canManage = user.role === "FRONT_DESK" || user.role === "DIRECTEUR";
 
+  // Ouverture directe depuis une notification (?ticketId=...) — PDF Front
+  // Desk section 2 : "Un clic sur une notification doit ouvrir directement
+  // l'élément correspondant". Le ticket ciblé peut être RESOLU/FERME (déjà
+  // traité par quelqu'un d'autre) donc hors de la file "active" par défaut :
+  // on bascule sur "Tout" le temps de le retrouver, plutôt que de risquer un
+  // clic qui n'affiche rien.
+  const targetTicketId = searchParams.get("ticketId");
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("active");
+  const [statusFilter, setStatusFilter] = useState(targetTicketId ? "all" : "active");
   const [expandedId, setExpandedId] = useState(null);
   const [detail, setDetail] = useState({});
   const [noteDraft, setNoteDraft] = useState("");
@@ -55,6 +63,20 @@ export default function SavQueue() {
     const timer = setTimeout(() => setToast(null), 3200);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!targetTicketId || loading) return;
+    if (tickets.some((tk) => tk.id === targetTicketId)) {
+      toggleExpand({ id: targetTicketId });
+    }
+    // Que le ticket soit trouvé ou non, on retire le paramètre pour ne pas
+    // ré-ouvrir/refermer la fiche à chaque re-render ou rafraîchissement.
+    setSearchParams((params) => {
+      params.delete("ticketId");
+      return params;
+    }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetTicketId, loading, tickets]);
 
   async function toggleExpand(ticket) {
     if (expandedId === ticket.id) {

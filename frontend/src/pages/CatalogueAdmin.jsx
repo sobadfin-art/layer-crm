@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Trash2, Search, ImageUp, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Search, ImageUp, Pencil, ChevronLeft, ChevronRight, X, Images } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { shortDate } from "../lib/format.js";
@@ -42,6 +42,7 @@ const CATEGORIES = ["PREMIUM", "CLASSIC", "OPTICS", "ACCESS", "DISPLAY", "MERCH"
 const STOCK_STATUSES = ["EN_STOCK", "RUPTURE", "REASSORT_PREVU"];
 const PRODUCT_STATUSES = ["NOUVEAU", "ACTIF", "DISCONTINUE"];
 const PAGE_SIZE = 20;
+const MAX_PRODUCT_PHOTOS = 5;
 
 const emptyProductForm = {
   ref: "",
@@ -85,10 +86,17 @@ export default function CatalogueAdmin() {
   const [noPhotoOnly, setNoPhotoOnly] = useState(false);
   const [page, setPage] = useState(1);
 
+  // Galerie photo (jusqu'à 5 par référence, fiche corrective V2
+  // Administrateur section 5) — `photoGalleryProduct` porte la fiche en
+  // cours d'édition dans la modale (avec `photos` = détail {id, url,
+  // position} nécessaire pour supprimer/réordonner, absent de la liste
+  // paginée qui ne renvoie que `photoUrls`).
+  const [photoGalleryProduct, setPhotoGalleryProduct] = useState(null);
+  const [photoGalleryPhotos, setPhotoGalleryPhotos] = useState([]);
+  const [photoGalleryLoading, setPhotoGalleryLoading] = useState(false);
   const [uploadingId, setUploadingId] = useState(null);
   const [uploadError, setUploadError] = useState(null);
   const fileInputRef = useRef(null);
-  const uploadTargetRef = useRef(null);
 
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
@@ -175,14 +183,44 @@ export default function CatalogueAdmin() {
     }
   }
 
-  function openPhotoPicker(productId) {
-    uploadTargetRef.current = productId;
+  async function openPhotoGallery(product) {
+    setPhotoGalleryProduct(product);
+    setPhotoGalleryPhotos([]);
+    setUploadError(null);
+    setPhotoGalleryLoading(true);
+    try {
+      const photos = await api.get(`/products/${product.id}/photos`);
+      setPhotoGalleryPhotos(photos);
+    } catch (err) {
+      setUploadError(err.message);
+    } finally {
+      setPhotoGalleryLoading(false);
+    }
+  }
+
+  function closePhotoGallery() {
+    setPhotoGalleryProduct(null);
+    setPhotoGalleryPhotos([]);
+    setUploadError(null);
+  }
+
+  // Fusionne la fiche produit + le tableau de photos (renvoyés ensemble par
+  // les routes d'ajout/suppression) dans la liste paginée ET dans la modale
+  // ouverte, pour que les deux restent synchronisées sans recharger la page.
+  function applyGalleryResult({ product, photos }) {
+    const photoUrls = photos.map((ph) => ph.url);
+    setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, ...product, photoUrls } : p)));
+    setPhotoGalleryPhotos(photos);
+    setPhotoGalleryProduct((prev) => (prev && prev.id === product.id ? { ...prev, ...product, photoUrls } : prev));
+  }
+
+  function openPhotoPicker() {
     fileInputRef.current?.click();
   }
 
   async function handlePhotoFileChange(e) {
     const file = e.target.files?.[0];
-    const productId = uploadTargetRef.current;
+    const productId = photoGalleryProduct?.id;
     e.target.value = ""; // permet de re-choisir le même fichier ensuite
     if (!file || !productId) return;
 
@@ -191,10 +229,25 @@ export default function CatalogueAdmin() {
     try {
       const form = new FormData();
       form.append("photo", file);
-      const updated = await api.post(`/products/${productId}/photo`, form);
-      setProducts((prev) => prev.map((p) => (p.id === productId ? updated : p)));
+      const result = await api.post(`/products/${productId}/photos`, form);
+      applyGalleryResult(result);
     } catch (err) {
       setUploadError(err.message || t("catalogueAdmin.uploadPhotoError"));
+    } finally {
+      setUploadingId(null);
+    }
+  }
+
+  async function handleDeleteGalleryPhoto(photoId) {
+    const productId = photoGalleryProduct?.id;
+    if (!productId) return;
+    setUploadError(null);
+    setUploadingId(productId);
+    try {
+      const result = await api.del(`/products/${productId}/photos/${photoId}`);
+      applyGalleryResult(result);
+    } catch (err) {
+      setUploadError(err.message);
     } finally {
       setUploadingId(null);
     }
@@ -545,7 +598,6 @@ export default function CatalogueAdmin() {
             <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "4px 0 10px" }}>
               {t("catalogueAdmin.uploadPhotoHint")}
             </p>
-            {uploadError && <p className="error-text">{uploadError}</p>}
             <input
               ref={fileInputRef}
               type="file"
@@ -576,28 +628,50 @@ export default function CatalogueAdmin() {
                     {pagedProducts.map((p) => (
                       <tr key={p.id}>
                         <td>
-                          {p.photoUrl ? (
-                            <img
-                              src={p.photoUrl}
-                              alt={p.label}
-                              style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, border: "1px solid var(--line)" }}
-                            />
-                          ) : (
-                            <div
-                              style={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: 4,
-                                border: "1px dashed var(--line)",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                color: "var(--ink-soft)",
-                              }}
-                            >
-                              <ImageUp size={13} />
-                            </div>
-                          )}
+                          <div style={{ position: "relative", width: 32, height: 32 }}>
+                            {p.photoUrl ? (
+                              <img
+                                src={p.photoUrl}
+                                alt={p.label}
+                                style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, border: "1px solid var(--line)" }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 4,
+                                  border: "1px dashed var(--line)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  color: "var(--ink-soft)",
+                                }}
+                              >
+                                <ImageUp size={13} />
+                              </div>
+                            )}
+                            {(p.photoUrls?.length || 0) > 1 && (
+                              <span
+                                style={{
+                                  position: "absolute",
+                                  bottom: -4,
+                                  right: -4,
+                                  background: "var(--ink)",
+                                  color: "white",
+                                  borderRadius: 8,
+                                  fontSize: 9,
+                                  lineHeight: "14px",
+                                  minWidth: 14,
+                                  height: 14,
+                                  textAlign: "center",
+                                  padding: "0 2px",
+                                }}
+                              >
+                                {p.photoUrls.length}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td>{p.ref}</td>
                         <td>{p.label}</td>
@@ -619,12 +693,8 @@ export default function CatalogueAdmin() {
                             <button className="btn outline" onClick={() => openEditProductForm(p)}>
                               <Pencil size={13} /> {t("catalogueAdmin.editProduct")}
                             </button>
-                            <button className="btn outline" disabled={uploadingId === p.id} onClick={() => openPhotoPicker(p.id)}>
-                              {uploadingId === p.id
-                                ? t("catalogueAdmin.uploadingPhoto")
-                                : p.photoUrl
-                                  ? t("catalogueAdmin.replacePhoto")
-                                  : t("catalogueAdmin.uploadPhoto")}
+                            <button className="btn outline" onClick={() => openPhotoGallery(p)}>
+                              <Images size={13} /> {t("catalogueAdmin.managePhotos", { count: p.photoUrls?.length || 0, max: MAX_PRODUCT_PHOTOS })}
                             </button>
                           </div>
                         </td>
@@ -652,6 +722,89 @@ export default function CatalogueAdmin() {
             )}
           </div>
         </>
+      )}
+
+      {photoGalleryProduct && (
+        <div className="modal-overlay" onClick={closePhotoGallery}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+              <div>
+                <h3 style={{ margin: 0 }}>{t("catalogueAdmin.photoGalleryTitle")}</h3>
+                <p className="page-sub" style={{ margin: "2px 0 0" }}>
+                  {photoGalleryProduct.ref} — {photoGalleryProduct.label}
+                </p>
+              </div>
+              <button className="btn outline" onClick={closePhotoGallery} aria-label={t("catalogueAdmin.closeGallery")}>
+                <X size={14} />
+              </button>
+            </div>
+
+            {uploadError && <p className="error-text">{uploadError}</p>}
+
+            {photoGalleryLoading ? (
+              <p className="empty-state">{t("catalogueAdmin.loading")}</p>
+            ) : (
+              <>
+                {photoGalleryPhotos.length === 0 && (
+                  <p className="empty-state">{t("catalogueAdmin.photoGalleryEmpty")}</p>
+                )}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
+                  {photoGalleryPhotos.map((ph, idx) => (
+                    <div key={ph.id} style={{ position: "relative" }}>
+                      <img
+                        src={ph.url}
+                        alt={photoGalleryProduct.label}
+                        style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 6, border: "1px solid var(--line)" }}
+                      />
+                      {idx === 0 && (
+                        <span
+                          className="typology-badge"
+                          style={{ position: "absolute", top: 4, left: 4, background: "white" }}
+                        >
+                          {t("catalogueAdmin.photoCover")}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="btn outline"
+                        disabled={uploadingId === photoGalleryProduct.id}
+                        onClick={() => handleDeleteGalleryPhoto(ph.id)}
+                        style={{
+                          position: "absolute",
+                          bottom: 4,
+                          right: 4,
+                          padding: "3px 5px",
+                          background: "white",
+                        }}
+                        aria-label={t("catalogueAdmin.deletePhoto")}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ marginTop: 14 }}>
+                  {photoGalleryPhotos.length >= MAX_PRODUCT_PHOTOS ? (
+                    <p style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>{t("catalogueAdmin.photoGalleryMaxReached")}</p>
+                  ) : (
+                    <button
+                      className="btn primary"
+                      type="button"
+                      disabled={uploadingId === photoGalleryProduct.id}
+                      onClick={openPhotoPicker}
+                    >
+                      {uploadingId === photoGalleryProduct.id ? t("catalogueAdmin.uploadingPhoto") : t("catalogueAdmin.addPhoto")}
+                    </button>
+                  )}
+                  <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "6px 0 0" }}>
+                    {t("catalogueAdmin.photoGalleryHint", { count: photoGalleryPhotos.length, max: MAX_PRODUCT_PHOTOS })}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </>
   );
