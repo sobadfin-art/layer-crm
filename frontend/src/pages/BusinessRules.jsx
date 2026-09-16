@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Settings2 } from "lucide-react";
+import { Settings2, Trash2 } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 
@@ -26,11 +26,19 @@ const emptyForm = {
 // Écran "Config" du directeur — règles commerciales (section 5 : "tout passe
 // par la table de règles, gérée par le directeur") + réglages Dolibarr
 // (dolibarr.js, déjà consommés en lecture/écriture par front desk pour la
-// checklist d'export, ici en écriture par le directeur). Les règles ne sont
-// JAMAIS supprimées (cf. conventions du projet) : le "Modifier" du prototype
-// devient ici un statut actif/inactif togglable (PATCH {active}), et la liste
-// inclut les règles inactives (GET ?includeInactive=true, réservé au
-// directeur — cf. business-rules.js) pour pouvoir les réactiver.
+// checklist d'export, ici en écriture par le directeur). La liste inclut les
+// règles inactives (GET ?includeInactive=true, réservé au directeur — cf.
+// business-rules.js) pour pouvoir les réactiver.
+//
+// Correctif 2026-09-16 (demande directe : "pour établir des regle de remise
+// chez le directeur, dans configurer - rajouter la possibilité de modifier
+// la regle ou de la supprimer") — jusqu'ici seule l'activation/désactivation
+// (PATCH {active}) était possible depuis cet écran ; ce correctif ajoute une
+// vraie édition (formulaire pré-rempli, PATCH des champs modifiés, endpoint
+// déjà complet côté serveur) et une vraie suppression (icône poubelle,
+// DELETE /business-rules/:id, nouveau côté serveur) — sans toucher au
+// bouton actif/désactivé existant, conservé tel quel à côté des deux
+// nouveaux.
 export default function BusinessRules() {
   const { t } = useI18n();
 
@@ -46,6 +54,10 @@ export default function BusinessRules() {
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
+  // Correctif 2026-09-16 — null = formulaire en mode création (POST),
+  // sinon l'id de la règle en cours d'édition (PATCH). Même formulaire,
+  // même panneau, pas de second moteur.
+  const [editingRuleId, setEditingRuleId] = useState(null);
 
   const [settingsForm, setSettingsForm] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -101,7 +113,32 @@ export default function BusinessRules() {
     }
   }
 
-  async function handleCreateRule(e) {
+  // Ouvre le même panneau que "Nouvelle règle", mais pré-rempli avec les
+  // valeurs de la règle sélectionnée et en mode édition (cf. editingRuleId).
+  function startEdit(rule) {
+    setForm({
+      type: rule.type,
+      scope: rule.scope,
+      countryId: rule.countryId || "",
+      repIds: rule.repIds || [],
+      categories: rule.categories || [],
+      ratePct: rule.ratePct != null ? String(rule.ratePct) : "",
+      flatAmount: rule.flatAmount != null ? String(rule.flatAmount) : "",
+      threshold: rule.threshold != null ? String(rule.threshold) : "",
+    });
+    setFormError(null);
+    setEditingRuleId(rule.id);
+    setShowNewRule(true);
+  }
+
+  function closeForm() {
+    setForm(emptyForm);
+    setFormError(null);
+    setEditingRuleId(null);
+    setShowNewRule(false);
+  }
+
+  async function handleSubmitRule(e) {
     e.preventDefault();
     setFormError(null);
     if (form.scope === "REPRESENTANT" && form.repIds.length === 0) {
@@ -114,7 +151,7 @@ export default function BusinessRules() {
     }
     setSaving(true);
     try {
-      await api.post("/business-rules", {
+      const payload = {
         type: form.type,
         scope: form.scope,
         countryId: form.scope === "PAYS" ? form.countryId : null,
@@ -123,16 +160,36 @@ export default function BusinessRules() {
         ratePct: form.type === "REMISE_CATEGORIE" && form.ratePct !== "" ? Number(form.ratePct) : null,
         flatAmount: form.type === "FRAIS_DE_PORT" && form.flatAmount !== "" ? Number(form.flatAmount) : null,
         threshold: form.type === "FRAIS_DE_PORT" && form.threshold !== "" ? Number(form.threshold) : null,
-        active: true,
-      });
-      setForm(emptyForm);
-      setShowNewRule(false);
-      setToast(t("businessRules.ruleCreated"));
+      };
+      if (editingRuleId) {
+        // Le statut actif/inactif n'est volontairement pas touché ici — il
+        // reste géré exclusivement par le bouton dédié (toggleRuleActive),
+        // pour ne jamais réactiver une règle désactivée juste en la modifiant.
+        await api.patch(`/business-rules/${editingRuleId}`, payload);
+        setToast(t("businessRules.ruleUpdated"));
+      } else {
+        await api.post("/business-rules", { ...payload, active: true });
+        setToast(t("businessRules.ruleCreated"));
+      }
+      closeForm();
       await load();
     } catch (err) {
       setFormError(err.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteRule(rule) {
+    setBusyId(rule.id);
+    try {
+      await api.del(`/business-rules/${rule.id}`);
+      setToast(t("businessRules.ruleDeleted"));
+      await load();
+    } catch (err) {
+      setToast(err.message);
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -182,14 +239,28 @@ export default function BusinessRules() {
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
             <h3 style={{ margin: 0 }}>{t("businessRules.rulesTitle")}</h3>
-            <button className="btn primary" onClick={() => setShowNewRule((v) => !v)}>
+            <button
+              className="btn primary"
+              onClick={() => {
+                if (showNewRule) {
+                  closeForm();
+                } else {
+                  setForm(emptyForm);
+                  setEditingRuleId(null);
+                  setShowNewRule(true);
+                }
+              }}
+            >
               {t("businessRules.newRule")}
             </button>
           </div>
 
           {showNewRule && (
             <div className="panel">
-              <form onSubmit={handleCreateRule}>
+              <h4 style={{ marginTop: 0 }}>
+                {editingRuleId ? t("businessRules.editRuleTitle") : t("businessRules.newRuleTitle")}
+              </h4>
+              <form onSubmit={handleSubmitRule}>
                 <div className="form-row">
                   <div className="field">
                     <label>{t("businessRules.type")}</label>
@@ -292,9 +363,9 @@ export default function BusinessRules() {
                 {formError && <p className="error-text">{formError}</p>}
                 <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
                   <button className="btn primary" type="submit" disabled={saving}>
-                    {saving ? t("teamManagement.creating") : t("teamManagement.create")}
+                    {saving ? t("teamManagement.creating") : editingRuleId ? t("businessRules.editRule") : t("teamManagement.create")}
                   </button>
-                  <button className="btn outline" type="button" onClick={() => setShowNewRule(false)}>
+                  <button className="btn outline" type="button" onClick={closeForm}>
                     {t("teamManagement.cancel")}
                   </button>
                 </div>
@@ -325,9 +396,31 @@ export default function BusinessRules() {
                     {rule.repIds && rule.repIds.length > 0 && <span>{rule.repIds.map(repLabel).join(", ")}</span>}
                   </div>
                 </div>
-                <button className="btn outline" disabled={busyId === rule.id} onClick={() => toggleRuleActive(rule)}>
-                  {rule.active ? t("teamManagement.deactivate") : t("teamManagement.reactivate")}
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button className="btn outline" disabled={busyId === rule.id} onClick={() => startEdit(rule)}>
+                    {t("businessRules.editRule")}
+                  </button>
+                  <button className="btn outline" disabled={busyId === rule.id} onClick={() => toggleRuleActive(rule)}>
+                    {rule.active ? t("teamManagement.deactivate") : t("teamManagement.reactivate")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyId === rule.id}
+                    onClick={() => deleteRule(rule)}
+                    title={t("businessRules.deleteRule")}
+                    aria-label={t("businessRules.deleteRule")}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: busyId === rule.id ? "default" : "pointer",
+                      opacity: busyId === rule.id ? 0.5 : 1,
+                      color: "var(--danger)",
+                      display: "flex",
+                    }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
