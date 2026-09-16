@@ -2,8 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
-import { money, dateTime, shortDate } from "../lib/format.js";
+import { money, dateTime } from "../lib/format.js";
+import OrderSummary from "../components/OrderSummary.jsx";
 
+// CORRECTIF (fiche corrective "VISUALISATION DES COMMANDES + EXPORT
+// DOLIBARR", sections 1/2/4) : le détail affiché ici au dépli d'une commande
+// (jusqu'ici un simple tableau de lignes, en écart avec le récapitulatif
+// panier) réutilise désormais EXACTEMENT le composant partagé
+// <OrderSummary /> — le même que FrontDesk.jsx et AccountDetail.jsx.
 const STATUS_KEY = {
   BROUILLON: "statusBROUILLON",
   ENVOYEE_FRONT_DESK: "statusENVOYEE_FRONT_DESK",
@@ -181,61 +187,7 @@ export default function OrdersList() {
               {!details[order.id] ? (
                 <p className="empty-state">{t("frontDesk.loadingDetail")}</p>
               ) : (
-                <>
-                  <div className="order-summary-grid" style={{ display: "flex", flexWrap: "wrap", gap: "6px 24px", fontSize: 12, margin: "8px 0 10px" }}>
-                    <div>
-                      <strong>{t("frontDesk.summaryShippingFee")}:</strong>{" "}
-                      {details[order.id].shippingOffered
-                        ? t("frontDesk.summaryShippingOffered")
-                        : money(details[order.id].shippingFeeHt, locale)}
-                    </div>
-                    {details[order.id].desiredDeliveryDate && (
-                      <div>
-                        <strong>{t("frontDesk.summaryDeliveryDate")}:</strong>{" "}
-                        {shortDate(details[order.id].desiredDeliveryDate, locale)}
-                      </div>
-                    )}
-                    {details[order.id].note && (
-                      <div>
-                        <strong>{t("frontDesk.summaryNote")}:</strong> {details[order.id].note}
-                      </div>
-                    )}
-                  </div>
-                  <div className="table-scroll">
-                    <table className="lines-table">
-                      <thead>
-                        <tr>
-                          <th>{t("frontDesk.colRef")}</th>
-                          <th>{t("frontDesk.colCategory")}</th>
-                          <th>{t("frontDesk.colQty")}</th>
-                          <th>{t("frontDesk.colUnitPrice")}</th>
-                          <th>{t("frontDesk.colDiscount")}</th>
-                          <th>{t("frontDesk.colGift")}</th>
-                          <th>{t("frontDesk.colReliquat")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {details[order.id].lines.map((line) => (
-                          <tr key={line.id || line.productId}>
-                            <td>{line.ref}</td>
-                            <td>{line.category}</td>
-                            <td>{line.qty}</td>
-                            <td>{money(line.unitPriceHt, locale)}</td>
-                            <td>{line.discountPct ? `${line.discountPct}%` : "—"}</td>
-                            <td>{line.isGift ? t("frontDesk.yes") : "—"}</td>
-                            <td>
-                              {line.isReliquat
-                                ? line.reliquatShipDate
-                                  ? t("frontDesk.reliquatWithDate", { date: shortDate(line.reliquatShipDate, locale) })
-                                  : t("frontDesk.yes")
-                                : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                <OrderSummary order={details[order.id]} />
               )}
             </div>
           )}

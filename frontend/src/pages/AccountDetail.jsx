@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -21,6 +21,7 @@ import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { dateTime, shortDate, money } from "../lib/format.js";
+import OrderSummary from "../components/OrderSummary.jsx";
 
 const PIPELINE_STAGES = ["Nouveau", "Contacté", "RDV prévu", "Devis en cours", "Négociation", "Gagné", "Perdu"];
 
@@ -108,12 +109,6 @@ export default function AccountDetail() {
   // dans routes/orders.js, ORDER_CREATE_ROLES) — le Master Rep, lui, reste
   // strictement en lecture seule (décision client distincte, non concernée).
   const canCreateOrder = user.role === "REPRESENTANT" || user.role === "DIRECTEUR";
-  // Le clic sur une ligne de commande doit renvoyer vers l'écran commandes du
-  // rôle courant — deux écrans distincts existent selon le rôle
-  // (OrdersList.jsx sous /commandes pour représentant/Master Rep, FrontDesk.jsx
-  // sous /orders pour front desk/directeur, cf. App.jsx), jamais un chemin en
-  // dur qui n'existe pas pour tous les rôles.
-  const ordersListPath = user.role === "FRONT_DESK" || isDirecteur ? "/orders" : "/commandes";
 
   const [account, setAccount] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -131,6 +126,14 @@ export default function AccountDetail() {
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [orderDateFrom, setOrderDateFrom] = useState("");
   const [orderDateTo, setOrderDateTo] = useState("");
+  // CORRECTIF (fiche corrective "VISUALISATION DES COMMANDES + EXPORT
+  // DOLIBARR", section 1) : une ligne de commande sur la fiche client ouvrait
+  // jusqu'ici la liste générale des commandes (sans même transmettre l'id),
+  // jamais LA commande cliquée. Remplacé par un dépli en place, comme
+  // OrdersList.jsx/FrontDesk.jsx, réutilisant le même composant partagé
+  // <OrderSummary />.
+  const [expandedOrderId, setExpandedOrderId] = useState(null);
+  const [orderDetails, setOrderDetails] = useState({});
 
   const [savTickets, setSavTickets] = useState([]);
   const [loadingSav, setLoadingSav] = useState(true);
@@ -209,6 +212,22 @@ export default function AccountDetail() {
       setLoadingOrders(false);
     }
   }, [id, orderDateFrom, orderDateTo]);
+
+  async function toggleOrderDetail(order) {
+    if (expandedOrderId === order.id) {
+      setExpandedOrderId(null);
+      return;
+    }
+    setExpandedOrderId(order.id);
+    if (!orderDetails[order.id]) {
+      try {
+        const full = await api.get(`/orders/${order.id}`);
+        setOrderDetails((d) => ({ ...d, [order.id]: full }));
+      } catch (err) {
+        setToast(err.message);
+      }
+    }
+  }
 
   const loadSav = useCallback(async () => {
     setLoadingSav(true);
@@ -1044,11 +1063,24 @@ export default function AccountDetail() {
                 </thead>
                 <tbody>
                   {orders.map((o) => (
-                    <tr key={o.id} style={{ cursor: "pointer" }} onClick={() => navigate(ordersListPath)}>
-                      <td>{shortDate(o.createdAt, locale)}</td>
-                      <td>{money(o.merchandiseTotal, locale)}</td>
-                      <td>{t(`orders.status${o.status}`)}</td>
-                    </tr>
+                    <Fragment key={o.id}>
+                      <tr style={{ cursor: "pointer" }} onClick={() => toggleOrderDetail(o)}>
+                        <td>{shortDate(o.createdAt, locale)}</td>
+                        <td>{money(o.merchandiseTotal, locale)}</td>
+                        <td>{t(`orders.status${o.status}`)}</td>
+                      </tr>
+                      {expandedOrderId === o.id && (
+                        <tr>
+                          <td colSpan={3}>
+                            {!orderDetails[o.id] ? (
+                              <p className="empty-state">{t("frontDesk.loadingDetail")}</p>
+                            ) : (
+                              <OrderSummary order={orderDetails[o.id]} />
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

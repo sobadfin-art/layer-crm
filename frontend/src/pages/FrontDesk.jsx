@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
-import { money, shortDate } from "../lib/format.js";
+import { money } from "../lib/format.js";
+import OrderSummary from "../components/OrderSummary.jsx";
 
 function isDeliveryOverdue(order) {
   return (
@@ -49,11 +50,18 @@ export default function FrontDesk() {
   // Commerciale V3, même mécanisme que OrdersList.jsx pour ce cas-là).
   const [toast, setToast] = useState(location.state?.toast || null);
 
+  // CORRECTIF (fiche corrective "VISUALISATION DES COMMANDES + EXPORT
+  // DOLIBARR") : utilise désormais le même jeu d'étiquettes de statut que
+  // OrdersList.jsx/AccountDetail.jsx/OrderSummary.jsx (`orders.status*`) au
+  // lieu du jeu séparé `frontDesk.status.*` (qui, entre autres, omettait
+  // BROUILLON) — un seul jeu d'étiquettes de statut dans toute l'app,
+  // cohérent avec "une seule représentation visuelle de référence".
   const STATUS_LABEL = {
-    ENVOYEE_FRONT_DESK: t("frontDesk.status.ENVOYEE_FRONT_DESK"),
-    VALIDEE: t("frontDesk.status.VALIDEE"),
-    EXPORTEE_DOLIBARR: t("frontDesk.status.EXPORTEE_DOLIBARR"),
-    ANNULEE: t("frontDesk.status.ANNULEE"),
+    BROUILLON: t("orders.statusBROUILLON"),
+    ENVOYEE_FRONT_DESK: t("orders.statusENVOYEE_FRONT_DESK"),
+    VALIDEE: t("orders.statusVALIDEE"),
+    EXPORTEE_DOLIBARR: t("orders.statusEXPORTEE_DOLIBARR"),
+    ANNULEE: t("orders.statusANNULEE"),
   };
 
   async function load() {
@@ -188,19 +196,41 @@ export default function FrontDesk() {
     }
   }
 
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function handleExport(order) {
     setBusyId(order.id);
     try {
       const blob = await api.post("/dolibarr/orders/export", { orderIds: [order.id] });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `export-dolibarr-${order.id.slice(0, 8)}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `export-dolibarr-${order.id.slice(0, 8)}.xlsx`);
       patchOrderLocally(order.id, { status: "EXPORTEE_DOLIBARR" });
+      setToast(t("frontDesk.toastExported", { name: order.accountName }));
+    } catch (err) {
+      setToast(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // RETÉLÉCHARGEMENT (fiche corrective "VISUALISATION DES COMMANDES + EXPORT
+  // DOLIBARR", sections 5/6/17) : une commande déjà exportée reste
+  // "retéléchargeable" — endpoint dédié GET .../export-file, qui régénère le
+  // fichier à partir des données HISTORIQUES de la commande sans jamais
+  // rejouer la transition de statut (déjà EXPORTEE_DOLIBARR).
+  async function handleRedownload(order) {
+    setBusyId(order.id);
+    try {
+      const blob = await api.get(`/dolibarr/orders/${order.id}/export-file`);
+      downloadBlob(blob, `export-dolibarr-${order.id.slice(0, 8)}.xlsx`);
       setToast(t("frontDesk.toastExported", { name: order.accountName }));
     } catch (err) {
       setToast(err.message);
@@ -299,20 +329,28 @@ export default function FrontDesk() {
                   {t("frontDesk.confirmDelivery")}
                 </button>
               )}
-              <button
-                className="btn outline"
-                disabled={!canExport || busy}
-                title={
-                  alreadyExported
-                    ? t("frontDesk.exportTitleAlready")
-                    : !canExport
-                    ? t("frontDesk.exportTitleNeedsValidation")
-                    : t("frontDesk.exportTitleReady")
-                }
-                onClick={() => handleExport(order)}
-              >
-                {alreadyExported ? t("frontDesk.exportAlready") : t("frontDesk.exportAction")}
-              </button>
+              {alreadyExported ? (
+                // Section 17 : "Si déjà exportée : VISUALISER / EXPORTÉE /
+                // RETÉLÉCHARGER L'EXPORT DOLIBARR" — action active, jamais un
+                // bouton désactivé mort pour une commande déjà exportée.
+                <button
+                  className="btn outline"
+                  disabled={busy}
+                  title={t("frontDesk.exportTitleRedownload")}
+                  onClick={() => handleRedownload(order)}
+                >
+                  {t("frontDesk.exportRedownload")}
+                </button>
+              ) : (
+                <button
+                  className="btn outline"
+                  disabled={!canExport || busy}
+                  title={!canExport ? t("frontDesk.exportTitleNeedsValidation") : t("frontDesk.exportTitleReady")}
+                  onClick={() => handleExport(order)}
+                >
+                  {t("frontDesk.exportAction")}
+                </button>
+              )}
             </div>
 
             {expandedId === order.id && (
@@ -320,61 +358,7 @@ export default function FrontDesk() {
                 {!details[order.id] ? (
                   <p className="empty-state">{t("frontDesk.loadingDetail")}</p>
                 ) : (
-                  <>
-                    <div className="order-summary-grid" style={{ display: "flex", flexWrap: "wrap", gap: "6px 24px", fontSize: 12, margin: "8px 0 10px" }}>
-                      <div>
-                        <strong>{t("frontDesk.summaryShippingFee")}:</strong>{" "}
-                        {details[order.id].shippingOffered
-                          ? t("frontDesk.summaryShippingOffered")
-                          : money(details[order.id].shippingFeeHt, locale)}
-                      </div>
-                      {details[order.id].desiredDeliveryDate && (
-                        <div>
-                          <strong>{t("frontDesk.summaryDeliveryDate")}:</strong>{" "}
-                          {shortDate(details[order.id].desiredDeliveryDate, locale)}
-                        </div>
-                      )}
-                      {details[order.id].note && (
-                        <div>
-                          <strong>{t("frontDesk.summaryNote")}:</strong> {details[order.id].note}
-                        </div>
-                      )}
-                    </div>
-                    <div className="table-scroll">
-                      <table className="lines-table">
-                        <thead>
-                          <tr>
-                            <th>{t("frontDesk.colRef")}</th>
-                            <th>{t("frontDesk.colCategory")}</th>
-                            <th>{t("frontDesk.colQty")}</th>
-                            <th>{t("frontDesk.colUnitPrice")}</th>
-                            <th>{t("frontDesk.colDiscount")}</th>
-                            <th>{t("frontDesk.colGift")}</th>
-                            <th>{t("frontDesk.colReliquat")}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {details[order.id].lines.map((line) => (
-                            <tr key={line.id || line.productId}>
-                              <td>{line.ref}</td>
-                              <td>{line.category}</td>
-                              <td>{line.qty}</td>
-                              <td>{money(line.unitPriceHt, locale)}</td>
-                              <td>{line.discountPct ? `${line.discountPct}%` : "—"}</td>
-                              <td>{line.isGift ? t("frontDesk.yes") : "—"}</td>
-                              <td>
-                                {line.isReliquat
-                                  ? line.reliquatShipDate
-                                    ? t("frontDesk.reliquatWithDate", { date: shortDate(line.reliquatShipDate, locale) })
-                                    : t("frontDesk.yes")
-                                  : "—"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
+                  <OrderSummary order={details[order.id]} />
                 )}
               </div>
             )}
