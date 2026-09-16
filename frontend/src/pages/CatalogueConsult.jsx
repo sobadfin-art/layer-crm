@@ -124,7 +124,11 @@ export default function CatalogueConsult() {
     const q = search.trim().toLowerCase();
     return products.filter((p) => {
       if (category !== "all" && p.category !== category) return false;
-      if (catalogFilter !== "all" && p.catalogId !== catalogFilter) return false;
+      // Rattachement multi-catalogue (correctif 2026-09-16, fiche corrective
+      // "CORRECTIFS CRM — PROFIL ADMINISTRATEUR", point 8) : une référence
+      // matche dès qu'elle appartient AU MOINS au catalogue sélectionné,
+      // jamais exclusivement à lui (elle peut en avoir d'autres).
+      if (catalogFilter !== "all" && !(p.catalogIds || []).includes(catalogFilter)) return false;
       if (availabilityFilter !== "all" && p.stockStatus !== availabilityFilter) return false;
       if (!q) return true;
       return [p.ref, p.label, p.model, p.color].filter(Boolean).join(" ").toLowerCase().includes(q);
@@ -156,15 +160,33 @@ export default function CatalogueConsult() {
         <input placeholder={t("catalogueConsult.searchPlaceholder")} value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
+      {/* Sélecteur de catalogue en bulles/boutons plutôt qu'un simple menu
+          déroulant unique (correctif 2026-09-16, fiche corrective "CORRECTIFS
+          CRM — PROFIL ADMINISTRATEUR", point 7) — même style `cat-tab` que le
+          filtre catégorie juste en dessous et que la sélection de catalogue
+          côté prise de commande (NewOrder.jsx, classe `catalog-bubble`), pour
+          rester cohérent "comme dans le reste de l'interface CRM". */}
+      <div className="cat-tabs">
+        <button
+          type="button"
+          className={`cat-tab ${catalogFilter === "all" ? "active" : ""}`}
+          onClick={() => setCatalogFilter("all")}
+        >
+          {t("catalogueConsult.filterAllCatalogs")}
+        </button>
+        {catalogs.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className={`cat-tab ${catalogFilter === c.id ? "active" : ""}`}
+            onClick={() => setCatalogFilter(c.id)}
+          >
+            {c.name}
+          </button>
+        ))}
+      </div>
+
       <div className="filter-row" style={{ marginBottom: 10 }}>
-        <select value={catalogFilter} onChange={(e) => setCatalogFilter(e.target.value)}>
-          <option value="all">{t("catalogueConsult.filterAllCatalogs")}</option>
-          {catalogs.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
         <select value={availabilityFilter} onChange={(e) => setAvailabilityFilter(e.target.value)}>
           <option value="all">{t("catalogueConsult.filterAllAvailability")}</option>
           {AVAILABILITY.map((s) => (
@@ -214,7 +236,9 @@ export default function CatalogueConsult() {
                 <div className="product-stock" style={{ color: stock.color }}>
                   {stock.text}
                 </div>
-                {p.catalogName && <div style={{ fontSize: 10.5, color: "var(--ink-soft)", marginTop: 4 }}>{p.catalogName}</div>}
+                {p.catalogNames?.length > 0 && (
+                  <div style={{ fontSize: 10.5, color: "var(--ink-soft)", marginTop: 4 }}>{p.catalogNames.join(", ")}</div>
+                )}
                 {/* Lien rapide "Modifier la référence" vers Admin produits
                     (fiche corrective Administrateur V3) — seul point
                     d'écriture accessible depuis cet écran, qui reste

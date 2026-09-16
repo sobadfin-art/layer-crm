@@ -53,6 +53,8 @@ const emptyProductForm = {
   color: "",
   category: "PREMIUM",
   description: "",
+  dolibarrRef: "",
+  catalogIds: [],
   priceFR: "",
   priceExport: "",
   priceCH: "",
@@ -152,7 +154,11 @@ export default function CatalogueAdmin() {
     api
       .get(`/products/${editId}`)
       .then((product) => {
-        if (product?.catalogId) setSelectedCatalogId(product.catalogId);
+        // Rattachement multi-catalogue (point 8) : cette référence peut être
+        // dans plusieurs catalogues à la fois — on ouvre sur le premier pour
+        // que le lien direct fonctionne toujours (la liste "Catalogue(s)" de
+        // la fiche produit elle-même montre l'affiliation complète).
+        if (product?.catalogIds?.length) setSelectedCatalogId(product.catalogIds[0]);
       })
       .catch(() => {
         // Référence introuvable/supprimée entre-temps : on abandonne
@@ -325,7 +331,10 @@ export default function CatalogueAdmin() {
 
   function openNewProductForm() {
     setEditingProductId(null);
-    setProductForm(emptyProductForm);
+    // Pré-coche le catalogue actuellement affiché (contexte de l'écran) sans
+    // empêcher d'en ajouter/retirer d'autres avant d'enregistrer — cf. bulles
+    // de sélection multi-catalogue plus bas (point 8 de la fiche corrective).
+    setProductForm({ ...emptyProductForm, catalogIds: selectedCatalogId ? [selectedCatalogId] : [] });
     setProductFormError(null);
     setShowProductForm(true);
   }
@@ -339,6 +348,8 @@ export default function CatalogueAdmin() {
       color: p.color || "",
       category: CATEGORIES.includes(p.category) ? p.category : "PREMIUM",
       description: p.description || "",
+      dolibarrRef: p.dolibarrRef || "",
+      catalogIds: p.catalogIds || [],
       // Note : la sérialisation snake_case -> camelCase générique (toCamel)
       // transforme price_fr / price_ch en priceFr / priceCh (un seul "r"/"h"
       // majuscule après l'underscore, pas deux) — donc différent de la casse
@@ -380,6 +391,8 @@ export default function CatalogueAdmin() {
         color: productForm.color.trim() || null,
         category: productForm.category,
         description: productForm.description.trim() || null,
+        dolibarrRef: productForm.dolibarrRef.trim() || null,
+        catalogIds: productForm.catalogIds,
         priceFR: toNumberOrNull(productForm.priceFR),
         priceExport: toNumberOrNull(productForm.priceExport),
         priceCH: toNumberOrNull(productForm.priceCH),
@@ -391,13 +404,18 @@ export default function CatalogueAdmin() {
         expectedQty: toNumberOrNull(productForm.expectedQty),
       };
       if (editingProductId) {
-        const updated = await api.patch(`/products/${editingProductId}`, payload);
-        setProducts((prev) => prev.map((p) => (p.id === editingProductId ? updated : p)));
+        await api.patch(`/products/${editingProductId}`, payload);
       } else {
-        const created = await api.post("/products", { ...payload, catalogId: selectedCatalogId });
-        setProducts((prev) => [created, ...prev]);
-        await loadCatalogs();
+        await api.post("/products", payload);
       }
+      // Recharge plutôt qu'une mise à jour optimiste locale : depuis le
+      // rattachement multi-catalogue (point 8), la visibilité d'une référence
+      // dans cette liste dépend de son appartenance au catalogue actuellement
+      // affiché — si l'admin vient de le décocher, elle doit disparaître
+      // d'ici ; si un nouveau catalogue a été ajouté, son compteur de
+      // références doit se mettre à jour aussi.
+      loadProducts();
+      await loadCatalogs();
       closeProductForm();
     } catch (err) {
       setProductFormError(err.message);
@@ -453,7 +471,8 @@ export default function CatalogueAdmin() {
             style={{
               cursor: "pointer",
               background: selectedCatalogId === c.id ? "var(--bg)" : undefined,
-              borderRadius: 6,
+              border: selectedCatalogId === c.id ? "1px solid var(--ink)" : "1px solid transparent",
+              borderRadius: 8,
             }}
             onClick={() => setSelectedCatalogId(c.id)}
           >
@@ -551,15 +570,63 @@ export default function CatalogueAdmin() {
                     <input value={productForm.color} onChange={(e) => setProductForm((f) => ({ ...f, color: e.target.value }))} />
                   </div>
                 </div>
+                <div className="form-row">
+                  <div className="field">
+                    <label>{t("catalogueAdmin.colCategory")}</label>
+                    <select value={productForm.category} onChange={(e) => setProductForm((f) => ({ ...f, category: e.target.value }))}>
+                      {CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {t(`category.${c}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>{t("catalogueAdmin.fieldDolibarrRef")}</label>
+                    <input
+                      value={productForm.dolibarrRef}
+                      onChange={(e) => setProductForm((f) => ({ ...f, dolibarrRef: e.target.value }))}
+                      placeholder={t("catalogueAdmin.fieldDolibarrRefHint")}
+                    />
+                  </div>
+                </div>
                 <div className="field">
-                  <label>{t("catalogueAdmin.colCategory")}</label>
-                  <select value={productForm.category} onChange={(e) => setProductForm((f) => ({ ...f, category: e.target.value }))}>
-                    {CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {t(`category.${c}`)}
-                      </option>
-                    ))}
-                  </select>
+                  <label>{t("catalogueAdmin.fieldCatalogs")}</label>
+                  <p className="page-sub" style={{ margin: "0 0 6px" }}>
+                    {t("catalogueAdmin.fieldCatalogsHint")}
+                  </p>
+                  <div className="cat-tabs" style={{ marginBottom: 0 }}>
+                    {catalogs.map((c) => {
+                      const active = productForm.catalogIds.includes(c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className={`cat-tab ${active ? "active" : ""}`}
+                          onClick={() =>
+                            setProductForm((f) => ({
+                              ...f,
+                              catalogIds: active
+                                ? f.catalogIds.filter((id) => id !== c.id)
+                                : [...f.catalogIds, c.id],
+                            }))
+                          }
+                        >
+                          {c.name}
+                        </button>
+                      );
+                    })}
+                    {catalogs.length === 0 && (
+                      <span style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
+                        {t("catalogueAdmin.noCatalogs")}
+                      </span>
+                    )}
+                  </div>
+                  {productForm.catalogIds.length === 0 && (
+                    <p className="page-sub" style={{ margin: "6px 0 0" }}>
+                      {t("catalogueAdmin.catalogsNoneSelected")}
+                    </p>
+                  )}
                 </div>
                 <div className="field">
                   <label>{t("catalogueAdmin.fieldDescription")}</label>
@@ -691,6 +758,7 @@ export default function CatalogueAdmin() {
                       <th>{t("catalogueAdmin.colLabel")}</th>
                       <th>{t("catalogueAdmin.fieldModel")} / {t("catalogueAdmin.fieldColor")}</th>
                       <th>{t("catalogueAdmin.colCategory")}</th>
+                      <th>{t("catalogueAdmin.colCatalogs")}</th>
                       <th>{t("catalogueAdmin.fieldPriceFR")}</th>
                       <th>{t("catalogueAdmin.colQty")}</th>
                       <th>{t("catalogueAdmin.colStock")}</th>
@@ -752,6 +820,9 @@ export default function CatalogueAdmin() {
                         <td>{p.label}</td>
                         <td>{[p.model, p.color].filter(Boolean).join(" / ") || "—"}</td>
                         <td>{t(`category.${p.category}`) || p.category}</td>
+                        <td style={{ fontSize: 11.5 }}>
+                          {p.catalogNames?.length ? p.catalogNames.join(", ") : t("catalogueAdmin.catalogsNoneSelected")}
+                        </td>
                         <td>{p.priceFr != null ? `${p.priceFr} €` : "—"}</td>
                         <td>{p.qty}</td>
                         <td>

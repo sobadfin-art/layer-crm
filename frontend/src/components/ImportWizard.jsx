@@ -278,6 +278,7 @@ export default function ImportWizard({
             <span>{t("importWizard.summaryErrors")}</span>
             <span style={summary.errorCount > 0 ? { color: "var(--danger)" } : undefined}>{summary.errorCount}</span>
           </div>
+          <ErrorDetailsList errorDetails={summary.errorDetails} truncated={summary.errorDetailsTruncated} totalErrors={summary.errorCount} />
           {renderSummaryExtra && renderSummaryExtra(summary)}
 
           <div className="field" style={{ marginTop: 12 }}>
@@ -311,11 +312,49 @@ export default function ImportWizard({
           <p className="page-sub">
             {t("importWizard.doneSummary", { created: result.created, updated: result.updated, skipped: result.skipped, errors: result.errors })}
           </p>
+          <ErrorDetailsList errorDetails={result.errorDetails} truncated={result.errorDetailsTruncated} totalErrors={result.errors} align="left" />
           <button className="btn primary" onClick={reset}>
             {t("importWizard.newImport")}
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// Compte rendu détaillé des lignes rejetées (point 13/14 de la fiche
+// corrective "CORRECTIFS CRM — PROFIL ADMINISTRATEUR" : "afficher lignes
+// importées ; lignes rejetées ; motif du rejet" — jusqu'ici seul le COMPTE
+// d'erreurs remontait, jamais le détail ligne par ligne). Affiché à la fois
+// à l'étape "résumé" (avant validation) et à l'étape "terminé" (après
+// application réelle), avec le même contenu `errorDetails`/`errorDetailsTruncated`
+// renvoyé par le backend (`lib/catalogImport.js`/`lib/accountsImport.js`).
+function ErrorDetailsList({ errorDetails, truncated, totalErrors, align = "left" }) {
+  const { t } = useI18n();
+  if (!errorDetails || errorDetails.length === 0) return null;
+  return (
+    <div
+      className="field"
+      style={{
+        marginTop: 10,
+        textAlign: align,
+        background: "var(--bg)",
+        border: "1px solid var(--line)",
+        borderRadius: 6,
+        padding: "8px 10px",
+      }}
+    >
+      <label style={{ color: "var(--danger)" }}>
+        {t("importWizard.errorDetailsTitle", { count: totalErrors ?? errorDetails.length })}
+      </label>
+      <ul style={{ margin: "6px 0 0", paddingLeft: 18, maxHeight: 180, overflowY: "auto", fontSize: 12 }}>
+        {errorDetails.map((d, idx) => (
+          <li key={idx} style={{ marginBottom: 3 }}>
+            {t("importWizard.errorDetailLine", { row: d.row, ref: d.ref || t("importWizard.errorDetailNoRef") })} — {d.error}
+          </li>
+        ))}
+      </ul>
+      {truncated && <p className="page-sub" style={{ margin: "6px 0 0" }}>{t("importWizard.errorDetailsTruncated")}</p>}
     </div>
   );
 }

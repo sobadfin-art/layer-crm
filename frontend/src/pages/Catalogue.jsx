@@ -121,7 +121,9 @@ export default function Catalogue() {
                 <div className="product-stock" style={{ color: stock.color }}>
                   {stock.text}
                 </div>
-                {p.catalogName && <div style={{ fontSize: 10.5, color: "var(--ink-soft)", marginTop: 4 }}>{p.catalogName}</div>}
+                {p.catalogNames?.length > 0 && (
+                  <div style={{ fontSize: 10.5, color: "var(--ink-soft)", marginTop: 4 }}>{p.catalogNames.join(", ")}</div>
+                )}
               </div>
             </div>
           );
