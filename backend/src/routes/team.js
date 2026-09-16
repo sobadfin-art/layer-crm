@@ -127,7 +127,18 @@ teamRouter.delete("/territories/:id", requireAuth, requireRole(ROLES.DIRECTEUR),
 // les autres rôles autorisés" — le formulaire de création de compte du Front
 // Desk a besoin de cette même liste représentants/Master Reps pour choisir le
 // ownerRepId, exactement comme le Directeur).
+// Filtre actif par défaut (demande directe, 2026-09-16 : "retire tous les
+// reps fictifs... de tous les filtres, et apparitions dans l'app") : cet
+// endpoint alimente une dizaine d'écrans différents (Data, Règles
+// commerciales, Clients & prospects, Nouvelle commande, fiche compte,
+// Équipe, Tableau de bord...) — corriger le filtre ici, à la source, plutôt
+// que dans chacun des appelants, garantit qu'AUCUN d'entre eux (actuels ou
+// futurs) ne peut plus faire réapparaître un compte désactivé par erreur.
+// Les deux seuls écrans qui doivent explicitement pouvoir revoir les
+// comptes désactivés (bouton "Afficher les désactivés" de TeamManagement.jsx
+// et DirecteurDashboard.jsx) passent ?includeInactive=true pour l'obtenir.
 teamRouter.get("/members", requireAuth, requireRole(ROLES.DIRECTEUR, ROLES.FRONT_DESK), async (req, res) => {
+  const includeInactive = req.query.includeInactive === "true";
   const { rows } = await query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.active,
             mr.user_id AS master_rep_id, sr.territory_ids,
@@ -136,7 +147,7 @@ teamRouter.get("/members", requireAuth, requireRole(ROLES.DIRECTEUR, ROLES.FRONT
      LEFT JOIN sales_reps sr ON sr.user_id = u.id
      LEFT JOIN master_reps mr ON mr.id = sr.master_rep_id
      LEFT JOIN users mru ON mru.id = mr.user_id
-     WHERE u.role IN ('REPRESENTANT', 'MASTER_REP')
+     WHERE u.role IN ('REPRESENTANT', 'MASTER_REP') ${includeInactive ? "" : "AND u.active = true"}
      ORDER BY u.role, u.last_name`
   );
   res.json(toCamelList(rows));
@@ -154,6 +165,11 @@ teamRouter.get("/mine", requireAuth, requireRole(ROLES.MASTER_REP), async (req, 
   // Rep (PDF section 1 : "le territoire / la zone couverte ... doit être
   // clairement identifiable"), sans donner accès à /team/territories
   // (réservé Directeur/Front desk) juste pour ce besoin d'affichage.
+  //
+  // Filtre actif par défaut, même logique et même raison que /members
+  // ci-dessus (2026-09-16) — aucun écran alimenté par cet endpoint
+  // (Equipe.jsx, MasterRepDashboard.jsx) n'a de bouton pour revoir les
+  // désactivés, donc pas de bascule ?includeInactive ici, juste le filtre.
   const { rows } = await query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.active, sr.territory_ids,
             COALESCE(
@@ -163,7 +179,7 @@ teamRouter.get("/mine", requireAuth, requireRole(ROLES.MASTER_REP), async (req, 
      FROM users u
      JOIN sales_reps sr ON sr.user_id = u.id
      JOIN master_reps mr ON mr.id = sr.master_rep_id
-     WHERE mr.user_id = $1
+     WHERE mr.user_id = $1 AND u.active = true
      ORDER BY u.last_name`,
     [req.user.id]
   );

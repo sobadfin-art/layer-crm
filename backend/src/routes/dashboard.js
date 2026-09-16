@@ -36,7 +36,14 @@ const DATA_ROLES = [ROLES.REPRESENTANT, ROLES.MASTER_REP, ROLES.DIRECTEUR];
 // dès que dateFrom+dateTo étaient fournis — donc à peu près à chaque clic
 // "Générer" depuis l'UI).
 function buildBestsellersFilters(req, effectiveRepIds, { validatedFrom, validatedFromOp = ">=", validatedTo, validatedToOp = "<=" } = {}) {
-  const clauses = ["o.status::text = ANY($1::text[])", "ol.is_gift = FALSE"];
+  // Décluttering (demande directe, 2026-09-16 : "les ca des commande fictive
+  // dans l'app de data") : un compte désormais ARCHIVE (donc plus jamais
+  // actif, cf. accounts.js) sort du calcul des bestsellers — sans ce filtre,
+  // une commande EXPORTEE_DOLIBARR rattachée à un compte de test archivé
+  // restait comptée (COUNTED_STATUSES ne filtre que le statut de la
+  // commande, jamais celui du compte). Ne change rien pour un compte
+  // ACTIF/INACTIF, seulement pour un compte explicitement archivé.
+  const clauses = ["o.status::text = ANY($1::text[])", "ol.is_gift = FALSE", "a.status != 'ARCHIVE'"];
   const params = [COUNTED_STATUSES];
 
   if (effectiveRepIds !== null) {
@@ -260,7 +267,10 @@ const EFFECTIVE_PRECOMMANDE = "(o.is_precommande AND NOT o.converted_to_firm)";
 // buildAnalyticsPeriod ci-dessous, hors bornes de date (propres à chaque
 // période) — évite de dupliquer la résolution des filtres pour A et B.
 async function analyticsBaseFilters(req) {
-  const clauses = ["o.status::text = ANY($1::text[])"];
+  // Même correctif que buildBestsellersFilters ci-dessus (demande directe,
+  // 2026-09-16) : exclure les commandes rattachées à un compte archivé des
+  // totaux CA de l'onglet Analytics.
+  const clauses = ["o.status::text = ANY($1::text[])", "a.status != 'ARCHIVE'"];
   const params = [COUNTED_STATUSES];
 
   // Représentants explicites + représentants gérés par les Master Reps
