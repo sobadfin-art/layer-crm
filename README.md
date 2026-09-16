@@ -1598,6 +1598,187 @@ Corrections réellement apportées ce lot :
     catalogue/Premium/France, gestion des utilisateurs Directeur/Front Desk) : tous les scripts
     précédemment écrits continuent de passer intégralement après ce correctif.
 
+- **Correctif urgent — Profil Représentant : bouton "Nouvelle commande" manquant sur l'onglet Commandes
+  (2026-09-16, fiche "CORRECTIF URGENT — PROFIL REPRÉSENTANT")** : la fiche signalait trois boutons
+  disparus (Dashboard, Clients & prospects, Commandes). Vérification en conditions réelles (connexion
+  Représentant, script Playwright) : les boutons du Dashboard ("Nouvelle commande") et de Clients &
+  prospects ("Nouveau compte") sont bien présents et fonctionnels dans le code actuel — le même scénario
+  que pour les "régressions" déjà rapportées dans le lot précédent, très probablement un écart entre le
+  code livré ici et la version encore déployée sur le site bêta Render au moment du test (déploiement
+  manuel, jamais automatique — voir plus haut). Le troisième, en revanche, était un **vrai gap** :
+  l'onglet Commandes (`OrdersList.jsx`) n'a, à aucun moment dans l'historique de ce projet, comporté de
+  bouton "Nouvelle commande" — corrigé en ajoutant le même composant partagé `NewOrderQuickAccess`
+  (déjà utilisé par le Dashboard) en haut à droite de cet écran, réservé au rôle Représentant (l'écran
+  Commandes est également utilisé en lecture seule par le Master Rep — cf. `App.jsx` — qui ne doit pas
+  se voir accorder cette capacité, décision produit distincte non concernée par ce correctif). Les trois
+  parcours d'entrée (Dashboard, fiche client "Nouvelle commande", Commandes) convergent bien vers le même
+  moteur de création (`/clients/:id/commande`, `NewOrder.jsx`) — aucun second moteur créé, conformément à
+  l'exigence explicite de la fiche. Vérifié par script Playwright dédié couvrant exactement le test
+  obligatoire demandé (section 6) : présence des 3 boutons à la première connexion, après déconnexion/
+  reconnexion, et après rafraîchissement navigateur sur chacun des trois écrans (9 assertions), plus la
+  convergence des 3 parcours vers le même écran de commande (5 assertions) — 14/14 au total ; non-régression
+  confirmée sur le Master Rep (toujours sans bouton de création, comme avant) et sur l'ensemble de la
+  suite de tests des lots précédents (commande, remises, Front Desk, fiche client, export Dolibarr).
+  Aucun autre élément du Dashboard, de Clients & prospects, des fiches client, du catalogue, du panier,
+  des règles de remise, de la Data, de l'Agenda, des tâches, des rendez-vous, du Front Desk ou des droits
+  déjà en place n'a été modifié.
+
+- **Habillage visuel de l'écran de connexion (2026-09-16, demande directe : "rajoute sur l'intro de
+  l'appli ce visuel en responsive. tout doit etre visible. log in au milieu")** : le visuel fourni
+  (poster Moken "Now, Let's make millions. (So we can surf a million waves together.)", fond jaune pâle,
+  accroche en grande empattée sombre, logo Moken en bas) habille désormais l'écran de connexion et les
+  deux écrans qui en dépendent (mot de passe oublié, réinitialisation) — jamais affiché une fois connecté,
+  le reste de l'application (AppShell, en-tête, navigation) reste inchangé.
+  - **Reconstruit en HTML/CSS plutôt qu'inséré comme image figée :** couleurs échantillonnées directement
+    sur le visuel fourni (fond `#FDEE93`, encre `#042D13`), police d'accroche/tagline "Fraunces" (Google
+    Fonts, proche de l'empattée du visuel d'origine, ajoutée à `index.html`), logo Moken existant du
+    projet (`assets/moken-logo.png`, doré à l'origine) recoloré en noir par filtre CSS pour rester lisible
+    sur le fond jaune (l'encre du visuel d'origine, très sombre, en est visuellement indissociable à
+    cette taille). Un texte plutôt qu'une image reste net à toute résolution et se redimensionne
+    proprement (`clamp()` sur les polices et les espacements) — une image plein cadre se serait soit
+    recadrée, soit aurait laissé des bandes vides selon le ratio d'écran, ce qui aurait contredit
+    l'exigence explicite "tout doit être visible".
+  - **Formulaire de connexion au milieu (exigence explicite) :** le formulaire (carte `.login-shell`,
+    inchangée) est centré verticalement et horizontalement dans la zone naturellement vide du visuel
+    d'origine, entre l'accroche en haut et le logo en bas — exactement la disposition du visuel fourni.
+  - **Repli responsive si l'écran est vraiment trop court** (mobile en paysage, petite fenêtre desktop) :
+    la page défile plutôt que de couper un élément — "tout doit être visible" prime sur "tout tient sans
+    défiler". Vérifié par capture d'écran à plusieurs largeurs (mobile 375px, mobile paysage très bas,
+    tablette 810px, desktop 1440px) et par script Playwright (accroche, tagline et formulaire tous
+    présents et fonctionnels, connexion réelle toujours opérationnelle de bout en bout, poster absent une
+    fois connecté) — 6/6 assertions.
+  - **Non-régression :** la classe `.login-shell` réutilisée par `ChangePassword.jsx` (écran interne de
+    changement de mot de passe forcé, hors intro) n'a reçu aucune modification de son style de base — le
+    nouvel habillage n'agit que sur les instances imbriquées dans le nouveau conteneur du poster, jamais
+    en dehors.
+  - **Ajustement (2026-09-16, demande directe : "centre moi toutes les écriture du visuel au milieu de la
+    page... ne change pas la typo et ne change pas la couleur") :** l'accroche et la tagline, jusqu'ici
+    calées à gauche (fidèles à la mise en page du visuel fourni), sont désormais centrées horizontalement
+    au-dessus et en dessous de la carte de connexion — seul l'alignement a changé, police (Fraunces),
+    graisse et couleur (`#042D13`) strictement identiques. Vérifié visuellement (mobile et desktop).
+
+- **Gros bug corrigé — prix Export ne s'appliquait pas hors de France (2026-09-16, remontée directe :
+  "Quand un représentant est dans un pays autre que la France, (Autre Prix) le prix export ne s'applique
+  pas")** : reproduit et corrigé. `resolveUnitPrice` (`backend/src/lib/pricing.js`, seule source de vérité
+  du prix — jamais celui envoyé par le client) faisait bénéficier les comptes en Espagne du prix France
+  (`price_fr`) au lieu du prix Export (`price_export`) — comportement qui remontait en fait du handoff
+  d'origine lui-même ("France et Espagne partagent la même grille tarifaire", section 5), mais qui n'est
+  pas la règle commerciale réelle. Règle confirmée par l'utilisateur et désormais appliquée strictement :
+  en Europe et DOM-TOM, seule la France a le prix France ; tous les autres pays (Espagne comprise) ont le
+  prix Export ; la Suisse garde son propre prix Suisse. Basée sur le pays du **compte client**
+  (`account.country_code`, déjà présent sur la fiche client — champ pays déjà disponible, aucun ajout de
+  schéma nécessaire), jamais celui du représentant, un représentant pouvant avoir des clients dans
+  plusieurs pays. Même correction reportée dans l'aperçu panier côté représentant
+  (`unitPriceFor`, `frontend/src/pages/NewOrder.jsx`) pour rester cohérente avec le calcul serveur —
+  l'aperçu reste un aperçu, le serveur recalcule toujours le prix réel à l'enregistrement.
+  - **Vérifié de bout en bout** sur les trois cas via l'API réelle (commande créée puis nettoyée) : compte
+    espagnol (Tienda Madrid) → 40,00 € (prix Export, corrigé, était 30,00 € avant), compte suisse
+    (Lunettes Geneve) → 45,00 € (prix Suisse, inchangé), compte français (4G Optique) → 30,00 € (prix
+    France, inchangé — non-régression). Aperçu panier représentant également vérifié pour le compte
+    espagnol (40,00 € affiché, plus jamais 30,00 €).
+  - **Écrans de catalogue de référence non concernés, volontairement non touchés :** `Catalogue.jsx` et
+    `CatalogueConsult.jsx` affichent le prix France comme prix de référence générique lors d'une simple
+    consultation du catalogue (hors sélection de client, donc hors calcul par pays) — ce n'est pas le même
+    calcul que la prise de commande et ça n'était pas concerné par le bug signalé ; conformément à la
+    demande ("Pour le reste du dev tu ne touches à rien"), rien n'y a été modifié.
+  - Non-régression vérifiée sur la suite de tests des lots précédents (remise catalogue/Premium/France,
+    parcours de création de commande, boutons du profil Représentant).
+
+- **Ajustements visuel de connexion (2026-09-16, demande directe : "change la typo par Cooper BOLD et
+  ecrit la phrase entre parenthese plus grosse et plus éloignée du logo Moken. Ca c'est pour la page
+  d'entrée. Le reste tu ne touches pas")** : deux changements, strictement limités à l'écran de connexion
+  (et aux deux écrans qui en dépendent, mot de passe oublié/réinitialisation) — rien d'autre modifié.
+  - **Police remplacée par "Bevan" :** "Cooper Black"/"Cooper BT" est une police commerciale, non
+    disponible sur Google Fonts (seul fournisseur de polices déjà utilisé par le projet, cf. Manrope) et
+    donc non redistribuable ici sans achat de licence. Remplacée par **Bevan**, l'alternative gratuite la
+    plus proche dans le même registre (empattée épaisse, formes arrondies, habituellement citée comme
+    équivalent libre de Cooper Black) — appliquée à l'accroche et à la tagline (`index.html`,
+    `styles.css`). Si une vraie police Cooper Black est disponible sous licence côté client, elle peut
+    être déposée dans le projet et substituée en une ligne (`font-family` dans `.auth-poster-headline` /
+    `.auth-poster-tagline`).
+  - **Tagline agrandie et éloignée du logo :** taille de police doublée (`clamp(18px, 4.2vw, 30px)` contre
+    `clamp(12.5px, 2.6vw, 17px)` avant) et écart avec le logo nettement augmenté (`clamp(28px, 7vh, 56px)`
+    contre `clamp(10px, 2.5vh, 18px)` avant) — l'espacement au-dessus (entre la carte de connexion et la
+    tagline) n'a pas bougé, seul l'écart tagline ↔ logo a changé.
+  - **Limite de vérification à noter :** le bac à sable où tourne cet environnement de développement
+    bloque les requêtes sortantes vers Google Fonts (comme vers la plupart des domaines externes non
+    listés) — impossible d'y capturer un aperçu avec la vraie police Bevan chargée (le rendu y retombe
+    silencieusement sur la police de repli, Georgia). Le code est correctement configuré (balise
+    `<link>` + `font-family` vérifiés) et se comportera normalement dans un navigateur réel avec accès
+    Internet, exactement comme Manrope déjà utilisée partout ailleurs dans l'application — à confirmer
+    visuellement une fois ce zip déployé sur Render. Le changement de taille/espacement de la tagline,
+    lui, ne dépend pas de la police et a été vérifié visuellement (captures mobile/tablette/desktop).
+
+- **Écran de connexion — mise en conformité stricte avec le visuel de référence fourni (2026-09-16,
+  demande directe : "juste pour la partie Login Tablet, sur la premiere page de Login. reprend
+  exactement le modele de reference, ne fait pas d'interprétation. place le carré de login au
+  mileu")** : cette fois une image de référence précise a été fournie (et non plus une description
+  verbale) — elle prime, conformément à la demande explicite de ne "pas faire d'interprétation", sur
+  les ajustements faits juste avant sur la seule foi du texte ("Cooper BOLD", "plus grosse et plus
+  éloignée du logo"), qui se sont révélés contredits une fois l'image réelle en main. Analyse pixel du
+  visuel de référence (bandes de luminance, centrage, proportions) plutôt qu'une appréciation visuelle
+  approximative, pour ne prendre aucune liberté :
+  - **Accroche ramenée à "Let's make millions." seule** — la ligne "Now," du premier jet (habillage
+    initial de l'écran de connexion, avant qu'une référence précise n'existe) n'apparaît pas dans le
+    visuel de référence et a été retirée.
+  - **Tagline sans parenthèses ni italique** ("So we can surf a million waves together.", texte brut) —
+    les parenthèses et l'italique du premier jet, absentes du visuel de référence, ont été retirées.
+  - **Police ramenée à Fraunces** (empattée à fort contraste, fidèle au visuel de référence) — le
+    remplacement par Bevan fait sur la seule foi du mot "Cooper BOLD" au tour précédent est annulé
+    puisque le visuel réel ne correspond pas à cette police.
+  - **Taille et écart de la tagline ramenés à leurs valeurs d'origine** (`clamp(12.5px, 2.6vw, 17px)`,
+    écart tagline↔logo `clamp(8px, 2vh, 16px)` dans `.auth-poster-bottom`) — l'agrandissement +
+    éloignement fait au tour précédent sur la seule foi du mot "éloignée" est annulé : la mesure des
+    proportions du visuel de référence montre une tagline petite et proche du logo (hauteur ≈2,2 % de
+    l'image, à peine 2,4–3,6 % au-dessus du logo), donc l'exact inverse de l'interprétation verbale
+    précédente.
+  - **Centrage du carré de connexion** ("place le carré de login au milieu") : déjà en place depuis
+    l'ajustement de centrage précédent — confirmé conforme, aucun changement nécessaire ici.
+  - Vérifié par capture d'écran (mobile/tablette/desktop) comparée point par point au visuel de
+    référence fourni ; non-régression sur la connexion réelle, le mot de passe oublié/réinitialisation
+    et le reste de l'application (aucun autre écran touché).
+  - **Même limite d'environnement déjà notée plus haut** : ce bac à sable de développement bloque les
+    requêtes sortantes vers Google Fonts, donc impossible d'y capturer un aperçu avec la vraie police
+    Fraunces chargée (repli silencieux sur Georgia) — configuration vérifiée dans le code, à confirmer
+    visuellement une fois ce zip déployé sur Render.
+
+- **Amendement Direction Commerciale — gestion des objectifs et des territoires depuis l'onglet Équipe
+  (2026-09-16, demande directe : "Concernant la fiche Direction Commerciale, voici les ajustements à
+  apporter")** : cinq ajustements, tous cantonnés à la fiche Direction Commerciale (Tableau de bord et
+  Équipe du Directeur) — rien d'autre modifié, conformément à "Aucune autre modification n'est
+  nécessaire. Tout le reste est validé en l'état."
+  - **Bouton "Fixer un objectif" désormais accessible aussi depuis Équipe**, pas seulement depuis le
+    Tableau de bord : le bouton et son formulaire ont été extraits dans un hook partagé
+    (`hooks/useObjectiveForm.jsx`) afin que les deux écrans utilisent exactement le même moteur de
+    création (même formulaire, même validation, même appel `POST /objectives`) — aucun second moteur
+    dupliqué, même principe déjà appliqué au parcours "Nouvelle commande"
+    (`NewOrderQuickAccess.jsx`).
+  - **Récapitulatif des objectifs sous Territoires**, dans Équipe : nouvelle section listant TOUS les
+    objectifs de l'entreprise — représentants et Master Reps confondus, actifs ou non (contrairement au
+    bloc "Performance de l'équipe" juste au-dessus, qui ne garde que les objectifs de la période en
+    cours) — avec titulaire, type, période et montant cible pour chacun.
+  - **Icône poubelle sur chaque objectif du récapitulatif** ("afin de pouvoir revenir en arrière et
+    modifier les éléments si nécessaire") : supprime l'objectif (nouvelle route
+    `DELETE /api/objectives/:id`, réservée au Directeur comme la création) pour permettre de le refixer
+    avec les bonnes valeurs — pas d'édition champ par champ, suppression puis recréation, plus simple et
+    cohérent avec le reste de l'écran (aucune boîte de confirmation `window.confirm` nulle part ailleurs
+    dans l'application : action directe suivie d'un message de confirmation, même principe ici).
+  - **Icône poubelle sur chaque territoire**, dans le panneau Territoires ("il doit être possible de
+    sélectionner un territoire et de le supprimer") : nouvelle route
+    `DELETE /api/team/territories/:id`, transactionnelle — détache d'abord les références dépendantes
+    (le pays qui pointait vers ce territoire, les représentants qui l'avaient coché) avant de supprimer
+    le territoire lui-même, pour ne jamais laisser de référence orpheline ni faire échouer la suppression
+    sur une contrainte de clé étrangère.
+  - **Vérifié de bout en bout** (script Playwright + appels API directs) : bouton "Fixer un objectif"
+    présent et fonctionnel à la fois sur le Tableau de bord et sur Équipe ; création d'un objectif depuis
+    Équipe bien reflétée dans le récapitulatif ; suppression d'un objectif retire bien la ligne et
+    affiche la confirmation ; suppression d'un territoire testé avec un pays et un représentant qui lui
+    étaient rattachés — le pays et le représentant sont bien nettoyés en base sans erreur, et le
+    territoire disparaît du panneau. Non-régression confirmée sur le reste de l'écran Équipe
+    (hiérarchie Master Reps/représentants, activation/désactivation, rattachement, territoires par
+    membre) et sur le Tableau de bord Directeur (indicateurs, performance d'équipe, rendez-vous/tâches
+    du jour, carte).
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
