@@ -1245,7 +1245,37 @@ Corrections réellement apportées ce lot :
   formulaire "Nouveau compte" est désormais aussi affiché pour ce rôle, sans les champs
   représentant/Master Rep propriétaire (non pertinents ici, déterminés par le serveur) — vérifié de
   bout en bout : création du prospect → fiche compte → "Nouvelle commande" → commande envoyée au
-  front desk.
+  front desk. *(Voir l'entrée suivante — ce premier correctif, volontairement minimal à 4 champs, a
+  ensuite été remplacé par le formulaire complet ci-dessous suite au retour client.)*
+- **Représentant — parcours de commande complet, formulaire de création intégral et création de
+  client sans rupture de workflow (2026-09-16, fiche corrective "CORRECTIONS PRIORITAIRES CRM — PROFIL
+  REPRÉSENTANT") :** suite au retour explicite du client — *"Ne pas simplifier le workflow. La
+  maquette fournie précédemment reste la référence fonctionnelle et UX"* — le formulaire de création
+  minimal ci-dessus a été remplacé par un composant partagé, `components/AccountFormFields.jsx`,
+  reprenant l'intégralité des champs prévus par la maquette de référence
+  (`docs/prototype-crm-commercial.jsx`) : identité (raison sociale, nom du magasin), type
+  Client/Prospect, pays/typologie, adresse de facturation complète, adresse de livraison complète,
+  contact complet (nom, indicatifs + téléphone + mobile, email), informations légales (identifiant
+  fiscal dynamique selon le pays via `GET /countries`, n° TVA) et coordonnées bancaires (IBAN, BIC,
+  statut du mandat SEPA) — tous ces champs étaient déjà acceptés tels quels par `POST /api/accounts`
+  côté serveur (`createSchema`, `routes/accounts.js`), aucune modification backend n'a été nécessaire.
+  Ce composant est désormais utilisé par la page "Clients & prospects" (`ClientsList.jsx`, remplace
+  l'ancien formulaire à 4 champs) ET par le raccourci "+ Nouvelle commande" du dashboard
+  (`components/NewOrderQuickAccess.jsx`), qui n'offrait auparavant que la sélection d'un client
+  existant. Ce raccourci propose maintenant un bouton "+ Nouveau prospect / client" ouvrant ce même
+  formulaire complet directement dans la modale de sélection ; à la création, le représentant est
+  envoyé **directement** sur le catalogue de commande du client fraîchement créé — jamais de retour à
+  "Clients & prospects", de nouvelle recherche ou de réouverture de fiche, conformément à l'exigence
+  explicite de la fiche corrective (règle CLIENT → COMMANDE → CATALOGUE → PANIER → FRONT DESK sans
+  rupture). Un helper partagé, `accountPayloadFromForm()`, normalise les champs texte optionnels
+  laissés vides en `null` avant l'envoi (évite un piège zod : un champ `email` vide en chaîne "" est
+  rejeté par `.email()` alors qu'il serait accepté par `.optional()` seul). Vérifié de bout en bout
+  par script Playwright (21/21 assertions) : dashboard → "+Nouvelle commande" → "+ Nouveau prospect /
+  client" → remplissage intégral du formulaire → création → atterrissage direct sur le catalogue →
+  ajout au panier → panier/récapitulatif → note pour le Front Desk → "Envoyer au Front Desk" →
+  commande retrouvée côté API avec tous les champs (adresses, contact, IBAN...) correctement
+  persistés ; et séparément pour le parcours "Clients & prospects" classique (Représentant sans
+  sélecteur représentant/Master Rep, Directeur avec ce sélecteur obligatoire et blocage si absent).
 
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
