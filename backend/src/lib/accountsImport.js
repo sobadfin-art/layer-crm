@@ -72,13 +72,34 @@ function resolveType(rawValue) {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Charge la liste des pays et retourne une map { nom normalisé -> {id, code} },
-// pour résoudre "France" (nom en toutes lettres dans l'export Dolibarr) vers
-// le pays en base — section 6, aucun fallback pour un pays inconnu.
+// Charge la liste des pays et retourne une map { texte normalisé -> {id, code} },
+// pour résoudre la colonne "Pays" d'un fichier importé vers le pays en base —
+// section 6, aucun fallback pour un pays inconnu.
+//
+// BUG CORRIGÉ (fiche corrective "CORRECTIFS PRIORITAIRES — DIRECTION
+// COMMERCIALE + REPRÉSENTANT + RÈGLES DE REMISE", section 5/6 : "normaliser
+// la comparaison des pays... FR, France, fr, FRANCE doivent être rattachés au
+// même pays logique"). Cette map n'indexait auparavant que le NOM du pays en
+// toutes lettres (ex. "France"), jamais son CODE ISO à 2 lettres (ex. "FR") —
+// un fichier dont la colonne Pays contient des codes plutôt que des noms en
+// toutes lettres (cas réel des exports Dolibarr et de nombreux fichiers
+// clients) voyait alors CHAQUE ligne rejetée à l'import ("Pays inconnu : FR"),
+// pas silencieusement mal classée : le compte n'existait tout simplement
+// jamais avec le bon pays, ou pas du tout, ce qui peut expliquer un
+// portefeuille de comptes incomplet et, par ricochet, des règles de remise
+// PAYS qui semblent "ne jamais s'appliquer" puisque les comptes concernés
+// n'avaient pas le bon country_id (voire pas de compte importé du tout).
+// Corrigé : la map résout maintenant AUSSI bien un nom ("France") qu'un code
+// ISO ("FR"), insensible à la casse et aux accents comme avant
+// (normalizeText). Pas de risque de collision : un nom de pays complet ne
+// coïncide jamais textuellement avec un code à 2 lettres après normalisation.
 export async function loadCountriesByName() {
   const { rows } = await pool.query("SELECT id, code, name FROM countries");
   const map = new Map();
-  for (const c of rows) map.set(normalizeText(c.name), { id: c.id, code: c.code });
+  for (const c of rows) {
+    map.set(normalizeText(c.name), { id: c.id, code: c.code });
+    map.set(normalizeText(c.code), { id: c.id, code: c.code });
+  }
   return map;
 }
 
