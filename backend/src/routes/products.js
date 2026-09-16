@@ -112,9 +112,14 @@ productsRouter.get("/", requireAuth, requireRole(...ALL_ROLES), async (req, res)
 
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const { rows } = await query(
-    `SELECT p.*, c.name AS catalog_name, c.active AS catalog_active
+    `SELECT p.*, c.name AS catalog_name, c.active AS catalog_active,
+            COALESCE(pp.photo_urls, ARRAY[]::text[]) AS photo_urls
      FROM products p
      LEFT JOIN catalogs c ON c.id = p.catalog_id
+     LEFT JOIN LATERAL (
+       SELECT array_agg(url ORDER BY position) AS photo_urls
+       FROM product_photos WHERE product_id = p.id
+     ) pp ON true
      ${where}
      ORDER BY p.label`,
     params
@@ -124,8 +129,15 @@ productsRouter.get("/", requireAuth, requireRole(...ALL_ROLES), async (req, res)
 
 productsRouter.get("/:id", requireAuth, requireRole(...ALL_ROLES), async (req, res) => {
   const { rows } = await query(
-    `SELECT p.*, c.name AS catalog_name FROM products p
-     LEFT JOIN catalogs c ON c.id = p.catalog_id WHERE p.id = $1`,
+    `SELECT p.*, c.name AS catalog_name,
+            COALESCE(pp.photo_urls, ARRAY[]::text[]) AS photo_urls
+     FROM products p
+     LEFT JOIN catalogs c ON c.id = p.catalog_id
+     LEFT JOIN LATERAL (
+       SELECT array_agg(url ORDER BY position) AS photo_urls
+       FROM product_photos WHERE product_id = p.id
+     ) pp ON true
+     WHERE p.id = $1`,
     [req.params.id]
   );
   if (!rows[0]) return res.status(404).json({ error: "Référence introuvable." });
@@ -243,16 +255,116 @@ productsRouter.patch(
   }
 );
 
-// Téléversement direct d'une photo (cf. commentaire en haut du fichier) —
-// vérifie que la fiche existe avant d'accepter le fichier, pour ne jamais
-// écrire un fichier orphelin sur disque pour un id inexistant.
+// Galerie photo — jusqu'à 5 photos par référence (fiche corrective V2
+// Administrateur section 5 "Gestion des photos"). `products.photo_url` reste
+// la "photo de couverture" (position 0 de la galerie), pour ne rien casser
+// chez les écrans qui n'affichent qu'une seule vignette (Catalogue.jsx,
+// NewOrder.jsx, colonne photo de CatalogueAdmin.jsx, script de rapprochement
+// mokenvision) — resynchronisée à chaque ajout/suppression, jamais en dehors
+// de ce fichier.
+const MAX_PRODUCT_PHOTOS = 5;
+
+async function syncCoverPhoto(productId, userId) {
+  await query(
+    `UPDATE products SET
+       photo_url = (SELECT url FROM product_photos WHERE product_id = $1 ORDER BY position LIMIT 1),
+       modified_by_id = $2, last_modified = now()
+     WHERE id = $1`,
+    [productId, userId]
+  );
+}
+
+async function getPhotos(productId) {
+  const { rows } = await query(
+    "SELECT * FROM product_photos WHERE product_id = $1 ORDER BY position",
+    [productId]
+  );
+  return toCamelList(rows);
+}
+
+// Détail de la galerie (avec id de chaque photo, nécessaire pour la
+// suppression/le réordonnancement côté Admin produits) — réservé à
+// l'administrateur comme le reste de la gestion de galerie ; les autres
+// écrans (Catalogue produits, prise de commande) se contentent du tableau
+// `photoUrls` déjà renvoyé par GET /products et GET /products/:id.
+productsRouter.get(
+  "/:id/photos",
+  requireAuth,
+  requireRole(ROLES.ADMINISTRATEUR),
+  async (req, res) => {
+    const { rows } = await query("SELECT id FROM products WHERE id = $1", [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: "Référence introuvable." });
+    res.json(await getPhotos(req.params.id));
+  }
+);
+
+// Ajout d'une photo à la galerie par URL externe (produit déjà en vente sur
+// mokenvision.com) — utilisé par le script de rapprochement automatique
+// (scripts/mokenvision-photos/match-photos-to-catalog.mjs) et par tout futur
+// import qui fournirait directement une URL plutôt qu'un fichier. Même
+// limite de 5 photos et même resynchronisation de la couverture que
+// l'ajout par téléversement ci-dessous.
 productsRouter.post(
-  "/:id/photo",
+  "/:id/photos/url",
+  requireAuth,
+  requireRole(ROLES.ADMINISTRATEUR),
+  async (req, res) => {
+    const parsed = z.object({ url: photoUrlField }).safeParse(req.body);
+    if (!parsed.success || !parsed.data.url) {
+      return res.status(400).json({ error: "URL de photo requise (http(s) ou fichier téléversé)." });
+    }
+
+    const { rows } = await query("SELECT id FROM products WHERE id = $1", [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: "Référence introuvable." });
+    const { rows: countRows } = await query(
+      "SELECT count(*)::int AS n FROM product_photos WHERE product_id = $1",
+      [req.params.id]
+    );
+    if (countRows[0].n >= MAX_PRODUCT_PHOTOS) {
+      return res.status(400).json({ error: `Maximum ${MAX_PRODUCT_PHOTOS} photos par produit.` });
+    }
+
+    const { rows: posRows } = await query(
+      "SELECT COALESCE(max(position) + 1, 0) AS next FROM product_photos WHERE product_id = $1",
+      [req.params.id]
+    );
+    await query(
+      "INSERT INTO product_photos (product_id, url, position) VALUES ($1, $2, $3)",
+      [req.params.id, parsed.data.url, posRows[0].next]
+    );
+    await syncCoverPhoto(req.params.id, req.user.id);
+
+    await logAudit({
+      userId: req.user.id,
+      action: "PRODUCT_UPDATED",
+      entity: "products",
+      entityId: req.params.id,
+      details: { fields: ["photoUrls"], via: "url" },
+    });
+
+    const { rows: productRows } = await query("SELECT * FROM products WHERE id = $1", [req.params.id]);
+    res.status(201).json({ product: toCamel(productRows[0]), photos: await getPhotos(req.params.id) });
+  }
+);
+
+// Ajout d'une photo à la galerie (alternative à une URL externe, cf.
+// commentaire plus haut) — vérifie que la fiche existe et qu'elle n'a pas
+// déjà 5 photos avant d'accepter le fichier, pour ne jamais écrire un
+// fichier orphelin ou dépasser la limite sur disque.
+productsRouter.post(
+  "/:id/photos",
   requireAuth,
   requireRole(ROLES.ADMINISTRATEUR),
   async (req, res, next) => {
     const { rows } = await query("SELECT id FROM products WHERE id = $1", [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: "Référence introuvable." });
+    const { rows: countRows } = await query(
+      "SELECT count(*)::int AS n FROM product_photos WHERE product_id = $1",
+      [req.params.id]
+    );
+    if (countRows[0].n >= MAX_PRODUCT_PHOTOS) {
+      return res.status(400).json({ error: `Maximum ${MAX_PRODUCT_PHOTOS} photos par produit.` });
+    }
     next();
   },
   (req, res, next) => {
@@ -265,19 +377,106 @@ productsRouter.post(
     if (!req.file) return res.status(400).json({ error: "Fichier requis (champ 'photo')." });
 
     const photoUrl = `${PRODUCT_PHOTOS_URL_PREFIX}${req.file.filename}`;
-    const { rows } = await query(
-      `UPDATE products SET photo_url = $1, modified_by_id = $2, last_modified = now() WHERE id = $3 RETURNING *`,
-      [photoUrl, req.user.id, req.params.id]
+    const { rows: posRows } = await query(
+      "SELECT COALESCE(max(position) + 1, 0) AS next FROM product_photos WHERE product_id = $1",
+      [req.params.id]
     );
+    await query(
+      "INSERT INTO product_photos (product_id, url, position) VALUES ($1, $2, $3)",
+      [req.params.id, photoUrl, posRows[0].next]
+    );
+    await syncCoverPhoto(req.params.id, req.user.id);
 
     await logAudit({
       userId: req.user.id,
       action: "PRODUCT_UPDATED",
       entity: "products",
       entityId: req.params.id,
-      details: { fields: ["photoUrl"], via: "upload" },
+      details: { fields: ["photoUrls"], via: "upload" },
     });
 
-    res.status(201).json(toCamel(rows[0]));
+    const { rows: productRows } = await query("SELECT * FROM products WHERE id = $1", [req.params.id]);
+    res.status(201).json({ product: toCamel(productRows[0]), photos: await getPhotos(req.params.id) });
+  }
+);
+
+// Suppression d'une photo de la galerie — renumérote les positions restantes
+// pour rester contiguës (0..n-1) et resynchronise la couverture.
+productsRouter.delete(
+  "/:id/photos/:photoId",
+  requireAuth,
+  requireRole(ROLES.ADMINISTRATEUR),
+  async (req, res) => {
+    const { rows } = await query(
+      "DELETE FROM product_photos WHERE id = $1 AND product_id = $2 RETURNING *",
+      [req.params.photoId, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Photo introuvable." });
+
+    const { rows: remaining } = await query(
+      "SELECT id FROM product_photos WHERE product_id = $1 ORDER BY position",
+      [req.params.id]
+    );
+    for (let idx = 0; idx < remaining.length; idx++) {
+      await query("UPDATE product_photos SET position = $1 WHERE id = $2", [idx, remaining[idx].id]);
+    }
+    await syncCoverPhoto(req.params.id, req.user.id);
+
+    await logAudit({
+      userId: req.user.id,
+      action: "PRODUCT_UPDATED",
+      entity: "products",
+      entityId: req.params.id,
+      details: { fields: ["photoUrls"], via: "delete" },
+    });
+
+    const { rows: productRows } = await query("SELECT * FROM products WHERE id = $1", [req.params.id]);
+    res.json({ product: toCamel(productRows[0]), photos: await getPhotos(req.params.id) });
+  }
+);
+
+// Réordonnancement de la galerie (glisser en tête = nouvelle couverture) —
+// reçoit la liste complète des ids de photos de la fiche dans le nouvel
+// ordre souhaité ; rejeté si elle ne correspond pas exactement aux photos
+// existantes, pour ne jamais désynchroniser la galerie.
+productsRouter.patch(
+  "/:id/photos/reorder",
+  requireAuth,
+  requireRole(ROLES.ADMINISTRATEUR),
+  async (req, res) => {
+    const parsed = z.object({ order: z.array(z.string().uuid()) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { rows: existing } = await query(
+      "SELECT id FROM product_photos WHERE product_id = $1",
+      [req.params.id]
+    );
+    const existingIds = new Set(existing.map((r) => r.id));
+    const orderedIds = parsed.data.order;
+    if (
+      orderedIds.length !== existingIds.size ||
+      !orderedIds.every((id) => existingIds.has(id))
+    ) {
+      return res.status(400).json({ error: "La liste doit correspondre exactement aux photos existantes." });
+    }
+
+    // Deux passes : la contrainte UNIQUE(product_id, position) rejette toute
+    // écriture qui ferait coexister deux photos sur la même position, ce qui
+    // arrive dès qu'un réordonnancement n'est pas qu'un simple décalage vers
+    // le bas (ex. faire passer la dernière photo en première). On bascule
+    // donc d'abord toutes les positions vers une plage négative (jamais
+    // utilisée ailleurs), puis on pose les positions finales — aucune des
+    // deux passes ne peut alors entrer en collision avec une valeur encore
+    // détenue par une autre ligne.
+    for (let idx = 0; idx < orderedIds.length; idx++) {
+      await query("UPDATE product_photos SET position = $1 WHERE id = $2", [-(idx + 1), orderedIds[idx]]);
+    }
+    for (let idx = 0; idx < orderedIds.length; idx++) {
+      await query("UPDATE product_photos SET position = $1 WHERE id = $2", [idx, orderedIds[idx]]);
+    }
+    await syncCoverPhoto(req.params.id, req.user.id);
+
+    const { rows: productRows } = await query("SELECT * FROM products WHERE id = $1", [req.params.id]);
+    res.json({ product: toCamel(productRows[0]), photos: await getPhotos(req.params.id) });
   }
 );

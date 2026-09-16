@@ -61,10 +61,27 @@ teamRouter.post("/territories", requireAuth, requireRole(ROLES.DIRECTEUR), async
 
 // -- Membres de l'équipe ---------------------------------------------------
 
+// BUG CORRIGÉ (fiche corrective V2 Direction commerciale, sections 2.2/4 —
+// "Seul le Master Rep apparaît" / "reprendre la même hiérarchie") : cette
+// requête renvoyait `sr.master_rep_id`, qui est la clé primaire de la table
+// `master_reps` (master_reps.id), sous le nom de champ `masterRepId`. Or tout
+// le frontend (TeamManagement.jsx, DirecteurDashboard.jsx) compare ce champ à
+// `mr.id`, l'identifiant UTILISATEUR (users.id) des membres MASTER_REP
+// renvoyés par ce même endpoint — cf. PATCH /members/:userId ci-dessous, qui
+// attend d'ailleurs `masterRepUserId` (un users.id) et le résout lui-même vers
+// master_reps.id en interne. Les deux espaces d'identifiants ne coïncident
+// jamais (sauf coïncidence), donc `reps.filter(r => r.masterRepId === mr.id)`
+// ne matchait jamais rien côté frontend : chaque Master Rep s'affichait seul,
+// sans ses représentants rattachés, et le sélecteur de réaffectation
+// affichait toujours "Aucun Master Rep" même quand un rattachement existait
+// bel et bien en base. Fix : exposer `mr.user_id` (aliasé sur le même nom de
+// colonne SQL `master_rep_id`, pour que toCamelList continue de produire
+// `masterRepId`) au lieu de `sr.master_rep_id` — cohérent avec le users.id
+// utilisé partout ailleurs.
 teamRouter.get("/members", requireAuth, requireRole(ROLES.DIRECTEUR), async (req, res) => {
   const { rows } = await query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.active,
-            sr.master_rep_id, sr.territory_ids,
+            mr.user_id AS master_rep_id, sr.territory_ids,
             mru.first_name AS master_rep_first_name, mru.last_name AS master_rep_last_name
      FROM users u
      LEFT JOIN sales_reps sr ON sr.user_id = u.id

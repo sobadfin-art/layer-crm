@@ -20,6 +20,8 @@ const LABEL_TO_ENUM = {
   optique: "OPTICS",
   access: "ACCESS",
   accessoires: "ACCESS",
+  accessories: "ACCESS",
+  accessory: "ACCESS",
   display: "DISPLAY",
   displays: "DISPLAY",
   merch: "MERCH",

@@ -1,11 +1,14 @@
 // Rapproche les fiches produit du catalogue CRM avec les photos scrappées de
 // mokenvision.com (moken_photos_map.json, même dossier), par modèle (et
-// couleur si possible). Écrit photo_url via l'API produits (PATCH /api/products/:id) —
-// jamais en écriture SQL directe — pour rester dans le même chemin que la
-// mise à jour manuelle d'une fiche produit et déclencher l'audit log
-// (PRODUCT_UPDATED). Ne devine jamais : un modèle absent du fichier n'est
-// pas rapproché, quelle que soit sa ressemblance approximative avec un autre
-// nom (cf. docs/rapprochement-photos-mokenvision.md).
+// couleur si possible). Écrit via l'API produits
+// (POST /api/products/:id/photos/url) — jamais en écriture SQL directe —
+// pour alimenter la galerie (jusqu'à 5 photos, cf. migration
+// 017_product_photos.sql) plutôt que d'écraser photo_url directement ; la
+// couverture (photo_url) est resynchronisée automatiquement par cette route
+// et l'audit log (PRODUCT_UPDATED) est déclenché comme pour toute autre
+// mise à jour de fiche produit. Ne devine jamais : un modèle absent du
+// fichier n'est pas rapproché, quelle que soit sa ressemblance approximative
+// avec un autre nom (cf. docs/rapprochement-photos-mokenvision.md).
 //
 // Usage : node match-photos-to-catalog.mjs [--dry-run]
 //   BASE_URL, ADMIN_EMAIL, ADMIN_PASSWORD peuvent être surchargés par variables
@@ -82,12 +85,12 @@ async function main() {
     return;
   }
 
-  console.log("\n--- Application (PATCH /api/products/:id) ---");
+  console.log("\n--- Application (POST /api/products/:id/photos/url) ---");
   for (const m of matched) {
-    const res = await fetch(`${BASE}/api/products/${m.id}`, {
-      method: "PATCH",
+    const res = await fetch(`${BASE}/api/products/${m.id}/photos/url`, {
+      method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({ photoUrl: m.imageUrl }),
+      body: JSON.stringify({ url: m.imageUrl }),
     });
     const body = await res.json();
     console.log(`${res.ok ? "OK" : "ERREUR"} - ${m.ref} (${m.model}) -> ${m.imageUrl}`, res.ok ? "" : JSON.stringify(body));

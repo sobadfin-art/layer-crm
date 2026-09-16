@@ -117,6 +117,7 @@ export function classifyRows(rows, mapping) {
     if (mapping.productStatus) fields.product_status = resolveProductStatus(row[mapping.productStatus]);
     if (mapping.restockDate) fields.restock_date = parseDate(row[mapping.restockDate]);
     if (mapping.expectedQty) fields.expected_qty = toInt(row[mapping.expectedQty]);
+    if (mapping.description) fields.description = String(row[mapping.description] ?? "").trim() || null;
 
     return { rowIndex: index, ref, fields };
   });
@@ -157,6 +158,7 @@ const COLUMN_FOR_FIELD = {
   product_status: "product_status",
   restock_date: "restock_date",
   expected_qty: "expected_qty",
+  description: "description",
 };
 
 // Étape 5 : application réelle, en transaction. `mode` ∈
@@ -193,9 +195,9 @@ export async function applyImport({ classified, catalogId, mode, userId }) {
             ref, label, model, color, category, collection, catalog_id,
             price_fr, price_export, price_ch, rrp, qty,
             stock_status, product_status, restock_date, expected_qty,
-            dolibarr_ref, modified_by_id
+            dolibarr_ref, description, modified_by_id
           )
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
           [
             row.ref,
             label,
@@ -214,6 +216,7 @@ export async function applyImport({ classified, catalogId, mode, userId }) {
             row.fields.restock_date ?? null,
             row.fields.expected_qty ?? null,
             row.fields.dolibarr_ref ?? null,
+            row.fields.description ?? null,
             userId,
           ]
         );

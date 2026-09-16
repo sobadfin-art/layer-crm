@@ -127,7 +127,11 @@ dashboardRouter.get(
   requireRole(...DATA_ROLES),
   async (req, res) => {
     const repIds = await repScopeForDashboard(req.user);
-    const currentYear = new Date().getFullYear();
+    // "période sélectionnée" (PDF Représentant section 8) : ?year= permet de
+    // rejouer le classement sur une autre année civile que l'année courante ;
+    // sans le paramètre, comportement inchangé (année en cours).
+    const requestedYear = Number.parseInt(req.query.year, 10);
+    const currentYear = Number.isInteger(requestedYear) ? requestedYear : new Date().getFullYear();
     const params = [COUNTED_STATUSES, `${currentYear}-01-01`, `${currentYear + 1}-01-01`, `${currentYear - 1}-01-01`];
     let repClause = "TRUE";
     if (repIds !== null) {
@@ -139,13 +143,16 @@ dashboardRouter.get(
     // commande compte dans une période selon sa DATE DE VALIDATION
     // (validated_at), jamais created_at — pour ne pas produire une logique
     // temporelle contradictoire entre objectifs et ce comparatif N vs N-1.
+    // order_count (commandes validées de l'année sélectionnée) ajouté pour le
+    // critère "nombre de commandes" demandé par la fiche corrective V2.
     const { rows } = await query(
       `SELECT
          a.id AS account_id, a.name AS account_name, a.pipeline_stage,
          COALESCE(SUM(CASE WHEN o.validated_at >= $2 AND o.validated_at < $3
                            THEN ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100) ELSE 0 END), 0)::numeric(12,2) AS ca_annee_courante,
          COALESCE(SUM(CASE WHEN o.validated_at >= $4 AND o.validated_at < $2
-                           THEN ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100) ELSE 0 END), 0)::numeric(12,2) AS ca_annee_precedente
+                           THEN ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100) ELSE 0 END), 0)::numeric(12,2) AS ca_annee_precedente,
+         COUNT(DISTINCT CASE WHEN o.validated_at >= $2 AND o.validated_at < $3 THEN o.id END)::int AS order_count
        FROM accounts a
        LEFT JOIN orders o ON o.account_id = a.id AND o.status::text = ANY($1::text[])
        LEFT JOIN order_lines ol ON ol.order_id = o.id
@@ -448,10 +455,90 @@ dashboardRouter.get("/extract.xlsx", requireAuth, requireRole(ROLES.DIRECTEUR), 
      ORDER BY a.name`
   );
 
+  // Feuilles ajoutées pour couvrir l'exhaustivité demandée (fiche corrective
+  // V2 Direction commerciale, section 10 : "Périmètre à couvrir... données
+  // représentants et rattachements Master Rep / représentants, territoires et
+  // pays, interactions commerciales, historiques d'activité, SAV — plus
+  // généralement l'intégralité des données accessibles à la Direction
+  // commerciale et stockées dans la BKV"). Les 3 feuilles Commandes/Lignes/
+  // Clients ci-dessus ne couvraient que les ventes et le référentiel client :
+  // il manquait la hiérarchie commerciale, les territoires, les interactions
+  // et le SAV — jamais filtrées par période (photo actuelle de la donnée,
+  // comme la feuille Clients).
+
+  // Représentants — hiérarchie Master Rep / représentant + territoires
+  // (sales_reps.master_rep_id pointe vers master_reps.id, jamais vers un
+  // users.id directement : cf. le bug corrigé dans routes/team.js, même
+  // logique de jointure ici).
+  const { rows: representants } = await query(
+    `SELECT u.id AS utilisateur_id, u.first_name AS prenom, u.last_name AS nom, u.role AS role, u.active AS actif,
+            mru.first_name AS master_rep_prenom, mru.last_name AS master_rep_nom,
+            (SELECT string_agg(t.name, ', ' ORDER BY t.name)
+               FROM territories t WHERE t.id = ANY(sr.territory_ids)) AS territoires
+     FROM users u
+     LEFT JOIN sales_reps sr ON sr.user_id = u.id
+     LEFT JOIN master_reps mr ON mr.id = sr.master_rep_id
+     LEFT JOIN users mru ON mru.id = mr.user_id
+     WHERE u.role IN ('REPRESENTANT', 'MASTER_REP')
+     ORDER BY u.role, u.last_name`
+  );
+
+  // Territoires — référentiel + pays rattachés.
+  const { rows: territoires } = await query(
+    `SELECT t.name AS territoire,
+            (SELECT string_agg(c.code, ', ' ORDER BY c.code) FROM countries c WHERE c.territory_id = t.id) AS pays
+     FROM territories t
+     ORDER BY t.name`
+  );
+
+  // Interactions commerciales — toutes, tous comptes (photo actuelle, comme
+  // la feuille Clients).
+  const { rows: interactionsRows } = await query(
+    `SELECT i.created_at, a.name AS compte, u.first_name AS auteur_prenom, u.last_name AS auteur_nom,
+            i.type, i.note, i.via_voice AS via_vocal
+     FROM interactions i
+     JOIN accounts a ON a.id = i.account_id
+     JOIN users u ON u.id = i.author_id
+     ORDER BY i.created_at DESC`
+  );
+
+  // Historique d'activité (agenda) — RDV et tâches, avec compte-rendu pour
+  // les RDV réalisés (cf. migration 012_rdv_compte_rendu).
+  const { rows: agenda } = await query(
+    `SELECT t.type, t.title AS titre, t.due_date, t.done, a.name AS compte,
+            u.first_name AS titulaire_prenom, u.last_name AS titulaire_nom,
+            t.compte_rendu, t.created_at
+     FROM tasks t
+     LEFT JOIN accounts a ON a.id = t.account_id
+     JOIN users u ON u.id = t.assignee_id
+     ORDER BY t.due_date DESC NULLS LAST, t.created_at DESC`
+  );
+
+  // SAV — tickets + notes de suivi, avec statut de traitement (cf. fiche
+  // corrective V2 Front Desk/Direction commerciale, "SAV, interactions SAV et
+  // historique des traitements").
+  const { rows: sav } = await query(
+    `SELECT tk.created_at, a.name AS compte, tk.subject AS sujet, tk.status AS statut,
+            cu.first_name AS cree_par_prenom, cu.last_name AS cree_par_nom,
+            au.first_name AS assigne_a_prenom, au.last_name AS assigne_a_nom,
+            tk.resolved_at,
+            (SELECT count(*)::int FROM sav_notes n WHERE n.ticket_id = tk.id) AS nb_notes
+     FROM sav_tickets tk
+     JOIN accounts a ON a.id = tk.account_id
+     JOIN users cu ON cu.id = tk.created_by_id
+     LEFT JOIN users au ON au.id = tk.assigned_to_id
+     ORDER BY tk.created_at DESC`
+  );
+
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(commandes), "Commandes");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(lignes), "Lignes");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(clients), "Clients");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(representants), "Représentants");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(territoires), "Territoires");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(interactionsRows), "Interactions");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(agenda), "Agenda");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(sav), "SAV");
   const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 
   res.setHeader(

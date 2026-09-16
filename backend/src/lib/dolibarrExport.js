@@ -30,6 +30,7 @@
 // (product.ref). C'est désormais un point BLOQUANT de la check-list (voir
 // "product_references" ci-dessous), avec le détail du/des produit(s) en cause
 // dans le message d'erreur.
+import * as XLSX from "xlsx";
 import { query } from "./db.js";
 import { vatRateForRegime } from "./taxRegime.js";
 
@@ -182,12 +183,14 @@ const PAYMENT_MODE_LABEL = {
   LCR: "LCR",
 };
 
-// Une ligne CSV par ligne de commande — plusieurs commandes peuvent être
-// combinées dans un seul fichier (export par lot, section 7 : "par lot
-// quotidien").
-export function buildDolibarrCsv(orders, settings) {
-  const delimiter = settings.csv_delimiter || ";";
-  const rows = [CSV_COLUMNS.join(delimiter)];
+// Construit les lignes de données (une par ligne de commande — plusieurs
+// commandes peuvent être combinées dans un seul fichier, export par lot,
+// section 7 : "par lot quotidien"), indépendamment du format de fichier final
+// (CSV ou XLSX, cf. buildDolibarrCsv/buildDolibarrXlsx ci-dessous) — mêmes
+// valeurs, même logique métier (gift/reliquat/régime fiscal), pour ne jamais
+// faire diverger les deux formats.
+function buildDolibarrRows(orders, settings) {
+  const rows = [];
 
   for (const order of orders) {
     // Nom du compte uniquement — aucune logique de rapprochement automatique
@@ -207,7 +210,7 @@ export function buildDolibarrCsv(orders, settings) {
       const unitPrice = isGift && settings.gift_line_strategy === "ZERO_PRICE" ? 0 : Number(line.unit_price_ht);
       const discountPct = isGift && settings.gift_line_strategy === "FULL_DISCOUNT" ? 100 : Number(line.discount_pct || 0);
 
-      const row = [
+      rows.push([
         refClient,
         accountKey || "",
         order.currency,
@@ -225,12 +228,37 @@ export function buildDolibarrCsv(orders, settings) {
         settings.default_payment_mode_id || "",
         isGift ? "oui" : "non",
         line.is_reliquat ? "oui" : "non",
-      ];
-      rows.push(row.map((v) => csvEscape(v, delimiter)).join(delimiter));
+      ]);
     }
   }
 
+  return rows;
+}
+
+// Conservé pour compatibilité (script/outillage éventuel côté serveur) même
+// si le téléchargement front desk génère désormais un .xlsx par défaut — cf.
+// buildDolibarrXlsx, README section "Lot 4".
+export function buildDolibarrCsv(orders, settings) {
+  const delimiter = settings.csv_delimiter || ";";
+  const rows = [CSV_COLUMNS.join(delimiter)];
+  for (const row of buildDolibarrRows(orders, settings)) {
+    rows.push(row.map((v) => csvEscape(v, delimiter)).join(delimiter));
+  }
   return rows.join("\r\n") + "\r\n";
+}
+
+// Fichier Dolibarr au format .xlsx — bascule demandée par la fiche corrective
+// V2 Front Desk (section 2 : "Fichier Dolibarr (.xlsx)"), confirmée par vous
+// en remplacement du CSV d'origine (Lot 4). Mêmes colonnes/valeurs que le CSV
+// (buildDolibarrRows) ; seul le format de fichier change. Réutilise la
+// bibliothèque `xlsx` déjà en dépendance (cf. GET /api/dashboard/extract.xlsx,
+// routes/dashboard.js, même pattern XLSX.utils).
+export function buildDolibarrXlsx(orders, settings) {
+  const rows = buildDolibarrRows(orders, settings);
+  const sheet = XLSX.utils.aoa_to_sheet([CSV_COLUMNS, ...rows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "Commandes");
+  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 }
 
 export { loadOrderBundle };

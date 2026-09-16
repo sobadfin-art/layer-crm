@@ -521,6 +521,16 @@
         "color": "orange",
         "imageUrl": "https://www.mokenvision.com/4180-home_default/enzoo.jpg",
         "productUrl": "https://www.mokenvision.com/en/mini-rob/709-1021-enzoo-3760314194990.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4174-home_default/enzoo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/mini-rob/706-1018-enzoo-3760314193085.html"
+      },
+      {
+        "color": "yellow",
+        "imageUrl": "https://www.mokenvision.com/4176-home_default/enzoo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/mini-rob/707-1019-enzoo-3760314193078.html"
       }
     ]
   },
@@ -536,6 +546,16 @@
         "color": "blue",
         "imageUrl": "https://www.mokenvision.com/4350-home_default/mini-rockett.jpg",
         "productUrl": "https://www.mokenvision.com/en/mini-rockett/532-1024-mini-rockett-3760314193238.html"
+      },
+      {
+        "color": "pink",
+        "imageUrl": "https://www.mokenvision.com/4346-home_default/mini-rockett.jpg",
+        "productUrl": "https://www.mokenvision.com/en/mini-rockett/530-1022-mini-rockett-3760314193245.html"
+      },
+      {
+        "color": "pink",
+        "imageUrl": "https://www.mokenvision.com/5044-home_default/mini-rockett.jpg",
+        "productUrl": "https://www.mokenvision.com/en/mini-rockett/760-1234-mini-rockett-3760314196208.html"
       }
     ]
   },
@@ -941,6 +961,11 @@
         "color": "green",
         "imageUrl": "https://www.mokenvision.com/5163-home_default/roundy.jpg",
         "productUrl": "https://www.mokenvision.com/en/roundy/838-1377-roundy-3760314197106.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4353-home_default/roundy.jpg",
+        "productUrl": "https://www.mokenvision.com/en/roundy/138-1079-roundy-1000005892852.html"
       }
     ]
   },
@@ -951,6 +976,16 @@
         "color": "blue",
         "imageUrl": "https://www.mokenvision.com/5165-home_default/piou.jpg",
         "productUrl": "https://www.mokenvision.com/en/piou/839-1379-piou-3760314197076.html"
+      },
+      {
+        "color": "pink",
+        "imageUrl": "https://www.mokenvision.com/5167-home_default/piou.jpg",
+        "productUrl": "https://www.mokenvision.com/en/piou/840-1381-piou-3760314197083.html"
+      },
+      {
+        "color": "yellow",
+        "imageUrl": "https://www.mokenvision.com/5169-home_default/piou.jpg",
+        "productUrl": "https://www.mokenvision.com/en/piou/841-1401-piou-3760314197090.html"
       }
     ]
   },
@@ -1246,6 +1281,11 @@
         "color": "black",
         "imageUrl": "https://www.mokenvision.com/4400-home_default/two.jpg",
         "productUrl": "https://www.mokenvision.com/en/two/528-1125-two-3760314193108.html"
+      },
+      {
+        "color": "white",
+        "imageUrl": "https://www.mokenvision.com/3357-home_default/two.jpg",
+        "productUrl": "https://www.mokenvision.com/en/two/529-1126-two-3760314193092.html"
       }
     ]
   },
@@ -1331,6 +1371,116 @@
         "color": "orange",
         "imageUrl": "https://www.mokenvision.com/3110-home_default/izis.jpg",
         "productUrl": "https://www.mokenvision.com/en/izis/490-947-izis-3760314192118.html"
+      }
+    ]
+  },
+  "cheeky": {
+    "model": "Cheeky",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4208-home_default/cheeky.jpg",
+        "productUrl": "https://www.mokenvision.com/en/cheeky/137-871-cheeky-1000005892838.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/3725-home_default/cheeky.jpg",
+        "productUrl": "https://www.mokenvision.com/en/cheeky/601-872-cheeky-3760314194228.html"
+      },
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/3729-home_default/cheeky.jpg",
+        "productUrl": "https://www.mokenvision.com/en/cheeky/602-873-cheeky-3760314194204.html"
+      },
+      {
+        "color": "pink",
+        "imageUrl": "https://www.mokenvision.com/3733-home_default/cheeky.jpg",
+        "productUrl": "https://www.mokenvision.com/en/cheeky/603-874-cheeky-3760314194235.html"
+      },
+      {
+        "color": "pink",
+        "imageUrl": "https://www.mokenvision.com/5097-home_default/cheeky.jpg",
+        "productUrl": "https://www.mokenvision.com/en/cheeky/672-875-cheeky-3760314195522.html"
+      }
+    ]
+  },
+  "nzooii": {
+    "model": "Nzoo II",
+    "variants": [
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/3742-home_default/enzoo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/enzoo/605-1045-enzoo-3760314193658.html"
+      },
+      {
+        "color": "green",
+        "imageUrl": "https://www.mokenvision.com/3744-home_default/enzoo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/enzoo/606-1046-enzoo-3760314193269.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/4037-home_default/enzoo.jpg",
+        "productUrl": "https://www.mokenvision.com/en/enzoo/673-1047-enzoo-3760314195003.html"
+      }
+    ]
+  },
+  "corduroypouch": {
+    "model": "Corduroy Pouch",
+    "variants": [
+      {
+        "color": "purple",
+        "imageUrl": "https://www.mokenvision.com/5363-home_default/hawkins-covers.jpg",
+        "productUrl": "https://www.mokenvision.com/en/pockets/713-1167-hawkins-covers-3760314194921.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/5367-home_default/hawkins-covers.jpg",
+        "productUrl": "https://www.mokenvision.com/en/pockets/714-1170-hawkins-covers-3760314194945.html"
+      },
+      {
+        "color": "blue",
+        "imageUrl": "https://www.mokenvision.com/5369-home_default/hawkins-covers.jpg",
+        "productUrl": "https://www.mokenvision.com/en/pockets/712-1164-hawkins-covers-3760314194952.html"
+      },
+      {
+        "color": "pink",
+        "imageUrl": "https://www.mokenvision.com/5371-home_default/hawkins-covers.jpg",
+        "productUrl": "https://www.mokenvision.com/en/pockets/715-1172-hawkins-covers-3760314194969.html"
+      },
+      {
+        "color": "yellow",
+        "imageUrl": "https://www.mokenvision.com/5365-home_default/hawkins-covers.jpg",
+        "productUrl": "https://www.mokenvision.com/en/pockets/716-1174-hawkins-covers-3760314194938.html"
+      }
+    ]
+  },
+  "cords": {
+    "model": "Cords",
+    "variants": [
+      {
+        "color": "brown",
+        "imageUrl": "https://www.mokenvision.com/4586-home_default/cords.jpg",
+        "productUrl": "https://www.mokenvision.com/en/cords/719-1194-cords-3760314192965.html"
+      }
+    ]
+  },
+  "cordsclip": {
+    "model": "Cords Clip",
+    "variants": [
+      {
+        "color": "black",
+        "imageUrl": "https://www.mokenvision.com/5247-home_default/cords.jpg",
+        "productUrl": "https://www.mokenvision.com/en/cords/871-1390-cords-3760314194815.html"
+      }
+    ]
+  },
+  "lenscleanerkit": {
+    "model": "Lens Cleaner Kit",
+    "variants": [
+      {
+        "color": null,
+        "imageUrl": "https://www.mokenvision.com/5373-home_default/hawkins-covers.jpg",
+        "productUrl": "https://www.mokenvision.com/en/cleaner-kit/638-hawkins-covers-3760314194914.html"
       }
     ]
   }

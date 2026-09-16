@@ -1,0 +1,16 @@
+-- Import fiches client sans représentant pré-sélectionné — fiche corrective
+-- V2 Administrateur, section 3 "Import des fiches clients" : "Le système ne
+-- doit pas bloquer l'import lorsque le champ représentant n'est pas
+-- pré-sélectionné" + section 2 (fiche initiale) "Après import, l'affectation
+-- du représentant doit pouvoir être réalisée manuellement dans le CRM."
+--
+-- Jusqu'ici owner_rep_id était NOT NULL, ce qui obligeait à choisir un
+-- représentant par défaut avant de démarrer tout import (routes/
+-- accounts-import.js). On autorise désormais une fiche compte sans
+-- représentant assigné (à affecter manuellement ensuite, via la
+-- réaffectation front desk/directeur déjà existante sur la fiche compte) —
+-- jamais pour la création manuelle directe d'un compte (routes/accounts.js
+-- POST /, qui continue d'exiger ownerRepId, hors périmètre de cette
+-- correction) ni pour les comptes créés par un Master Rep (toujours
+-- propriétaire de son propre compte, cf. lib/scope.js).
+ALTER TABLE accounts ALTER COLUMN owner_rep_id DROP NOT NULL;

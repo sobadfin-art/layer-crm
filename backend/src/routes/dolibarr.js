@@ -6,7 +6,7 @@ import { ROLES } from "../lib/roles.js";
 import {
   getDolibarrSettings,
   buildExportChecklist,
-  buildDolibarrCsv,
+  buildDolibarrXlsx,
   loadOrderBundle,
 } from "../lib/dolibarrExport.js";
 import { toCamel } from "../lib/serialize.js";
@@ -129,7 +129,12 @@ dolibarrRouter.post("/orders/export", requireAuth, requireRole(...EXPORT_ROLES),
     return res.status(422).json({ error: "Aucune commande exportable.", rejected });
   }
 
-  const csv = buildDolibarrCsv(bundles, settings);
+  // Fichier .xlsx — bascule demandée par la fiche corrective V2 Front Desk
+  // (section 2 : "Fichier Dolibarr (.xlsx)"), confirmée par vous en
+  // remplacement du CSV d'origine (Lot 4, cf. README). buildDolibarrCsv reste
+  // disponible dans lib/dolibarrExport.js pour un usage outillage éventuel,
+  // mais ce n'est plus ce que télécharge le front desk.
+  const xlsx = buildDolibarrXlsx(bundles, settings);
 
   // Marquage + traçabilité, seulement pour les commandes réellement exportées.
   for (const order of bundles) {
@@ -148,10 +153,10 @@ dolibarrRouter.post("/orders/export", requireAuth, requireRole(...EXPORT_ROLES),
     });
   }
 
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="export-dolibarr-${Date.now()}.csv"`);
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="export-dolibarr-${Date.now()}.xlsx"`);
   if (rejected.length > 0) {
     res.setHeader("X-Export-Rejected", JSON.stringify(rejected));
   }
-  res.send(csv);
+  res.send(xlsx);
 });

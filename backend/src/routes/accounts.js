@@ -84,7 +84,15 @@ const createSchema = z.object({
 });
 
 const updateSchema = createSchema.partial().extend({
-  // le type et la typologie restent modifiables indépendamment de la création
+  // le type et la typologie restent modifiables indépendamment de la création.
+  // ownerRepId accepte explicitement `null` ici (jamais à la création,
+  // ci-dessus) — un compte peut désormais arriver sans représentant assigné
+  // via l'import en masse sans représentant pré-sélectionné (fiche
+  // corrective V2 Administrateur section 3, cf. migration
+  // 018_accounts_owner_rep_nullable.sql) ; la réaffectation front desk/
+  // directeur/administrateur (lib/scope.js canReassignAccount) doit donc
+  // pouvoir aussi bien assigner que revenir à "non assigné".
+  ownerRepId: z.string().uuid().optional().nullable(),
 });
 
 async function resolveCountryId(countryCode) {

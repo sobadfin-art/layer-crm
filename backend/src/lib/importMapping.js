@@ -34,6 +34,10 @@ const PATTERNS = {
   productStatus: ["productstatus", "statutproduit", "etatproduit", "lifecycle"],
   restockDate: ["restockdate", "datereassort", "datedereassort", "dateretour"],
   expectedQty: ["expectedqty", "quantiteattendue", "qtyattendue", "quantitereassort", "stockattendu"],
+  // Description produit (migration 016) — jamais dans l'export standard à 9
+  // colonnes, reconnue si le fichier la fournit (ex: import catalogue réel
+  // 2026 avec notes produit nettoyées avant import).
+  description: ["description", "note", "notes", "desc"],
 };
 
 export const IMPORT_TARGET_FIELDS = Object.keys(PATTERNS);

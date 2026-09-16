@@ -88,9 +88,15 @@ accountsImportRouter.post(
   }
 );
 
+// defaultRepId est désormais optionnel (fiche corrective V2 Administrateur,
+// section 3 : "Le système ne doit pas bloquer l'import lorsque le champ
+// représentant n'est pas pré-sélectionné") — les lignes sans représentant
+// reconnu dans le fichier ET sans repli par défaut sont importées avec
+// owner_rep_id = NULL, à affecter manuellement ensuite dans le CRM (cf.
+// migration 018_accounts_owner_rep_nullable.sql).
 const commitBodySchema = z.object({
   mode: z.enum(["create_and_update", "create_only", "update_only"]).default("create_and_update"),
-  defaultRepId: z.string().uuid(),
+  defaultRepId: z.string().uuid().optional(),
 });
 
 // Étape 9 : application réelle + journalisation.
@@ -109,10 +115,14 @@ accountsImportRouter.post(
     }
     const parsedBody = commitBodySchema.safeParse({
       mode: req.body.mode,
-      defaultRepId: req.body.defaultRepId,
+      // Champ FormData facultatif : une chaîne vide (case non choisie côté
+      // formulaire) doit être traitée comme "absent", pas comme un uuid
+      // invalide — sinon un import "sans représentant" échouerait toujours
+      // à la validation au lieu d'aboutir à owner_rep_id = NULL.
+      defaultRepId: req.body.defaultRepId || undefined,
     });
     if (!parsedBody.success) {
-      return res.status(400).json({ error: "Représentant par défaut requis." });
+      return res.status(400).json({ error: "Représentant par défaut invalide." });
     }
     const { mode, defaultRepId } = parsedBody.data;
 
@@ -120,7 +130,7 @@ accountsImportRouter.post(
       const { rows } = parseSpreadsheet(req.file.buffer, req.file.originalname);
       const countriesByName = await loadCountriesByName();
       const classified = classifyRows(rows, mapping, countriesByName);
-      const result = await applyImport({ classified, defaultRepId, mode, userId: req.user.id });
+      const result = await applyImport({ classified, defaultRepId: defaultRepId ?? null, mode, userId: req.user.id });
       res.json(result);
     } catch (err) {
       res.status(400).json({ error: err.message });

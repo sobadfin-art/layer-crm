@@ -276,7 +276,11 @@ const SIMPLE_FIELD_COLUMNS = {
 // Sécurités appliquées (section 9) : aucune fiche désactivée automatiquement,
 // aucun champ non mappé écrasé, type CLIENT et typologie AUTRE par défaut
 // quand l'export ne les fournit pas (section 6).
-export async function applyImport({ classified, defaultRepId, mode, userId }) {
+// `defaultRepId` est désormais facultatif (fiche corrective V2 Administrateur
+// section 3 : import possible sans représentant pré-sélectionné) — une ligne
+// sans représentant reconnu dans le fichier ET sans repli par défaut est
+// importée avec owner_rep_id = NULL, à affecter manuellement ensuite.
+export async function applyImport({ classified, defaultRepId = null, mode, userId }) {
   const client = await pool.connect();
   let created = 0;
   let updated = 0;
