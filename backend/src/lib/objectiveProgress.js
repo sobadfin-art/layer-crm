@@ -9,6 +9,21 @@ import { query } from "./db.js";
 // "optimiste" sur une commande que le front desk n'a pas encore vérifiée.
 export const COUNTED_STATUSES = ["VALIDEE", "EXPORTEE_DOLIBARR"];
 
+// Expression SQL du montant d'une ligne de commande (HT, remise ligne
+// appliquée) — SOURCE UNIQUE réutilisée par ce calcul d'objectif, Bestsellers,
+// Customer Performance et l'Analytics Directeur (fiche corrective P0 —
+// section 4, "Fiabilisation de la collecte / agrégation des données
+// commerciales" : "la même règle de commande valide doit être utilisée de
+// façon cohérente à travers Bestsellers, Customer Performance et le CA
+// commercial général... centraliser la logique de données dans une source
+// commune fiable, plutôt que trois implémentations de calcul différentes").
+// Avant ce correctif, la formule était copiée-collée telle quelle dans 4
+// requêtes SQL distinctes (routes/dashboard.js x3, ce fichier) : identique
+// partout au moment de l'audit, mais un risque de divergence future pur et
+// simple. Toute évolution de ce calcul (nouvelle taxe, arrondi différent...)
+// ne doit désormais être faite qu'ICI.
+export const LINE_AMOUNT_SQL = "(ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100))";
+
 // Bascule précommande -> CA ferme : logique hybride, jamais automatique (règle
 // confirmée). Une commande de précommande ne compte comme CA ferme qu'après
 // confirmation explicite de livraison par le front desk (converted_to_firm =
@@ -44,7 +59,7 @@ export async function computeObjectiveProgress(objective) {
 
   const { rows } = await query(
     `SELECT
-       COALESCE(SUM(ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct, 0) / 100)), 0) AS achieved,
+       COALESCE(SUM(${LINE_AMOUNT_SQL}), 0) AS achieved,
        COUNT(DISTINCT o.id)::int AS orders_count
      FROM order_lines ol
      JOIN orders o ON o.id = ol.order_id

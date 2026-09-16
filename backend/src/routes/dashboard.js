@@ -5,8 +5,9 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { ROLES } from "../lib/roles.js";
 import { repScopeForDashboard } from "../lib/dashboardScope.js";
 import { getManagedRepUserIds } from "../lib/managedReps.js";
-import { COUNTED_STATUSES } from "../lib/objectiveProgress.js";
+import { COUNTED_STATUSES, LINE_AMOUNT_SQL } from "../lib/objectiveProgress.js";
 import { toCamelList } from "../lib/serialize.js";
+import { fiscalYearBounds, currentFiscalYearStart } from "../lib/fiscalYear.js";
 
 export const dashboardRouter = Router();
 
@@ -25,35 +26,30 @@ const DATA_ROLES = [ROLES.REPRESENTANT, ROLES.MASTER_REP, ROLES.DIRECTEUR];
 // immédiatement avant periodStart) pour la colonne "évolution" attendue par
 // la maquette (colonnes : produit, unités, CA période N, CA période N-1,
 // évolution, représentant, typologie, catégorie).
-dashboardRouter.get("/bestsellers", requireAuth, requireRole(...DATA_ROLES), async (req, res) => {
-  const repScope = await repScopeForDashboard(req.user);
+// Construit clauses WHERE + params pour la requête Bestsellers (période
+// principale OU période de comparaison N-1) — factorisé pour que les deux
+// jeux de paramètres soient TOUJOURS renumérotés à partir de $1, plutôt que
+// bricolés depuis les indices $n de l'autre période. Voir le commentaire
+// détaillé juste avant l'appel "prevStart/prevEnd" ci-dessous pour le bug
+// concret que cette factorisation corrige (BUG CORRIGÉ, section 2 : trou de
+// numérotation de paramètres qui faisait planter la requête N-1 en HTTP 500
+// dès que dateFrom+dateTo étaient fournis — donc à peu près à chaque clic
+// "Générer" depuis l'UI).
+function buildBestsellersFilters(req, effectiveRepIds, { validatedFrom, validatedFromOp = ">=", validatedTo, validatedToOp = "<=" } = {}) {
   const clauses = ["o.status::text = ANY($1::text[])", "ol.is_gift = FALSE"];
   const params = [COUNTED_STATUSES];
 
-  // Le scope serveur (rep lui-même, ou équipe pour un Master Rep) prime
-  // toujours : un filtre repIds explicite ne peut qu'intersecter ce scope,
-  // jamais le contourner.
-  let effectiveRepIds = repScope;
-  if (req.query.repIds) {
-    const requested = String(req.query.repIds).split(",").filter(Boolean);
-    effectiveRepIds = repScope === null ? requested : repScope.filter((id) => requested.includes(id));
-  }
   if (effectiveRepIds !== null) {
     params.push(effectiveRepIds);
     clauses.push(`o.rep_id = ANY($${params.length}::uuid[])`);
   }
-
-  let periodStart = null;
-  let periodEnd = null;
-  if (req.query.dateFrom) {
-    periodStart = req.query.dateFrom;
-    params.push(periodStart);
-    clauses.push(`o.validated_at >= $${params.length}`);
+  if (validatedFrom) {
+    params.push(validatedFrom);
+    clauses.push(`o.validated_at ${validatedFromOp} $${params.length}`);
   }
-  if (req.query.dateTo) {
-    periodEnd = req.query.dateTo;
-    params.push(periodEnd);
-    clauses.push(`o.validated_at <= $${params.length}`);
+  if (validatedTo) {
+    params.push(validatedTo);
+    clauses.push(`o.validated_at ${validatedToOp} $${params.length}`);
   }
   if (req.query.typologies) {
     params.push(String(req.query.typologies).split(",").filter(Boolean));
@@ -67,19 +63,62 @@ dashboardRouter.get("/bestsellers", requireAuth, requireRole(...DATA_ROLES), asy
     params.push(req.query.accountId);
     clauses.push(`o.account_id = $${params.length}`);
   }
+  return { clauses, params };
+}
 
+dashboardRouter.get("/bestsellers", requireAuth, requireRole(...DATA_ROLES), async (req, res) => {
+  const repScope = await repScopeForDashboard(req.user);
+
+  // Le scope serveur (rep lui-même, ou équipe pour un Master Rep) prime
+  // toujours : un filtre repIds explicite ne peut qu'intersecter ce scope,
+  // jamais le contourner.
+  let effectiveRepIds = repScope;
+  if (req.query.repIds) {
+    const requested = String(req.query.repIds).split(",").filter(Boolean);
+    effectiveRepIds = repScope === null ? requested : repScope.filter((id) => requested.includes(id));
+  }
+
+  const periodStart = req.query.dateFrom || null;
+  const periodEnd = req.query.dateTo || null;
+  const { clauses, params } = buildBestsellersFilters(req, effectiveRepIds, {
+    validatedFrom: periodStart,
+    validatedTo: periodEnd,
+  });
+
+  // BUG CORRIGÉ (fiche corrective P0 — Profil Représentant, section 2 : "Bug
+  // Data > Bestsellers", cause identifiée = "mauvais GROUP BY") : la requête
+  // groupait par p.ref MAIS AUSSI par u.first_name/u.last_name (représentant)
+  // et a.typology (typologie du compte). Un même produit vendu à des comptes
+  // de typologies différentes (ex. OPTICIEN + SURF_SHOP), ou par des
+  // représentants différents dans le scope d'un Master Rep, se retrouvait
+  // fragmenté en PLUSIEURS lignes distinctes au lieu d'une seule ligne
+  // consolidée — total_qty/total_amount ne reflétaient alors jamais le
+  // vrai total produit, et le classement ORDER BY total_qty DESC devenait
+  // trompeur (un produit réellement premier pouvait apparaître dilué en
+  // plusieurs lignes plus bas). Vérifié en base : MKN-001 vendu à 3
+  // typologies différentes remontait en 3 lignes (3 + 13 + 1) au lieu d'une
+  // seule ligne à 17 — exactement le "GROUP BY qui casse l'agrégation"
+  // pointé par la fiche corrective.
+  //
+  // Correctif : agrégation strictement par produit (p.ref/p.label/p.category)
+  // pour que total_qty/total_amount soient les VRAIS totaux reconciliables
+  // avec l'historique de commandes réel. Les dimensions typologie/représentant
+  // (utilisées par la vue Data du Directeur pour un contexte informatif par
+  // ligne) sont conservées mais en tant que LISTES agrégées (array_agg
+  // DISTINCT) plutôt que des clés de regroupement.
   const { rows } = await query(
     `SELECT p.ref, p.label, p.category,
-            u.first_name AS rep_first_name, u.last_name AS rep_last_name, a.typology,
+            array_agg(DISTINCT (u.first_name || ' ' || u.last_name)) AS rep_names,
+            array_agg(DISTINCT a.typology::text) AS typologies,
             SUM(ol.qty)::int AS total_qty,
-            SUM(ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100))::numeric(12,2) AS total_amount
+            SUM(${LINE_AMOUNT_SQL})::numeric(12,2) AS total_amount
      FROM order_lines ol
      JOIN orders o ON o.id = ol.order_id
      JOIN products p ON p.id = ol.product_id
      JOIN accounts a ON a.id = o.account_id
      JOIN users u ON u.id = o.rep_id
      WHERE ${clauses.join(" AND ")}
-     GROUP BY p.ref, p.label, p.category, u.first_name, u.last_name, a.typology
+     GROUP BY p.ref, p.label, p.category
      ORDER BY total_qty DESC`,
     params
   );
@@ -88,18 +127,33 @@ dashboardRouter.get("/bestsellers", requireAuth, requireRole(...DATA_ROLES), asy
   // immédiatement avant periodStart. Si aucune période n'est précisée
   // (comportement par défaut, toute l'historique), pas de comparatif N-1
   // pertinent — la colonne reste simplement absente (prevAmountByRef vide).
+  //
+  // BUG CORRIGÉ : l'ancienne implémentation reconstruisait prevClauses en
+  // FILTRANT les clauses de date de la période principale (qui référençaient
+  // par ex. $3/$4), tout en gardant prevParams = [...params] (donc les
+  // valeurs $3/$4 d'origine restaient dans le tableau) puis ajoutait 2
+  // NOUVELLES bornes de date à la fin du tableau ($5/$6, ou plus si
+  // typologies/catégories/accountId étaient aussi présents). Résultat : la
+  // requête ne référençait alors jamais littéralement "$3"/"$4" dans son
+  // texte SQL alors que le tableau de paramètres en contenait toujours — dès
+  // que dateFrom ET dateTo étaient fournis (donc quasi systématiquement
+  // depuis l'écran Bestsellers, qui envoie toujours une période), PostgreSQL
+  // renvoyait "could not determine data type of parameter $3" et l'endpoint
+  // plantait en 500. Reproduit et confirmé en base avant correctif. Corrigé
+  // en reconstruisant les paramètres de la période N-1 EN ENTIER via
+  // buildBestsellersFilters (renumérotés proprement à partir de $1), au lieu
+  // de bricoler les indices de la période principale.
   let prevByRef = new Map();
   if (periodStart && periodEnd) {
     const durationMs = new Date(periodEnd).getTime() - new Date(periodStart).getTime();
     const prevStart = new Date(new Date(periodStart).getTime() - durationMs).toISOString();
-    const prevClauses = clauses.map((c) =>
-      c.includes("o.validated_at >=") || c.includes("o.validated_at <=") ? null : c
-    ).filter(Boolean);
-    const prevParams = [...params];
-    prevClauses.push(`o.validated_at >= $${prevParams.push(prevStart)}`);
-    prevClauses.push(`o.validated_at < $${prevParams.push(periodStart)}`);
+    const { clauses: prevClauses, params: prevParams } = buildBestsellersFilters(req, effectiveRepIds, {
+      validatedFrom: prevStart,
+      validatedTo: periodStart,
+      validatedToOp: "<",
+    });
     const { rows: prevRows } = await query(
-      `SELECT p.ref, SUM(ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100))::numeric(12,2) AS total_amount
+      `SELECT p.ref, SUM(${LINE_AMOUNT_SQL})::numeric(12,2) AS total_amount
        FROM order_lines ol
        JOIN orders o ON o.id = ol.order_id
        JOIN products p ON p.id = ol.product_id
@@ -121,18 +175,42 @@ dashboardRouter.get("/bestsellers", requireAuth, requireRole(...DATA_ROLES), asy
 
 // GET /api/dashboard/customer-performance — comparatif de portefeuille N vs N-1
 // (section 4 : wonDate/lostDate "pour le comparatif de portefeuille N vs N-1").
+//
+// BUG CORRIGÉ (fiche corrective P0 — Profil Représentant, section 3 :
+// "Customer Performance ... Période par défaut : année commerciale (1er
+// novembre → 31 octobre), PAS l'année civile"). La version précédente
+// utilisait ?year= comme une ANNÉE CIVILE (${year}-01-01 → ${year+1}-01-01),
+// ce qui ne correspondait ni à la règle métier déjà en vigueur ailleurs dans
+// l'app (cf. frontend/src/lib/fiscalYear.js, utilisée par
+// Dashboard/MasterRepDashboard/DirecteurDashboard) ni à la demande explicite
+// de cette fiche corrective. Corrigé : ?year= désigne maintenant l'ANNÉE DE
+// DÉBUT de la période commerciale (ex. year=2025 → 01/11/2025-31/10/2026,
+// cohérent avec fiscalYearLabel() = "2025–2026"), et l'absence du paramètre
+// retombe sur l'année commerciale EN COURS (currentFiscalYearStart), pas
+// l'année civile en cours.
+//
+// Le LEFT JOIN accounts -> orders -> order_lines (déjà en place avant ce
+// correctif) reste inchangé : vérifié qu'il n'exclut aucun client sans
+// commande (CA affiché à 0€ mais client toujours listé, jamais un
+// INNER JOIN qui les aurait fait disparaître silencieusement) — voir
+// vérification manuelle dans le changelog/README.
 dashboardRouter.get(
   "/customer-performance",
   requireAuth,
   requireRole(...DATA_ROLES),
   async (req, res) => {
     const repIds = await repScopeForDashboard(req.user);
-    // "période sélectionnée" (PDF Représentant section 8) : ?year= permet de
-    // rejouer le classement sur une autre année civile que l'année courante ;
-    // sans le paramètre, comportement inchangé (année en cours).
     const requestedYear = Number.parseInt(req.query.year, 10);
-    const currentYear = Number.isInteger(requestedYear) ? requestedYear : new Date().getFullYear();
-    const params = [COUNTED_STATUSES, `${currentYear}-01-01`, `${currentYear + 1}-01-01`, `${currentYear - 1}-01-01`];
+    const startYear = Number.isInteger(requestedYear) ? requestedYear : currentFiscalYearStart();
+    const { start: periodStart, end: periodEnd } = fiscalYearBounds(startYear);
+    const { start: prevStart, end: prevEnd } = fiscalYearBounds(startYear - 1);
+    const params = [
+      COUNTED_STATUSES,
+      periodStart.toISOString(),
+      periodEnd.toISOString(),
+      prevStart.toISOString(),
+      prevEnd.toISOString(),
+    ];
     let repClause = "TRUE";
     if (repIds !== null) {
       params.push(repIds);
@@ -148,11 +226,11 @@ dashboardRouter.get(
     const { rows } = await query(
       `SELECT
          a.id AS account_id, a.name AS account_name, a.pipeline_stage,
-         COALESCE(SUM(CASE WHEN o.validated_at >= $2 AND o.validated_at < $3
-                           THEN ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100) ELSE 0 END), 0)::numeric(12,2) AS ca_annee_courante,
-         COALESCE(SUM(CASE WHEN o.validated_at >= $4 AND o.validated_at < $2
-                           THEN ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100) ELSE 0 END), 0)::numeric(12,2) AS ca_annee_precedente,
-         COUNT(DISTINCT CASE WHEN o.validated_at >= $2 AND o.validated_at < $3 THEN o.id END)::int AS order_count
+         COALESCE(SUM(CASE WHEN o.validated_at >= $2 AND o.validated_at <= $3
+                           THEN ${LINE_AMOUNT_SQL} ELSE 0 END), 0)::numeric(12,2) AS ca_annee_courante,
+         COALESCE(SUM(CASE WHEN o.validated_at >= $4 AND o.validated_at <= $5
+                           THEN ${LINE_AMOUNT_SQL} ELSE 0 END), 0)::numeric(12,2) AS ca_annee_precedente,
+         COUNT(DISTINCT CASE WHEN o.validated_at >= $2 AND o.validated_at <= $3 THEN o.id END)::int AS order_count
        FROM accounts a
        LEFT JOIN orders o ON o.account_id = a.id AND o.status::text = ANY($1::text[])
        LEFT JOIN order_lines ol ON ol.order_id = o.id
@@ -247,7 +325,7 @@ async function buildAnalyticsPeriod(req, start, end) {
      JOIN accounts a ON a.id = o.account_id
      JOIN countries c ON c.id = a.country_id
      JOIN products p ON p.id = ol.product_id`;
-  const amountExpr = `SUM(ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100))::numeric(12,2)`;
+  const amountExpr = `SUM(${LINE_AMOUNT_SQL})::numeric(12,2)`;
 
   const [{ rows: totals }, { rows: byCategory }, { rows: byCountry }, { rows: byRep }] = await Promise.all([
     query(
