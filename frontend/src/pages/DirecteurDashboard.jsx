@@ -3,9 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { Globe, Target } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
-import { money, shortDate } from "../lib/format.js";
+import { money, shortDate, dateTime } from "../lib/format.js";
 import AccountsMap from "../components/AccountsMap.jsx";
 import { fiscalYearBounds, fiscalYearLabel } from "../lib/fiscalYear.js";
+import { useAgendaSummary } from "../hooks/useAgendaSummary.js";
+import NewOrderQuickAccess from "../components/NewOrderQuickAccess.jsx";
+
+function isToday(dateStr) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
 
 // 11 typologies réelles (remplace l'ancien modèle à 2 "secteurs" agrégés
 // depuis la migration 015 — cf. PDF Directeur commercial section 4 :
@@ -55,6 +64,16 @@ export default function DirecteurDashboard() {
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Rendez-vous / tâches du jour, vision globale (fiche corrective Direction
+  // Commerciale V3, section dashboard : blocs à insérer entre "Performance de
+  // l'équipe" et "Carte & tournées", portée tous-représentants). Réutilise
+  // directement GET /dashboard/rdv + GET /tasks, déjà scopés globalement pour
+  // DIRECTEUR côté serveur (cf. routes/dashboard.js et routes/tasks.js) — même
+  // hook que le Dashboard Représentant, aucun nouveau système.
+  const { rdv, pendingTasks, loading: loadingAgenda } = useAgendaSummary();
+  const todayRdv = rdv.filter((r) => isToday(r.dueDate));
+  const todayTasks = pendingTasks.filter((tk) => isToday(tk.dueDate));
 
   // 4 KPI clients (fiche corrective V2 Direction commerciale, section 2.3 :
   // "Réintégrer dans le dashboard Direction commerciale les indicateurs qui
@@ -258,9 +277,14 @@ export default function DirecteurDashboard() {
           <h1 className="page-title">{t("directeurDashboard.title")}</h1>
           <p className="page-sub">{t("directeurDashboard.subtitle")}</p>
         </div>
-        <button className="btn primary" onClick={() => setShowNewObjective((v) => !v)}>
-          <Target size={15} /> {t("directeurDashboard.newObjective")}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {/* Parcours C — accès rapide "Nouvelle commande" (fiche corrective
+              Direction Commerciale V3, même parcours que le Représentant). */}
+          <NewOrderQuickAccess />
+          <button className="btn primary" onClick={() => setShowNewObjective((v) => !v)}>
+            <Target size={15} /> {t("directeurDashboard.newObjective")}
+          </button>
+        </div>
       </div>
 
       {loading && <p className="empty-state">{t("directeurDashboard.loading")}</p>}
@@ -439,6 +463,37 @@ export default function DirecteurDashboard() {
           ))}
         </div>
       )}
+
+      {/* Rendez-vous / Tâches du jour — vision globale tous représentants
+          (fiche corrective Direction Commerciale V3), insérés entre
+          "Performance de l'équipe" et "Carte & tournées" comme demandé. */}
+      <div className="panel">
+        <h3>{t("directeurDashboard.nextRdvTitle")}</h3>
+        {todayRdv.map((r) => (
+          <div className="task-row" key={r.id}>
+            <span>
+              {r.repFirstName} {r.repLastName} — {r.accountName || t("dashboard.noAccount")} — {r.title}
+            </span>
+            <span>{r.dueDate ? dateTime(r.dueDate, locale) : t("dashboard.noDate")}</span>
+          </div>
+        ))}
+        {!loadingAgenda && todayRdv.length === 0 && <p className="empty-state">{t("dashboard.noRdv")}</p>}
+      </div>
+
+      <div className="panel">
+        <h3>{t("directeurDashboard.tasksTitle")}</h3>
+        {todayTasks.map((tk) => (
+          <div className="task-row" key={tk.id}>
+            <span>
+              {tk.assigneeFirstName} {tk.assigneeLastName} — {tk.title}
+            </span>
+            <span style={{ color: tk.dueDate && new Date(tk.dueDate).getTime() < Date.now() ? "var(--danger)" : "inherit" }}>
+              {tk.dueDate ? dateTime(tk.dueDate, locale) : t("dashboard.noDate")}
+            </span>
+          </div>
+        ))}
+        {!loadingAgenda && todayTasks.length === 0 && <p className="empty-state">{t("dashboard.noTasks")}</p>}
+      </div>
 
       {/* Carte & tournées — directement sous "Performance par représentant"
           (PDF Directeur commercial section 2 : "Le bloc Carte & tournées doit

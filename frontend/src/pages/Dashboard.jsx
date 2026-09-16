@@ -5,6 +5,7 @@ import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate, dateTime } from "../lib/format.js";
 import { useAgendaSummary } from "../hooks/useAgendaSummary.js";
 import AccountsMap from "../components/AccountsMap.jsx";
+import NewOrderQuickAccess from "../components/NewOrderQuickAccess.jsx";
 import { fiscalYearBounds, fiscalYearLabel } from "../lib/fiscalYear.js";
 
 function isToday(dateStr) {
@@ -140,8 +141,15 @@ export default function Dashboard() {
 
   return (
     <>
-      <h1 className="page-title">{t("dashboard.title", { name: user.firstName })}</h1>
-      <p className="page-sub">{t("dashboard.subtitle")}</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h1 className="page-title">{t("dashboard.title", { name: user.firstName })}</h1>
+          <p className="page-sub">{t("dashboard.subtitle")}</p>
+        </div>
+        {/* Parcours C — accès rapide "Nouvelle commande" en haut à droite du
+            dashboard (fiche corrective Parcours de création de commande). */}
+        <NewOrderQuickAccess />
+      </div>
 
       {objectivesError && <p className="error-text">{objectivesError}</p>}
       {!loadingObjectives && objectives.length === 0 && !objectivesError && (

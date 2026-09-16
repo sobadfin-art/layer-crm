@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Search, Pencil } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate } from "../lib/format.js";
@@ -92,6 +93,7 @@ function sliderBtnStyle(side) {
 
 export default function CatalogueConsult() {
   const { t, locale } = useI18n();
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [catalogs, setCatalogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -213,6 +215,18 @@ export default function CatalogueConsult() {
                   {stock.text}
                 </div>
                 {p.catalogName && <div style={{ fontSize: 10.5, color: "var(--ink-soft)", marginTop: 4 }}>{p.catalogName}</div>}
+                {/* Lien rapide "Modifier la référence" vers Admin produits
+                    (fiche corrective Administrateur V3) — seul point
+                    d'écriture accessible depuis cet écran, qui reste
+                    lui-même entièrement en lecture seule. */}
+                <button
+                  type="button"
+                  className="btn outline"
+                  style={{ marginTop: 8, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}
+                  onClick={() => navigate(`/catalogue?editId=${p.id}`)}
+                >
+                  <Pencil size={12} /> {t("catalogueConsult.editReference")}
+                </button>
               </div>
             </div>
           );

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate } from "../lib/format.js";
@@ -23,6 +23,8 @@ const OFFLINE_CACHE_KEY = "moken_frontdesk_cache";
 
 export default function FrontDesk() {
   const { t, locale } = useI18n();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   // Ouverture directe depuis une notification (?orderId=...) — PDF Front Desk
   // section 2 : "Un clic sur une notification doit ouvrir directement
@@ -41,7 +43,11 @@ export default function FrontDesk() {
   const [expandedId, setExpandedId] = useState(null);
   const [details, setDetails] = useState({});
   const [busyId, setBusyId] = useState(null);
-  const [toast, setToast] = useState(null);
+  // Toast de confirmation transmis via navigate(..., { state: { toast } })
+  // depuis NewOrder.jsx (le Directeur atterrit ici, pas sur OrdersList.jsx,
+  // après l'envoi d'une commande — cf. fiche corrective Direction
+  // Commerciale V3, même mécanisme que OrdersList.jsx pour ce cas-là).
+  const [toast, setToast] = useState(location.state?.toast || null);
 
   const STATUS_LABEL = {
     ENVOYEE_FRONT_DESK: t("frontDesk.status.ENVOYEE_FRONT_DESK"),
@@ -88,9 +94,14 @@ export default function FrontDesk() {
     }
   }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     load();
+    if (location.state?.toast) {
+      // Nettoie le state de navigation pour que le toast ne réapparaisse pas
+      // au rechargement/retour arrière (même précaution que OrdersList.jsx).
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, dateFrom, dateTo]);
 
   useEffect(() => {

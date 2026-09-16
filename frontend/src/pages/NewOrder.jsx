@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Search, Plus, Minus, ShoppingCart } from "lucide-react";
 import { api } from "../api.js";
+import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate } from "../lib/format.js";
+import ProductPhotoCarousel from "../components/ProductPhotoCarousel.jsx";
 
 const CATEGORIES = ["PREMIUM", "CLASSIC", "OPTICS", "ACCESS", "DISPLAY", "MERCH", "GOGGLES", "KIDS"];
 
@@ -71,9 +73,20 @@ export default function NewOrder() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t, locale } = useI18n();
+  const { user } = useAuth();
 
   const [account, setAccount] = useState(null);
   const [products, setProducts] = useState([]);
+  // Produits accumulés au fil des changements de catalogue (fiche corrective
+  // Parcours de création de commande, section 4 : "Autoriser plusieurs
+  // catalogues actifs si nécessaire" + section 7 "le panier doit être
+  // conservé jusqu'au récapitulatif"). `products` ci-dessus ne reflète que le
+  // catalogue actuellement parcouru (pour la grille) ; `productsById` garde
+  // TOUS les produits déjà rencontrés dans cette session de commande, y
+  // compris ceux d'un catalogue quitté depuis, pour que le panier et le
+  // récapitulatif puissent continuer à les résoudre même après un changement
+  // de catalogue.
+  const [productsById, setProductsById] = useState(new Map());
   const [rules, setRules] = useState([]);
   const [catalogs, setCatalogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -134,13 +147,21 @@ export default function NewOrder() {
       .get(`/products${qs}`)
       .then((productsData) => {
         setProducts(productsData);
+        // Fusion dans l'accumulateur global plutôt que remplacement : un
+        // produit déjà présent (ex. reference partagée entre catalogues) est
+        // simplement mis à jour, jamais perdu.
+        setProductsById((prev) => {
+          const next = new Map(prev);
+          for (const p of productsData) next.set(p.id, p);
+          return next;
+        });
         setCatalogId(nextCatalogId);
         setSearch("");
         setCategory("all");
-        // Un changement de catalogue repart d'un panier vide : les articles
-        // précédents référencent des produits d'un autre catalogue et ne
-        // doivent pas se mélanger dans la même commande.
-        setCart(new Map());
+        // Le panier N'EST PLUS réinitialisé ici : un changement de catalogue
+        // doit permettre d'ajouter des articles d'un second catalogue actif
+        // au même panier (règle "plusieurs catalogues actifs si nécessaire",
+        // "le panier doit être conservé jusqu'au récapitulatif").
         setSubview("browse");
       })
       .catch((err) => setError(err.message))
@@ -184,6 +205,22 @@ export default function NewOrder() {
     });
   }
 
+  // Saisie directe de la quantité (fiche Parcours de création de commande,
+  // section 4 : "boutons +/- et/ou saisie directe"), en plus des boutons.
+  function setQtyDirect(productId, rawValue) {
+    const parsed = Math.max(0, Math.floor(Number(rawValue) || 0));
+    setCart((prev) => {
+      const next = new Map(prev);
+      if (parsed === 0) {
+        next.delete(productId);
+      } else {
+        const current = next.get(productId) || { qty: 0, isGift: false };
+        next.set(productId, { ...current, qty: parsed });
+      }
+      return next;
+    });
+  }
+
   function toggleGift(productId) {
     setCart((prev) => {
       const next = new Map(prev);
@@ -197,13 +234,16 @@ export default function NewOrder() {
   const cartItems = useMemo(() => {
     return [...cart.entries()]
       .map(([productId, entry]) => {
-        const product = productById.get(productId);
+        // Résolu contre l'accumulateur global (productsById), pas seulement
+        // le catalogue actuellement parcouru, pour que les articles d'un
+        // catalogue quitté restent visibles au panier / récapitulatif.
+        const product = productsById.get(productId) || productById.get(productId);
         if (!product) return null;
         const unitPrice = account ? unitPriceFor(product, account.countryCode) : 0;
         return { productId, product, ...entry, unitPrice };
       })
       .filter(Boolean);
-  }, [cart, productById, account]);
+  }, [cart, productById, productsById, account]);
 
   const cartCount = cartItems.reduce((s, i) => s + i.qty, 0);
 
@@ -265,7 +305,12 @@ export default function NewOrder() {
       await api.post(`/orders/${order.id}/send-to-front-desk`);
 
       setCart(new Map());
-      navigate("/commandes", { state: { toast: t("newOrder.submitSuccess") } });
+      // Le Directeur n'a pas d'écran /commandes séparé (celui-ci reste pensé
+      // pour la vue "mes commandes" Représentant/Master Rep) : après envoi il
+      // est renvoyé vers /orders, sa vue globale déjà existante (fiche
+      // corrective Direction Commerciale V3 — même parcours de commande,
+      // atterrissage adapté au rôle).
+      navigate(user?.role === "DIRECTEUR" ? "/orders" : "/commandes", { state: { toast: t("newOrder.submitSuccess") } });
     } catch (err) {
       setSubmitError(err.message);
     } finally {
@@ -352,7 +397,7 @@ export default function NewOrder() {
               const stock = stockLine(p, t, locale);
               return (
                 <div className="product-card" key={p.id}>
-                  {p.photoUrl ? <img src={p.photoUrl} alt={p.label} /> : <div style={{ height: 100, background: "var(--bg)" }} />}
+                  <ProductPhotoCarousel photoUrls={p.photoUrls} fallbackUrl={p.photoUrl} alt={p.label} />
                   <div className="product-body">
                     <div className="product-ref">{p.ref}</div>
                     <div className="product-name">{p.label}</div>
@@ -364,7 +409,16 @@ export default function NewOrder() {
                       <button type="button" disabled={!entry} onClick={() => changeQty(p.id, -1)}>
                         <Minus size={13} />
                       </button>
-                      <span className="qty">{entry?.qty || 0}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        className="qty-input"
+                        aria-label={t("newOrder.qtyInputLabel")}
+                        value={entry?.qty || 0}
+                        onChange={(e) => setQtyDirect(p.id, e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                      />
                       <button type="button" onClick={() => changeQty(p.id, 1)}>
                         <Plus size={13} />
                       </button>

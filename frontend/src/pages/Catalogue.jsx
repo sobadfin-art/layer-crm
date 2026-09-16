@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate } from "../lib/format.js";
+import ProductPhotoCarousel from "../components/ProductPhotoCarousel.jsx";
 
 const CATEGORIES = ["PREMIUM", "CLASSIC", "OPTICS", "ACCESS", "DISPLAY", "MERCH", "GOGGLES", "KIDS"];
 
@@ -108,11 +109,7 @@ export default function Catalogue() {
           const price = p.priceFr ?? p.rrp;
           return (
             <div className="product-card" key={p.id}>
-              {p.photoUrl ? (
-                <img src={p.photoUrl} alt={p.label} />
-              ) : (
-                <div style={{ height: 100, background: "var(--bg)" }} />
-              )}
+              <ProductPhotoCarousel photoUrls={p.photoUrls} fallbackUrl={p.photoUrl} alt={p.label} />
               <div className="product-body">
                 <div className="product-ref">
                   {p.ref} {p.productStatus === "NOUVEAU" && <span className="offert-badge">{t("catalogue.newBadge")}</span>}

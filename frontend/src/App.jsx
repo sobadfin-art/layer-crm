@@ -221,6 +221,16 @@ export default function App() {
               <Route path="/dashboard" element={<DirecteurDashboard />} />
               <Route path="/clients" element={<ClientsList />} />
               <Route path="/clients/:id" element={<AccountDetail />} />
+              {/* Fiche corrective Direction Commerciale V3 : "le Directeur
+                  doit pouvoir créer une commande, comme un représentant" —
+                  réutilise exactement le même moteur NewOrder.jsx que le
+                  Représentant (cf. ORDER_CREATE_ROLES côté serveur,
+                  routes/orders.js, mis à jour pour ce même correctif). */}
+              {/* Pas de /commandes séparé : après envoi, NewOrder.jsx renvoie
+                  le Directeur vers /orders (sa vue globale déjà existante,
+                  cf. plus bas), pas vers OrdersList.jsx (écran pensé pour la
+                  vue "mes commandes" du Représentant/Master Rep). */}
+              <Route path="/clients/:id/commande" element={<NewOrder />} />
               <Route path="/equipe" element={<TeamManagement />} />
               <Route path="/data" element={<Data />} />
               <Route path="/config" element={<BusinessRules />} />

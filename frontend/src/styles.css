@@ -424,6 +424,85 @@ body {
   background: var(--bg);
 }
 
+/* Carrousel photo produit (fiche corrective Administrateur V3) — vit dans la
+   même zone que .product-card img ci-dessus, mais isole tout événement de
+   souris/tactile pour ne jamais déclencher le clic de sélection produit de la
+   carte parente (cf. stopPropagation dans ProductPhotoCarousel.jsx). */
+.product-photo-carousel {
+  position: relative;
+  width: 100%;
+  height: 100px;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.product-photo-carousel img {
+  width: 100%;
+  height: 100px;
+  object-fit: cover;
+  display: block;
+  background: var(--bg);
+}
+
+.carousel-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(16, 24, 40, 0.55);
+  color: white;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.product-photo-carousel:hover .carousel-arrow {
+  display: flex;
+}
+
+.carousel-arrow.left {
+  left: 4px;
+}
+
+.carousel-arrow.right {
+  right: 4px;
+}
+
+.carousel-dots {
+  position: absolute;
+  bottom: 5px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.carousel-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.3);
+}
+
+.carousel-dot.active {
+  background: white;
+  box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.5);
+}
+
+@media (max-width: 680px) {
+  .carousel-arrow {
+    display: flex;
+    background: rgba(16, 24, 40, 0.4);
+  }
+}
+
 .product-body {
   padding: 10px 11px;
 }
@@ -476,6 +555,23 @@ body {
 .qty-row .qty {
   font-weight: 800;
   font-size: 13px;
+}
+
+.qty-row .qty-input {
+  width: 40px;
+  font-weight: 800;
+  font-size: 13px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 2px;
+  -moz-appearance: textfield;
+}
+
+.qty-row .qty-input::-webkit-outer-spin-button,
+.qty-row .qty-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .cat-block {

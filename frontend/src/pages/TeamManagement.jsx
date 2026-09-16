@@ -1,6 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
+import { money } from "../lib/format.js";
+
+// Mêmes helpers que DirecteurDashboard.jsx (objectifs actifs + somme
+// cible/réalisé) — reprises ici à l'identique pour le nouveau bloc
+// "Performance de l'équipe" (fiche corrective Direction Commerciale V3 :
+// "même source de données que le dashboard").
+function isActivePeriod(o) {
+  const now = Date.now();
+  return new Date(o.periodStart).getTime() <= now && now <= new Date(o.periodEnd).getTime();
+}
+
+function sumTargetAchieved(list) {
+  return list.reduce(
+    (acc, o) => ({
+      target: acc.target + Number(o.targetAmount),
+      achieved: acc.achieved + (o.progress ? Number(o.progress.achievedAmount) : 0),
+    }),
+    { target: 0, achieved: 0 }
+  );
+}
 
 // "Mon équipe" du Master Rep (Equipe.jsx) est un écran de SUIVI en lecture
 // seule sur SA propre équipe. Celui-ci est différent : c'est la GESTION
@@ -11,10 +31,13 @@ import { useI18n } from "../i18n/I18nContext.jsx";
 // admin-users.js (qui couvre front desk/administrateur, jamais les rôles
 // d'équipe commerciale — cf. commentaire en tête de ce fichier backend).
 export default function TeamManagement() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [members, setMembers] = useState([]);
   const [territories, setTerritories] = useState([]);
   const [countries, setCountries] = useState([]);
+  // Objectifs actifs + progression — alimente le nouveau bloc "Performance de
+  // l'équipe" ci-dessous (fiche corrective Direction Commerciale V3).
+  const [objectivesWithProgress, setObjectivesWithProgress] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
@@ -34,14 +57,28 @@ export default function TeamManagement() {
     setLoading(true);
     setError(null);
     try {
-      const [membersData, territoriesData, countriesData] = await Promise.all([
+      const [membersData, territoriesData, countriesData, objectivesData] = await Promise.all([
         api.get("/team/members"),
         api.get("/team/territories"),
         api.get("/countries"),
+        api.get("/objectives"),
       ]);
       setMembers(membersData);
       setTerritories(territoriesData);
       setCountries(countriesData);
+
+      const activeObjectives = objectivesData.filter(isActivePeriod);
+      const withProgress = await Promise.all(
+        activeObjectives.map(async (o) => {
+          try {
+            const progress = await api.get(`/objectives/${o.id}/progress`);
+            return { ...o, progress };
+          } catch {
+            return { ...o, progress: null };
+          }
+        })
+      );
+      setObjectivesWithProgress(withProgress);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -223,6 +260,50 @@ export default function TeamManagement() {
     );
   }
 
+  function objectivesFor(repId, type) {
+    return objectivesWithProgress.filter((o) => o.repId === repId && o.type === type);
+  }
+
+  // Ligne "Performance de l'équipe" (fiche corrective Direction Commerciale
+  // V3 : "par représentant : nom, territoire, CA, objectif, progression —
+  // même source de données que le dashboard") — reprend exactement le calcul
+  // de MemberPerfRow dans DirecteurDashboard.jsx, avec le(s) territoire(s) en
+  // plus (déjà disponibles ici, pas sur le dashboard).
+  function TeamPerfRow({ member, indent }) {
+    const caObjectives = objectivesFor(member.id, "CHIFFRE_AFFAIRES");
+    const repCa = sumTargetAchieved(caObjectives);
+    const repCaPct = repCa.target > 0 ? Math.min(100, Math.round((repCa.achieved / repCa.target) * 100)) : 0;
+    const memberTerritories = territories.filter((terr) => (member.territoryIds || []).includes(terr.id));
+    return (
+      <div className="account-row" style={{ paddingLeft: indent ? 20 : 0 }}>
+        <div>
+          <div className="account-name">
+            {indent && <span style={{ color: "var(--ink-soft)", marginRight: 4 }}>↳</span>}
+            {member.firstName} {member.lastName}
+          </div>
+          <div className="account-meta">
+            {memberTerritories.length > 0 ? memberTerritories.map((terr) => terr.name).join(", ") : t("teamManagement.noTerritory")}
+          </div>
+        </div>
+        <div style={{ textAlign: "right", fontSize: 12 }}>
+          {caObjectives.length > 0 ? (
+            <div style={{ fontWeight: 700 }}>
+              {money(repCa.achieved, locale)}
+              <span style={{ color: "var(--ink-soft)", fontWeight: 400 }}> / {money(repCa.target, locale)}</span>
+            </div>
+          ) : (
+            <span style={{ color: "var(--ink-soft)" }}>{t("teamManagement.noActiveObjective")}</span>
+          )}
+          {caObjectives.length > 0 && (
+            <div className="progress-track" style={{ width: 120, marginTop: 4 }}>
+              <div className="progress-fill" style={{ width: `${repCaPct}%` }} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
@@ -343,6 +424,28 @@ export default function TeamManagement() {
               ))}
             </>
           )}
+        </div>
+      )}
+
+      {/* Performance de l'équipe — fiche corrective Direction Commerciale V3 :
+          nouveau bloc sous la hiérarchie Master Rep/représentants ci-dessus,
+          même source de données (objectifs actifs + progression) que le
+          dashboard Directeur. */}
+      {!loading && !error && (
+        <div className="panel">
+          <h3>{t("teamManagement.teamPerfTitle")}</h3>
+          {members.length === 0 && <p className="empty-state">{t("teamManagement.noMasterReps")}</p>}
+          {masterReps.map((mr) => (
+            <div key={mr.id}>
+              <TeamPerfRow member={mr} />
+              {reps.filter((r) => r.masterRepId === mr.id).map((r) => (
+                <TeamPerfRow member={r} indent key={r.id} />
+              ))}
+            </div>
+          ))}
+          {unassignedReps.map((r) => (
+            <TeamPerfRow member={r} key={r.id} />
+          ))}
         </div>
       )}
 

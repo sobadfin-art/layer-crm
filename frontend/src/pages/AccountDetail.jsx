@@ -103,7 +103,11 @@ export default function AccountDetail() {
   const isAdministrateur = user.role === "ADMINISTRATEUR";
   // La création de commande est réservée au Représentant (règle non
   // négociable des PDF de cadrage 2026-09-15).
-  const canCreateOrder = user.role === "REPRESENTANT";
+  // Fiche corrective Direction Commerciale V3 : le Directeur peut désormais
+  // créer une commande comme un représentant (override explicite documenté
+  // dans routes/orders.js, ORDER_CREATE_ROLES) — le Master Rep, lui, reste
+  // strictement en lecture seule (décision client distincte, non concernée).
+  const canCreateOrder = user.role === "REPRESENTANT" || user.role === "DIRECTEUR";
   // Le clic sur une ligne de commande doit renvoyer vers l'écran commandes du
   // rôle courant — deux écrans distincts existent selon le rôle
   // (OrdersList.jsx sous /commandes pour représentant/Master Rep, FrontDesk.jsx

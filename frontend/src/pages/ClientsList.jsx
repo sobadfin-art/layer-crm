@@ -40,7 +40,13 @@ export default function ClientsList() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isDirecteur = user.role === "DIRECTEUR";
-  const seesAllAccounts = isDirecteur || user.role === "ADMINISTRATEUR";
+  // Front Desk : mêmes droits de création de compte que le Directeur (fiche
+  // corrective Front Desk V3, section 2) — nécessite donc le même formulaire
+  // complet (ownerRepId obligatoire côté serveur pour ce rôle, cf.
+  // accounts.js) et la même liste représentants/Master Reps que ci-dessous.
+  const isFrontDesk = user.role === "FRONT_DESK";
+  const canCreateAccount = isDirecteur || isFrontDesk;
+  const seesAllAccounts = isDirecteur || user.role === "ADMINISTRATEUR" || isFrontDesk;
 
   const [accounts, setAccounts] = useState([]);
   const [members, setMembers] = useState([]);
@@ -68,7 +74,7 @@ export default function ClientsList() {
     setLoading(true);
     setError(null);
     try {
-      if (isDirecteur) {
+      if (isDirecteur || isFrontDesk) {
         const [accountsData, membersData, countriesData] = await Promise.all([
           api.get("/accounts"),
           api.get("/team/members"),
@@ -85,7 +91,7 @@ export default function ClientsList() {
     } finally {
       setLoading(false);
     }
-  }, [isDirecteur]);
+  }, [isDirecteur, isFrontDesk]);
 
   useEffect(() => {
     load();
@@ -150,7 +156,7 @@ export default function ClientsList() {
           <h1 className="page-title">{t("clients.title")}</h1>
           <p className="page-sub">{seesAllAccounts ? t("clients.subtitleDirecteur") : t("clients.subtitle")}</p>
         </div>
-        {isDirecteur && (
+        {canCreateAccount && (
           <button className="btn primary" onClick={() => setShowNewAccount((v) => !v)}>
             <UserPlus size={15} /> {t("clients.newAccount")}
           </button>

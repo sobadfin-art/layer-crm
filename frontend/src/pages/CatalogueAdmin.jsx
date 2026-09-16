@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Trash2, Search, ImageUp, Pencil, ChevronLeft, ChevronRight, X, Images } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
@@ -70,6 +71,13 @@ function toNumberOrNull(v) {
 
 export default function CatalogueAdmin() {
   const { t, locale } = useI18n();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Lien direct "Modifier la référence" depuis l'onglet "Visualisation du
+  // catalogue" (CatalogueConsult.jsx, fiche corrective Administrateur V3) :
+  // ?editId=... — cet écran-ci liste les produits PAR catalogue (un seul
+  // sélectionné à la fois), il faut donc d'abord retrouver le catalogue de la
+  // référence visée avant de pouvoir ouvrir sa fiche d'édition.
+  const editId = searchParams.get("editId");
   const [catalogs, setCatalogs] = useState([]);
   const [selectedCatalogId, setSelectedCatalogId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -134,6 +142,45 @@ export default function CatalogueAdmin() {
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
+
+  // Étape 1 du lien direct ?editId=... : dès que les catalogues sont chargés,
+  // retrouve le catalogue de la référence visée et le sélectionne (déclenche
+  // loadProducts ci-dessus pour ce catalogue).
+  useEffect(() => {
+    if (!editId || catalogs.length === 0) return;
+    api
+      .get(`/products/${editId}`)
+      .then((product) => {
+        if (product?.catalogId) setSelectedCatalogId(product.catalogId);
+      })
+      .catch(() => {
+        // Référence introuvable/supprimée entre-temps : on abandonne
+        // silencieusement le lien direct plutôt que de bloquer l'écran.
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("editId");
+          return next;
+        });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, catalogs.length]);
+
+  // Étape 2 : une fois les produits du bon catalogue chargés, ouvre la fiche
+  // d'édition et retire le paramètre (même précaution anti-réouverture que
+  // les autres liens directs de l'appli — notifications, etc.).
+  useEffect(() => {
+    if (!editId || products.length === 0) return;
+    const target = products.find((p) => p.id === editId);
+    if (target) {
+      openEditProductForm(target);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("editId");
+        return next;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, products]);
 
   // Filtres + recherche + pagination réinitialisée à chaque changement de
   // critère (PDF section 1.2 : "Ajouter une pagination claire ... Précédent /
@@ -245,6 +292,28 @@ export default function CatalogueAdmin() {
     setUploadingId(productId);
     try {
       const result = await api.del(`/products/${productId}/photos/${photoId}`);
+      applyGalleryResult(result);
+    } catch (err) {
+      setUploadError(err.message);
+    } finally {
+      setUploadingId(null);
+    }
+  }
+
+  // "Désignation de la photo principale" (fiche corrective Administrateur V3,
+  // section 5) — jusqu'ici la couverture n'était QUE la position 0, sans
+  // aucun moyen d'en désigner une autre. PATCH /products/:id/photos/reorder
+  // existait déjà côté serveur (utilisé nulle part côté client) : on l'utilise
+  // ici pour faire passer la photo choisie en tête, le reste conservant son
+  // ordre relatif ("order preservation").
+  async function handleSetCoverPhoto(photoId) {
+    const productId = photoGalleryProduct?.id;
+    if (!productId) return;
+    const order = [photoId, ...photoGalleryPhotos.filter((ph) => ph.id !== photoId).map((ph) => ph.id)];
+    setUploadError(null);
+    setUploadingId(productId);
+    try {
+      const result = await api.patch(`/products/${productId}/photos/reorder`, { order });
       applyGalleryResult(result);
     } catch (err) {
       setUploadError(err.message);
@@ -756,13 +825,31 @@ export default function CatalogueAdmin() {
                         alt={photoGalleryProduct.label}
                         style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 6, border: "1px solid var(--line)" }}
                       />
-                      {idx === 0 && (
+                      {idx === 0 ? (
                         <span
                           className="typology-badge"
                           style={{ position: "absolute", top: 4, left: 4, background: "white" }}
                         >
                           {t("catalogueAdmin.photoCover")}
                         </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn outline"
+                          disabled={uploadingId === photoGalleryProduct.id}
+                          onClick={() => handleSetCoverPhoto(ph.id)}
+                          style={{
+                            position: "absolute",
+                            top: 4,
+                            left: 4,
+                            padding: "3px 5px",
+                            background: "white",
+                            fontSize: 10.5,
+                          }}
+                          title={t("catalogueAdmin.setCoverPhoto")}
+                        >
+                          {t("catalogueAdmin.setCoverPhoto")}
+                        </button>
                       )}
                       <button
                         type="button"
