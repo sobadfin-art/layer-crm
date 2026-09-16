@@ -1353,6 +1353,105 @@ Corrections réellement apportées ce lot :
     détail des erreurs d'import affiché, absence d'erreur serveur en enregistrant Rupture/Réassort prévu
     avec le formulaire complet).
 
+- **Correctifs P0 — Profil Représentant (2026-09-16, fiche corrective "CORRECTIFS P0 — PROFIL
+  REPRÉSENTANT")** : quatre sujets strictement cadrés par la fiche ("Ne pas refondre les modules qui
+  fonctionnent déjà" — Dashboard, Agenda, Rendez-vous, Tâches, Fiche client, Panier, Récapitulatif de
+  commande et Front Desk non touchés, sauf minimum nécessaire ci-dessous).
+  - **Filtre Catalogue de "Nouvelle commande" — repositionné et passé en sélection multiple :**
+    l'étape intermédiaire "choisir un catalogue" (bulles pleine page avant d'arriver aux produits) est
+    supprimée ; le filtre Catalogue apparaît désormais directement sur l'écran "Nouvelle commande",
+    au-dessus de la recherche et de la grille produits, sous forme de bulles (`cat-tab`, jamais de
+    `<select>`) permettant une sélection simple OU multiple simultanée (`NewOrder.jsx` :
+    `selectedCatalogIds` remplace l'ancien `catalogId` unique + `subview: "catalog"`). La grille se
+    met à jour immédiatement à chaque changement de sélection (réutilise le filtre OR déjà existant
+    côté serveur, `GET /products?catalogId=A,B`, construit pour le Catalogue Admin lors du lot
+    précédent — aucun changement backend nécessaire ici) **sans jamais vider le panier** : un article
+    ajouté sous un catalogue reste au panier après ajout d'un second catalogue à la sélection (vérifié
+    explicitement, cf. tests ci-dessous). Aucun catalogue sélectionné = grille vide + message explicite
+    "Veuillez sélectionner au moins un catalogue." (jamais un état vide silencieux), et les fonctions
+    d'ajout au panier sont gardées côté client en backstop défensif dans ce cas. Panier et
+    Récapitulatif (sous-vue `"cart"`) strictement inchangés. Vérifié par script Playwright dédié,
+    13/13 assertions (pas de page intermédiaire, bulles visibles directement, sélection simple et
+    multiple, mise à jour immédiate de la grille, panier préservé à travers les changements de
+    catalogue, blocage + message à zéro sélection).
+  - **Bug réel corrigé — Data > Bestsellers, fragmentation par un `GROUP BY` trop large
+    (`routes/dashboard.js`) :** la requête groupait par référence produit **mais aussi** par
+    représentant et par typologie de compte. Un même produit vendu à des comptes de typologies
+    différentes (cas très courant) remontait donc en plusieurs lignes distinctes au lieu d'une seule
+    ligne consolidée — confirmé en base : une référence vendue à 17 unités au total apparaissait
+    fragmentée en trois lignes (3 + 13 + 1), ce qui fausse à la fois les quantités affichées et le
+    classement (`ORDER BY total_qty DESC` ne peut alors plus refléter le vrai total). Corrigé :
+    agrégation stricte par produit pour `total_qty`/`total_amount` (les vrais totaux, réconciliables
+    avec l'historique de commandes réel) ; typologie et représentant restent affichés côté écran
+    Directeur (`Data.jsx`) mais comme **listes** agrégées (`array_agg(DISTINCT ...)`) plutôt que comme
+    clés de regroupement, pour ne plus jamais fragmenter les totaux.
+  - **Bug réel corrigé — Data > Bestsellers, erreur serveur systématique dès qu'une période est
+    précisée (`routes/dashboard.js`) :** la sous-requête de comparaison N-1 réutilisait les paramètres
+    positionnels ($n) de la requête principale en filtrant certaines clauses de date par correspondance
+    de texte, tout en laissant les anciennes valeurs de paramètres en place et en ajoutant de nouvelles
+    bornes à la fin du tableau — créant un "trou" dans la numérotation des paramètres. PostgreSQL
+    refusait alors la requête ("could not determine data type of parameter $3"), et l'écran Bestsellers
+    échouait en erreur serveur **dès que `dateFrom` et `dateTo` étaient tous les deux fournis** —
+    c'est-à-dire à chaque clic normal sur "Générer" depuis l'écran (Représentant comme Directeur),
+    expliquant vraisemblablement le ressenti "Bestsellers ne retrouve pas toutes les ventes" au moins
+    autant que le bug de `GROUP BY` ci-dessus. Corrigé en factorisant la construction des clauses/
+    paramètres (`buildBestsellersFilters`), appelée séparément pour chaque période et systématiquement
+    renumérotée à partir de `$1` — élimine la classe de bug, pas seulement l'occurrence observée.
+    Jointures `INNER JOIN` vers `accounts`/`users`/`products` vérifiées non problématiques :
+    `orders.account_id`/`orders.rep_id`/`order_lines.product_id` sont `NOT NULL` avec contrainte de
+    clé étrangère en base, aucune ligne orpheline possible. Vérifié par appel direct (comparaison avec
+    un calcul SQL manuel, quantités et montants identiques au centime près) et script Playwright sur
+    les deux écrans consommateurs (`RepData.jsx` Représentant, `Data.jsx` Directeur).
+  - **Data > Customer Performance — période par défaut passée à l'année commerciale (1er novembre →
+    31 octobre) :** seul point non conforme identifié sur ce module après audit complet (jointures
+    `LEFT JOIN accounts → orders → order_lines`, gestion des comptes sans commande, `COALESCE` à 0€,
+    tri décroissant — tous déjà corrects et vérifiés avant ce lot, voir détail ci-dessous). La période
+    par défaut de `GET /api/dashboard/customer-performance` était l'année **civile**
+    (`${year}-01-01` → `${year+1}-01-01}`), contredisant la règle métier déjà en vigueur ailleurs dans
+    l'app (`frontend/src/lib/fiscalYear.js`, Corrections V2) et la demande explicite de cette fiche.
+    Corrigé : nouveau module miroir `backend/src/lib/fiscalYear.js` (même calcul de bornes
+    01/11-31/10), utilisé par défaut par l'endpoint ; `?year=` désigne maintenant l'année de **début**
+    de la période commerciale (ex. `year=2025` → 01/11/2025-31/10/2026, cohérent avec l'étiquette
+    "2025–2026" déjà affichée sur les tableaux de bord) au lieu d'une année civile. Le sélecteur d'année
+    de l'onglet "Customer Performance" (`RepData.jsx`) affiche désormais ces libellés d'année
+    commerciale ; l'onglet Bestsellers du même écran, non concerné par cette règle selon la fiche
+    corrective, reste volontairement en année civile.
+  - **Data > Customer Performance — audit du reste du module (aucun autre bug trouvé, documenté par
+    exhaustivité).** La fiche demandait de vérifier explicitement l'absence d'un `INNER JOIN` qui
+    exclurait silencieusement les clients sans commande, et de ne jamais masquer un vrai bug derrière
+    un affichage à 0€ par défaut. Vérifié ligne à ligne : la requête utilisait déjà un `LEFT JOIN`
+    (jamais un `INNER JOIN`) entre comptes et commandes, avec `COALESCE(SUM(...), 0)` — un client sans
+    commande valide sur la période apparaît donc bien dans la liste avec 0€, jamais absent. Confirmé
+    par comparaison systématique entre un calcul manuel en base (somme directe sur `order_lines`) et la
+    réponse de l'API pour l'intégralité du portefeuille de test (12 comptes, dont plusieurs à 0
+    commande) : montants identiques au centime près, tri décroissant par CA correct. Aucun compte-test
+    "ALOA" (cas nommé par la fiche) n'existe dans les données de développement disponibles ; la
+    vérification a donc porté sur l'ensemble du portefeuille disponible plutôt que sur ce nom précis —
+    à rejouer sur les données réelles si un écart devait malgré tout apparaître sur ce client en
+    particulier.
+  - **Fiabilisation / centralisation des calculs commerciaux :** la liste des statuts de commande
+    "valides" pour le calcul de CA (`VALIDEE`, `EXPORTEE_DOLIBARR` — une commande ne compte qu'une fois
+    contrôlée par le front desk) était déjà centralisée dans `lib/objectiveProgress.js`
+    (`COUNTED_STATUSES`) et déjà réutilisée telle quelle par Bestsellers et Customer Performance avant
+    ce lot — vérifié, aucune divergence trouvée entre les trois modules. En revanche, la **formule de
+    calcul du montant d'une ligne de commande**
+    (`qty * unit_price_ht * (1 - discount_pct/100)`) était copiée-collée telle quelle dans quatre
+    requêtes SQL distinctes (calcul d'objectif, Bestsellers x2, Customer Performance, Analytics
+    Directeur) — identique partout au moment de l'audit, mais sans source unique, donc à risque de
+    divergence silencieuse lors d'une prochaine évolution (nouvelle taxe, arrondi différent...).
+    Extraite dans une constante partagée unique, `LINE_AMOUNT_SQL`
+    (`lib/objectiveProgress.js`), réutilisée par les quatre requêtes. Le périmètre de rattachement
+    représentant/client (qui voit quels comptes) était lui aussi déjà centralisé
+    (`lib/dashboardScope.js#repScopeForDashboard`, partagé par Bestsellers et Customer Performance).
+    Aucune valeur retournée par les endpoints n'a changé suite à cette factorisation — reconfirmé par
+    re-test complet après coup (Bestsellers, Customer Performance, Analytics Directeur, calcul
+    d'objectif : mêmes montants qu'avant, aux mêmes centimes).
+  - Non-régression vérifiée sur les modules explicitement exclus par la fiche : Dashboard Représentant
+    (dont l'étiquette "Année commerciale", inchangée), Agenda, et le sous-écran Panier/Récapitulatif de
+    `NewOrder.jsx` (non modifié, seule la partie "choix des produits" en amont a changé) — script
+    Playwright dédié, 5/5 assertions, en plus des 13+6+5 assertions propres à chacun des trois sujets
+    ci-dessus (24 au total).
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
