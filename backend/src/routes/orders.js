@@ -73,6 +73,17 @@ ordersRouter.get("/", requireAuth, requireRole(...ORDER_ROLES), async (req, res)
     params.push([req.user.id, ...managed]);
   }
 
+  // Décluttering (demande directe, 2026-09-16 : nettoyage des données de
+  // démo — "les commandes... elles sont toutes fictives" pour les comptes
+  // désormais archivés) : une commande rattachée à un compte archivé sort
+  // par défaut de la liste, même logique que accounts.js qui exclut déjà
+  // ARCHIVE de sa propre liste par défaut. Ne change rien pour les comptes
+  // ACTIF/INACTIF (l'immense majorité, jamais concernés) — seul un compte
+  // explicitement archivé (donc plus jamais actif, cf. accounts.js) fait
+  // disparaître ses commandes historiques de cette liste ; elles restent
+  // consultables individuellement via GET /:id si jamais nécessaire.
+  clauses.push(`a.status != 'ARCHIVE'`);
+
   if (req.query.status) {
     clauses.push(`o.status = $${i++}`);
     params.push(req.query.status);
