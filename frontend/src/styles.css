@@ -1404,36 +1404,47 @@ body {
    overlay plein écran plus sombre/opaque qu'un .modal-overlay classique
    (met la photo en valeur), z-index au-dessus de toute autre modale déjà
    ouverte (galerie photo Admin comprise). */
+/* Mobile-first : le téléphone est la référence d'affichage principale
+   (les représentants terrain l'utilisent bien plus que l'ordinateur), cf.
+   demande explicite. Sur mobile, .lightbox-content occupe l'essentiel de
+   l'écran (gouttières réduites, juste assez pour laisser la place à la
+   croix de fermeture en haut et au compteur/points de pagination en bas).
+   Sur ordinateur/tablette (media query min-width plus bas), on repasse à
+   une fenêtre centrée plus petite que le plein écran. */
 .lightbox-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(10, 14, 22, 0.86);
+  background: rgba(10, 14, 22, 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 16px;
+  padding: 56px 10px 44px;
   z-index: 500;
 }
 
 .lightbox-close {
   position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 36px;
-  height: 36px;
+  top: 12px;
+  right: 12px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.16);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
+  /* Toujours cliquable au-dessus de l'image agrandie, même sur mobile où
+     .lightbox-content occupe la quasi-totalité de l'écran. */
+  z-index: 10;
 }
 
-.lightbox-close:hover {
-  background: rgba(255, 255, 255, 0.22);
+.lightbox-close:hover,
+.lightbox-close:active {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .lightbox-content {
@@ -1441,14 +1452,31 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  max-width: 90vw;
-  max-height: 85vh;
+  /* Remplit la zone disponible (overlay moins gouttières) plutôt qu'un
+     simple plafond max-width/max-height : un max-width/max-height seul ne
+     fait jamais grossir une image plus petite que ce plafond, ce qui
+     était la cause de l'agrandissement insuffisant sur mobile. */
+  width: 100%;
+  height: 100%;
+  z-index: 1;
 }
 
-.lightbox-image {
+/* Sélecteur composé (.lightbox-content .lightbox-image) plutôt que la seule
+   classe .lightbox-image : le lightbox est monté à l'intérieur de la carte
+   produit qui l'a ouvert (.product-card, .product-photo-carousel...), donc
+   sans ce supplément de spécificité les règles génériques "<container> img"
+   déjà présentes plus haut (.product-card img, .product-photo-carousel img —
+   width/height/object-fit fixes pour les vignettes) l'emportaient sur la
+   simple classe .lightbox-image et empêchaient l'image de vraiment remplir
+   .lightbox-content : c'était la cause réelle de l'agrandissement mobile
+   insuffisant, indépendamment de la résolution de la source. */
+.lightbox-content .lightbox-image {
   display: block;
-  max-width: 90vw;
-  max-height: 85vh;
+  /* Largeur/hauteur explicites (au lieu de max-width/max-height) pour que
+     l'image grossisse réellement jusqu'à remplir .lightbox-content ;
+     object-fit: contain garde les proportions d'origine sans déformer. */
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
@@ -1458,53 +1486,47 @@ body {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.16);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
+  z-index: 5;
 }
 
-.lightbox-arrow:hover {
-  background: rgba(255, 255, 255, 0.26);
+.lightbox-arrow:hover,
+.lightbox-arrow:active {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .lightbox-arrow.left {
-  left: -8px;
+  left: 4px;
 }
 
 .lightbox-arrow.right {
-  right: -8px;
-}
-
-@media (max-width: 680px) {
-  .lightbox-arrow.left {
-    left: 4px;
-  }
-  .lightbox-arrow.right {
-    right: 4px;
-  }
+  right: 4px;
 }
 
 .lightbox-dots {
   position: absolute;
-  bottom: -26px;
+  bottom: -30px;
   left: 0;
   right: 0;
   display: flex;
   justify-content: center;
   gap: 6px;
+  z-index: 5;
 }
 
 .lightbox-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.4);
   cursor: pointer;
@@ -1516,12 +1538,35 @@ body {
 
 .lightbox-counter {
   position: absolute;
-  top: -26px;
+  top: -34px;
   left: 0;
   right: 0;
   text-align: center;
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.85);
+  z-index: 5;
+}
+
+/* Ordinateur / tablette : même logique (clic en dehors, croix, carrousel)
+   mais fenêtre centrée plus petite que le plein écran — pas besoin d'un
+   agrandissement aussi massif que sur mobile. */
+@media (min-width: 860px) {
+  .lightbox-overlay {
+    padding: 40px;
+  }
+
+  .lightbox-content {
+    width: min(62vw, 820px);
+    height: min(74vh, 820px);
+  }
+
+  .lightbox-arrow.left {
+    left: -18px;
+  }
+
+  .lightbox-arrow.right {
+    right: -18px;
+  }
 }
 
 .btn-link {

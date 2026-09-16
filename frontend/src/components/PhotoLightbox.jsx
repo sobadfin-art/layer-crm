@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { largePhotoUrl } from "../lib/photoUrl";
 
 // Vue "photo en grand" (demande directe : "rendre cliquable la photo et
 // faire en sorte de pouvoir voir le produit en plus grand. On pourra
@@ -46,11 +47,8 @@ export default function PhotoLightbox({ photos, initialIndex = 0, alt, onClose }
 
   return (
     <div className="lightbox-overlay" onClick={onClose}>
-      <button type="button" className="lightbox-close" onClick={onClose} aria-label="Fermer">
-        <X size={20} />
-      </button>
       <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
-        <img src={photos[safeIndex]} alt={alt} className="lightbox-image" />
+        <img src={largePhotoUrl(photos[safeIndex])} alt={alt} className="lightbox-image" />
         {photos.length > 1 && (
           <>
             <button type="button" className="lightbox-arrow left" onClick={(e) => go(-1, e)} aria-label="Photo précédente">
@@ -77,6 +75,12 @@ export default function PhotoLightbox({ photos, initialIndex = 0, alt, onClose }
           </>
         )}
       </div>
+      {/* Placé après .lightbox-content dans le DOM (et avec son propre
+          z-index en CSS) pour rester cliquable au-dessus de l'image même
+          une fois celle-ci agrandie près du plein écran sur mobile. */}
+      <button type="button" className="lightbox-close" onClick={onClose} aria-label="Fermer">
+        <X size={20} />
+      </button>
     </div>
   );
 }

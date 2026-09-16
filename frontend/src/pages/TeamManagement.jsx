@@ -52,6 +52,13 @@ export default function TeamManagement() {
   const [toast, setToast] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
+  // Décluttering du récap (demande directe, 2026-09-16 : "ca fait trop
+  // d'élément sur le recap Master rep et leur représentants") : les comptes
+  // désactivés restent affichés par défaut faute de filtre — masqués par
+  // défaut ici, avec un bouton pour les réafficher au besoin (ex. avant de
+  // les réactiver). Purement un filtre d'affichage, aucune donnée modifiée.
+  const [showInactive, setShowInactive] = useState(false);
+
   const [showNewMember, setShowNewMember] = useState(false);
   const [newMemberRole, setNewMemberRole] = useState("REPRESENTANT");
   const [newMemberForm, setNewMemberForm] = useState({ email: "", firstName: "", lastName: "", password: "", masterRepUserId: "", territoryIds: [] });
@@ -106,8 +113,17 @@ export default function TeamManagement() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const masterReps = members.filter((m) => m.role === "MASTER_REP");
-  const reps = members.filter((m) => m.role === "REPRESENTANT");
+  // useObjectiveForm ci-dessous a besoin de la liste complète (masterReps/reps
+  // non filtrés) pour que le formulaire "Nouvel objectif" continue de
+  // proposer tout le monde, y compris les comptes désactivés masqués du
+  // récap ci-dessous — le filtre showInactive ne doit affecter que l'affichage
+  // du récap, jamais les choix disponibles dans ce formulaire.
+  const allMasterReps = members.filter((m) => m.role === "MASTER_REP");
+  const allReps = members.filter((m) => m.role === "REPRESENTANT");
+
+  const visibleMembers = showInactive ? members : members.filter((m) => m.active);
+  const masterReps = visibleMembers.filter((m) => m.role === "MASTER_REP");
+  const reps = visibleMembers.filter((m) => m.role === "REPRESENTANT");
   const unassignedReps = reps.filter((r) => !r.masterRepId);
 
   // Bouton + formulaire "Nouvel objectif" — cf. hooks/useObjectiveForm.jsx,
@@ -115,8 +131,8 @@ export default function TeamManagement() {
   // bouton « Objectifs » soit accessible aussi depuis l'onglet Équipe, avec
   // exactement le même moteur de création (aucun second formulaire).
   const { trigger: objectiveTrigger, panel: objectivePanel } = useObjectiveForm({
-    masterReps,
-    reps,
+    masterReps: allMasterReps,
+    reps: allReps,
     onCreated: async () => {
       await load();
       setToast(t("directeurDashboard.objectiveCreated"));
@@ -469,7 +485,12 @@ export default function TeamManagement() {
 
       {!loading && !error && (
         <div className="panel">
-          <h3>{t("teamManagement.masterRepsTitle")}</h3>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <h3 style={{ margin: 0 }}>{t("teamManagement.masterRepsTitle")}</h3>
+            <button type="button" className="btn-link" onClick={() => setShowInactive((v) => !v)}>
+              {showInactive ? t("teamManagement.hideInactive") : t("teamManagement.showInactive")}
+            </button>
+          </div>
           {masterReps.length === 0 && <p className="empty-state">{t("teamManagement.noMasterReps")}</p>}
           {masterReps.map((mr) => (
             <div key={mr.id}>

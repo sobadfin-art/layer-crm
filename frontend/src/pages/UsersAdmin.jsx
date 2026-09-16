@@ -61,7 +61,12 @@ export default function UsersAdmin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [roleFilter, setRoleFilter] = useState("all");
-  const [activeFilter, setActiveFilter] = useState("all");
+  // Décluttering (demande directe, 2026-09-16 : nettoyage des comptes de démo
+  // — "trop d'élément" une fois les comptes désactivés) : l'écran s'ouvre
+  // désormais filtré sur "Actifs" par défaut plutôt que "Tous" — le filtre
+  // existant permet toujours de repasser sur "Tous"/"Désactivés" en un clic,
+  // rien n'est retiré, seul le réglage d'ouverture change.
+  const [activeFilter, setActiveFilter] = useState("true");
   const [busyId, setBusyId] = useState(null);
   const [toast, setToast] = useState(null);
   const [tempPasswordInfo, setTempPasswordInfo] = useState(null); // { email, password }
