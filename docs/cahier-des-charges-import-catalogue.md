@@ -69,7 +69,8 @@ Avant validation définitive, le système calcule et affiche :
 - Nombre total de lignes détectées
 - Nombre de **nouvelles références** (référence absente du catalogue actuel)
 - Nombre de **références à mettre à jour** (référence déjà existante, identifiée par correspondance exacte sur le champ Référence)
-- Nombre d'**erreurs** (ligne sans référence renseignée)
+- Nombre d'**erreurs** (ligne sans référence renseignée, ou rejetée par la règle de cohérence Référence <-> ID Dolibarr, section 7 bis)
+- **Détail ligne par ligne des erreurs** (correctif 2026-09-16, fiche corrective "CORRECTIFS CRM — PROFIL ADMINISTRATEUR", point 13) : numéro de ligne dans le fichier, référence concernée (si connue) et motif exact du rejet — affiché aussi bien avant validation (étape 4) qu'après application réelle (étape 5), jamais seulement un compte global. Limité aux 50 premières lignes rejetées sur un très gros fichier fautif (le compte total, lui, reste toujours exact).
 
 L'administrateur choisit ensuite le mode d'application :
 - Créer les nouvelles références **et** mettre à jour les existantes (par défaut)
@@ -106,7 +107,7 @@ Concrètement, dès qu'une ligne renseigne un ID Dolibarr, deux vérifications s
 1. **Une référence ne peut avoir qu'un seul ID Dolibarr.** Si la même référence apparaît avec un ID Dolibarr différent — dans le fichier importé (par exemple entre deux onglets traités l'un après l'autre) ou par rapport à ce qui est déjà enregistré pour cette référence — la ligne est rejetée avec un message explicite, jamais importée avec un ID Dolibarr douteux.
 2. **Un ID Dolibarr ne peut être rattaché qu'à une seule référence.** Si le même ID Dolibarr est associé à deux références différentes — dans le fichier ou par rapport à l'existant — les lignes concernées sont rejetées, pour la même raison.
 
-Ce qui est **explicitement toléré, et ne déclenche donc aucune de ces deux vérifications** : une référence déjà présente dans un autre catalogue, tant que son ID Dolibarr reste le même. Importer une référence déjà rattachée à un autre catalogue la réattribue simplement au catalogue choisi à l'étape 1 (comportement de mise à jour déjà décrit en section 7) — ce n'est jamais un conflit à signaler.
+Ce qui est **explicitement toléré, et ne déclenche donc aucune de ces deux vérifications** : une référence déjà présente dans un autre catalogue, tant que son ID Dolibarr reste le même. Importer une référence déjà rattachée à un autre catalogue **l'ajoute** au catalogue choisi à l'étape 1, en plus de ses catalogues existants (rattachement multi-catalogue, cf. section 11 bis — correctif 2026-09-16 "CORRECTIFS CRM — PROFIL ADMINISTRATEUR", point 8, qui remplace la réattribution exclusive décrite jusqu'ici dans une version antérieure de cette section) — ce n'est jamais un conflit à signaler.
 
 Les lignes rejetées par cette règle comptent dans les **erreurs** du résumé (étape 4, section 6), au même titre qu'une ligne sans référence — jamais un rejet de l'import entier : les autres lignes valides du fichier s'importent normalement.
 
@@ -133,10 +134,26 @@ Les catégories doivent correspondre à la liste officielle administrable (actue
 
 ## 11. Suppression d'un catalogue
 
-Réservée à l'administrateur. Supprimer un catalogue ne supprime jamais les références qui lui sont rattachées : elles repassent automatiquement en statut **"Sans catalogue"** et restent visibles pour être réaffectées à un autre catalogue.
+Réservée à l'administrateur. Supprimer un catalogue ne supprime jamais les références qui lui sont rattachées : seule cette affiliation précise disparaît. Depuis le rattachement multi-catalogue (section 11 bis), une référence présente dans plusieurs catalogues reste normalement visible dans les autres ; seule une référence qui n'appartenait **qu'à** ce catalogue repasse en statut **"Sans catalogue"** et reste visible pour être rattachée à un autre.
+
+---
+
+## 11 bis. Rattachement multi-catalogue (correctif 2026-09-16)
+
+Ajouté à la demande explicite du client, fiche corrective "CORRECTIFS CRM — PROFIL ADMINISTRATEUR", points 8/9 : *"Un produit peut appartenir à plusieurs catalogues... Les catalogues ne doivent pas être mutuellement exclusifs."*
+
+Une référence peut désormais être rattachée **simultanément** à plusieurs catalogues (ex. une monture présente à la fois dans "2026 SUNGLASSES" et "OPTIC 2026") :
+
+- **Fiche produit (Admin produits)** : le champ "Catalogue(s)" se présente en bulles de sélection cliquables (une par catalogue existant, cf. section 7 pour le même principe appliqué au sélecteur d'écran) — plusieurs peuvent être actives à la fois pour une même référence, aucune n'est exclusive des autres.
+- **Import en masse** : importer une référence déjà connue dans un catalogue **ajoute** le catalogue choisi à l'étape 1 à ses affiliations existantes, il ne les remplace jamais (cf. section 7 bis). Réimporter une même référence dans plusieurs catalogues, onglet par onglet (section 3 bis), construit donc progressivement son rattachement multi-catalogue.
+- **Prise de commande (Représentant)** : une référence apparaît dans chaque catalogue auquel elle est rattachée — la sélection d'un catalogue au moment de la commande reste un filtre de navigation (un seul à la fois, ou "Tous"), pas une exclusion des autres affiliations de la référence.
+- **Suppression d'un catalogue** : cf. section 11, ne retire que cette affiliation précise.
+
+Grounded dans le code : table de jointure `product_catalogs` (migration `020_product_catalogs.sql`), qui remplace l'ancienne colonne `products.catalog_id` (un seul catalogue à la fois, conservée en base mais plus lue ni écrite) comme source de vérité — `routes/products.js` (`catalogIds`/`catalogNames` sur chaque référence, filtre `?catalogId=` désormais "appartient à au moins un des catalogues demandés"), `lib/catalogImport.js` (ajout plutôt que remplacement à l'import), `routes/catalogs.js` (comptage de références et suppression via la table de jointure).
 
 ---
 
 ## 12. Historique
 
+- **2026-09-16 (fiche corrective "CORRECTIFS CRM — PROFIL ADMINISTRATEUR")** — Rattachement multi-catalogue (section 11 bis) : une référence peut désormais appartenir à plusieurs catalogues à la fois ; importer une référence déjà connue dans un nouveau catalogue l'y **ajoute** au lieu de l'y réattribuer exclusivement (section 7 bis mise à jour en conséquence, tout comme la section 11 sur la suppression d'un catalogue). Détail ligne par ligne des erreurs d'import (numéro de ligne, référence, motif — section 6), jusqu'ici seul le compte global remontait. Bug serveur corrigé : la modification du statut de stock (Rupture/Réassort prévu) via la fiche produit provoquait une erreur 500 systématique (mauvaise conversion des noms de colonnes `priceFR`/`priceCH`, sans lien avec le statut lui-même — touchait en réalité toute modification via ce formulaire). Colonne "ID Dolibarr" désormais éditable aussi depuis la création/modification manuelle d'une référence, pas seulement à l'import. Grounded dans le code : migration `020_product_catalogs.sql`, `routes/products.js` (`catalogIds`, correctif `columnFor`), `lib/catalogImport.js`/`lib/accountsImport.js` (`extractErrorDetails`), `routes/catalogs.js`, `CatalogueAdmin.jsx`/`CatalogueConsult.jsx` (bulles de catalogue) — vérifié par script API (20/20) et Playwright (multi-catalogue, détail des erreurs, cohérence Admin/Représentant).
 - **2026-09-16** — Ajout de la règle de cohérence Référence <-> ID Dolibarr (section 7 bis), de la reconnaissance de la colonne "ID Dolibarr" (section 4), du support des fichiers "1 onglet par catalogue" avec sélecteur d'onglet (sections 2 et 3 bis) et de la reconnaissance d'une ligne d'en-têtes précédée de lignes vides (section 2) — à la demande du client, sur la base d'un exemple réel fourni (fichier à 3 onglets SUN 26 / SUN 27 / OPTICS 26 avec colonne ID Dolibarr). Modèle de fichier téléchargeable (section 10) implémenté à cette occasion, avec un onglet par catalogue existant. Grounded dans le code réellement implémenté et testé : `lib/fileParsing.js` (détection de la ligne d'en-têtes, sélection d'onglet), `lib/catalogImport.js` (`validateDolibarrIds`), `lib/importMapping.js`, `lib/importTemplates.js`, `routes/catalogs.js` (`GET /import-template`) — vérifié de bout en bout avec le fichier réel fourni par le client (import des 3 onglets dans des catalogues séparés, détection effective d'un conflit d'ID Dolibarr réel présent dans ce fichier entre deux variantes de casse d'une même référence).

@@ -1302,6 +1302,56 @@ Corrections réellement apportées ce lot :
   d'une même référence, rejet correct de conflits construits délibérément dans les deux sens ; script
   Playwright : sélecteur d'onglet, bouton modèle sur les deux écrans, déclenchement réel du
   téléchargement).
+- **Correctifs Administrateur (2026-09-16, fiche corrective "CORRECTIFS CRM — PROFIL
+  ADMINISTRATEUR")** : lot de corrections/évolutions demandées après relecture de la bêta.
+  - **Bug réel corrigé — erreur serveur en modifiant le statut de stock :** confirmée reproductible
+    (500 systématique), root-caused à `routes/products.js` (`PATCH /products/:id`) : la conversion
+    générique camelCase -> snake_case des noms de colonnes (`f.replace(/[A-Z]/g, ...)`) transformait
+    `priceFR` en `price_f_r` et `priceCH` en `price_c_h` au lieu de `price_fr`/`price_ch` — colonnes
+    inexistantes, `UPDATE` en échec. Le formulaire complet de la fiche produit envoyant toujours ces
+    deux champs, l'erreur touchait en réalité **toute** modification via ce formulaire, pas seulement
+    Rupture/Réassort prévu (les deux statuts que le client avait testés). Remplacé par une
+    correspondance champ -> colonne explicite (`COLUMN_FOR_FIELD`), qui ne peut plus se tromper de
+    façon similaire. Vérifié par appel direct reproduisant exactement le payload du formulaire.
+  - **Rattachement multi-catalogue (nouveau, changement de modèle de données) :** un produit peut
+    désormais appartenir à plusieurs catalogues simultanément ("les catalogues ne doivent pas être
+    mutuellement exclusifs"), alors que `products.catalog_id` ne portait qu'un seul catalogue à la
+    fois. Nouvelle table de jointure `product_catalogs` (migration `020_product_catalogs.sql`,
+    backfillée depuis les données existantes, non destructive), qui remplace `catalog_id` comme
+    source de vérité dans tout le backend (`routes/products.js` : `catalogIds`/`catalogNames` sur
+    chaque référence + filtre `?catalogId=` en "appartient à au moins un des catalogues demandés" ;
+    `lib/catalogImport.js` : importer une référence dans un catalogue l'y **ajoute** désormais, ne la
+    lui réattribue plus exclusivement — cf. `docs/cahier-des-charges-import-catalogue.md` section 11
+    bis ; `routes/catalogs.js` : comptage et suppression via la table de jointure). Côté écrans :
+    sélection multi-catalogue en bulles cochables sur la fiche produit (`CatalogueAdmin.jsx`), colonne
+    "Catalogue(s)" ajoutée à la liste, et parité confirmée avec le catalogue de prise de commande côté
+    Représentant (même `GET /catalogs`, même `GET /products?catalogId=`).
+  - **Sélecteur de catalogue en bulles (point 7) :** le menu déroulant de catalogue de l'écran
+    "Catalogue produits" (`CatalogueConsult.jsx`) — le seul `<select>` de catalogue effectivement
+    présent dans l'appli — remplacé par des boutons/bulles (`cat-tab`, même style que le filtre
+    catégorie juste en dessous et que la sélection de catalogue côté prise de commande, `catalog-bubble`
+    dans `NewOrder.jsx`), pour rester cohérent "comme dans le reste de l'interface CRM".
+  - **ID Dolibarr éditable manuellement :** ajouté au formulaire de création/modification de fiche
+    produit (`CatalogueAdmin.jsx`) — jusqu'ici uniquement modifiable via l'import en masse, alors que
+    la fiche corrective liste "ID Dolibarr" parmi les champs minimum attendus sur chaque fiche produit.
+  - **Détail des erreurs d'import (points 13/14) :** le résumé d'import (catalogue et fiches client)
+    n'affichait jusqu'ici qu'un **compte** d'erreurs, jamais le détail. `summarizeImport`/`applyImport`
+    (`lib/catalogImport.js` et `lib/accountsImport.js`) renvoient désormais aussi `errorDetails`
+    (numéro de ligne, référence si connue, motif exact — plafonné à 50 lignes) et `errorDetailsTruncated`
+    ; affiché par `ImportWizard.jsx` à l'étape résumé ET à l'étape "import terminé", sur les deux écrans
+    d'import (catalogue et fiches client) puisque partagés par ce même composant.
+  - **Boutons "Choisir un fichier" et import ID Dolibarr (points 1/2/3) :** déjà présents et
+    fonctionnels dans le code livré la veille (session précédente) — confirmés à nouveau par capture
+    d'écran et test Playwright, aucun changement nécessaire.
+  - **Éléments explicitement non touchés (points 5/6/10/17)** : statuts produit (Nouveau/Actif/
+    Discontinué — la fiche mentionne aussi "Inactif", absent du code et de la base ; non ajouté pour ne
+    pas modifier une logique que le client demande explicitement de ne pas refaire, à confirmer avec
+    lui si un vrai besoin), galerie photo multi-image + swipe, filtre "Toute disponibilité".
+  - Vérifié de bout en bout : script API (multi-catalogue : ajout sans perte d'affiliation existante,
+    visibilité identique Admin/Représentant, suppression de catalogue ne retirant qu'une affiliation) et
+    Playwright (bulles multi-catalogue sur la fiche produit, bulles de catalogue sur "Catalogue produits",
+    détail des erreurs d'import affiché, absence d'erreur serveur en enregistrant Rupture/Réassort prévu
+    avec le formulaire complet).
 
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
