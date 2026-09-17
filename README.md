@@ -2106,6 +2106,58 @@ Corrections réellement apportées ce lot :
     demande faite à ce sujet. Ne prendra effet en production qu'après le prochain déploiement (upload
     GitHub habituel de ce zip).
 
+- **Photos produit cassées le lendemain de leur import — diagnostic puis migration du stockage vers
+  Cloudflare R2 (2026-09-17, demande explicite : "j'ai besoin d'un vrai diagnostic avant toute
+  correction — ne suppose rien, vérifie et montre-moi les preuves", puis "remplace
+  `multer.diskStorage` par un upload vers Cloudflare R2")** :
+  - **Diagnostic (fait avant tout code, par preuves observables uniquement)** : les photos produit
+    téléversées directement dans le CRM (`POST /api/products/:id/photos`) étaient écrites sur le
+    disque local du conteneur backend (`multer.diskStorage`, dossier `backend/uploads/products`).
+    Render confirme lui-même, dans son interface, que "Disks are not supported for free compute
+    plans" — le plan gratuit utilisé pour ce service n'a donc aucun disque persistant : chaque mise
+    en veille/réveil du conteneur (inactivité) ou redéploiement repart d'un système de fichiers vierge
+    issu du build, et tout fichier écrit à l'exécution est perdu. Comparaison des 423 photos cassées
+    contre les 144 photos externes (URLs mokenvision.com, jamais affectées) sur le compte de
+    production : confirme exactement cette séparation — 100 % des photos cassées sont des uploads
+    directs, 0 % des URLs externes ne sont touchées. Aucune modification de code n'était en cause : le
+    comportement du plan gratuit de Render est la cause exacte, confirmée par l'éditeur lui-même et
+    par comparaison des deux catégories de photos en production.
+  - **Correctif — remplacement du stockage local par Cloudflare R2 (stockage objet compatible API
+    S3, externe et persistant, indépendant du cycle de vie du conteneur)** :
+    - `backend/src/lib/objectStorage.js` (nouveau) : client S3 configuré pour l'endpoint R2
+      (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, jamais en dur,
+      toujours par variables d'environnement Render), fonctions `putObject`/`getObject`/`deleteObject`.
+    - **Bucket volontairement privé, pas d'URL publique** — revirement par rapport à l'approche
+      initialement engagée (bucket public + URL directe), corrigé suite à la demande explicite du
+      client en cours de mise en place : "je ne veux pas que un bot puisse scrapé des image qui ne
+      sont pas sur le site". Conséquence : `backend/src/routes/products.js` expose désormais
+      `GET /uploads/products/:filename` comme route authentifiée (`requireAuth` + rôles autorisés,
+      pas un simple fichier statique) qui relit l'objet côté serveur sur R2 et le renvoie en flux —
+      aucune URL R2 n'est jamais exposée telle quelle au navigateur, donc rien n'est récupérable sans
+      une session CRM valide. `backend/src/server.js` monte cette route authentifiée avant le
+      middleware statique générique `/uploads`, pour qu'aucune requête ne puisse la contourner.
+    - Forme des URLs (`/uploads/products/<fichier>`) inchangée côté base de données et frontend —
+      migration invisible pour le reste de l'application, aucun changement frontend nécessaire.
+    - Bascule automatique : si les 4 variables R2 sont présentes, le nouvel upload passe par R2 ; sinon
+      (environnement de développement local sans R2 configuré), l'ancien comportement disque local
+      reste disponible sans rien à faire — aucune régression du confort de développement local.
+  - **Vérifié localement avant livraison** : upload d'une photo test via le flux complet
+    (authentification, `POST /:id/photos`, dépôt réel sur R2), lecture de la même photo via
+    `GET /uploads/products/<fichier>` confirmée à 200 avec une session valide et 401 sans cookie de
+    session (preuve que la protection anti-scraping fonctionne réellement, pas seulement en théorie),
+    puis suppression via `DELETE /:id/photos/:photoId` confirmée retirée de R2. Un test de résistance à
+    un redémarrage de conteneur réel en production reste à faire une fois ce déploiement effectif (le
+    client l'a explicitement demandé comme condition avant de considérer le sujet réglé) — annoncé
+    comme prochaine étape, pas encore réalisé au moment de cette livraison.
+  - **Restant à faire, hors du code de ce zip** : les 423 photos cassées ne sont pas ré-importées
+    automatiquement par ce correctif — celui-ci répare la cause (le stockage), pas les fichiers déjà
+    perdus. Un export `photos-produit-cassees-a-reimporter-2026-09-17.csv` (référence produit,
+    libellé, ancienne URL cassée) a été fourni séparément pour permettre de retrouver puis
+    ré-importer les fichiers d'origine. Ne prendra effet en production qu'après le déploiement de ce
+    zip ET la présence des 4 variables d'environnement R2 dans Render (déjà renseignées côté client à
+    ce stade) — sans les deux à la fois, le correctif reste inactif et le comportement disque local
+    (donc toujours éphémère) continue de s'appliquer.
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
