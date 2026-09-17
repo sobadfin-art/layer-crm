@@ -484,6 +484,84 @@ async function getPhotos(productId) {
   return toCamelList(rows);
 }
 
+// Retire une extension d'image connue et un éventuel suffixe numérique de
+// doublon (plusieurs photos pour la même référence, ex. téléchargées
+// plusieurs fois par le navigateur, ou nommées manuellement "-1"/"-2" pour
+// respecter les jusqu'à 5 photos par référence) avant la comparaison à `ref`/
+// `dolibarr_ref` — ex. "MKNOC6-TBRW-DWD (1).jpg", "MKNOC6-TBRW-DWD_2.png" et
+// "MKNOC6-TBRW-DWD-3.webp" doivent tous les trois pouvoir se rattacher à la
+// référence "MKNOC6-TBRW-DWD".
+function candidateRefsFromFilename(filename) {
+  const withoutExt = filename.replace(/\.(jpe?g|png|webp)$/i, "").trim();
+  const withoutSuffix = withoutExt
+    .replace(/\s*\(\d+\)$/, "") // "REF (1)"
+    .replace(/[-_]\d{1,2}$/, ""); // "REF-1" / "REF_2"
+  return withoutSuffix === withoutExt ? [withoutExt] : [withoutExt, withoutSuffix];
+}
+
+// Rapprochement automatique nom de fichier → référence produit, utilisé par
+// l'écran Admin "Import photos en masse" (2026-09-17, demande client : les
+// 423 photos cassées par l'incident de stockage — cf. plus haut — doivent
+// pouvoir être réimportées depuis les fichiers d'origine du client plutôt
+// qu'une par une via la fiche produit). Comparaison stricte (ref ou
+// dolibarr_ref exacte, insensible à la casse) — jamais de rapprochement
+// approximatif par modèle/couleur qui risquerait d'associer une photo au
+// mauvais produit ; un fichier non reconnu reste "à assigner manuellement"
+// côté écran, jamais deviné.
+productsRouter.post(
+  "/photos/match",
+  requireAuth,
+  requireRole(ROLES.ADMINISTRATEUR),
+  async (req, res) => {
+    const parsed = z
+      .object({ filenames: z.array(z.string().min(1)).min(1).max(500) })
+      .safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Liste de fichiers invalide." });
+    }
+
+    const { rows: existingCounts } = await query(
+      `SELECT product_id, count(*)::int AS n FROM product_photos GROUP BY product_id`
+    );
+    const countByProduct = new Map(existingCounts.map((r) => [r.product_id, r.n]));
+
+    const results = [];
+    for (const filename of parsed.data.filenames) {
+      const candidates = candidateRefsFromFilename(filename);
+      let match = null;
+      for (const candidate of candidates) {
+        const { rows } = await query(
+          `SELECT id, ref, label, model, color, dolibarr_ref
+           FROM products
+           WHERE ref ILIKE $1 OR dolibarr_ref ILIKE $1
+           LIMIT 2`,
+          [candidate]
+        );
+        if (rows.length === 1) {
+          match = rows[0];
+          break;
+        }
+        // rows.length > 1 (ref/dolibarr_ref en collision entre deux
+        // produits, cas normalement impossible mais pas garanti par un
+        // contrainte unique en base) → traité comme non résolu
+        // automatiquement plutôt que de deviner, laissé à l'assignation
+        // manuelle par l'écran.
+      }
+      results.push({
+        filename,
+        productId: match ? match.id : null,
+        ref: match ? match.ref : null,
+        label: match ? match.label : null,
+        model: match ? match.model : null,
+        color: match ? match.color : null,
+        existingPhotoCount: match ? countByProduct.get(match.id) || 0 : null,
+      });
+    }
+
+    res.json({ results });
+  }
+);
+
 // Détail de la galerie (avec id de chaque photo, nécessaire pour la
 // suppression/le réordonnancement côté Admin produits) — réservé à
 // l'administrateur comme le reste de la gestion de galerie ; les autres
