@@ -11,8 +11,19 @@ import { ROLES } from "../lib/roles.js";
 import { CATEGORIES } from "../lib/categories.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
+import {
+  isObjectStorageConfigured,
+  missingObjectStorageEnvVars,
+  putObject,
+  getObject,
+  deleteObject,
+} from "../lib/objectStorage.js";
 
 export const productsRouter = Router();
+// Route de service (téléchargement d'une photo produit) — séparée de
+// productsRouter car montée sous /uploads/products dans server.js, pas sous
+// /api/products (cf. plus bas et server.js).
+export const productPhotosRouter = Router();
 
 // Téléversement direct d'une photo produit (alternative à une URL externe,
 // cf. section "Ce qui n'est PAS couvert par l'import de fichier" du cahier
@@ -21,12 +32,46 @@ export const productsRouter = Router();
 // tard : la photo pourra alors soit rester le fichier téléversé, soit être
 // remplacée par l'URL du site via une nouvelle mise à jour ou le
 // rapprochement automatique, cf. docs/rapprochement-photos-mokenvision.md).
-// Stocké sur disque et servi statiquement sous /uploads (cf. server.js) —
-// jamais en base64 en base, jamais un chemin en dehors de ce dossier dédié.
+//
+// Stockage (correctif 2026-09-17, diagnostic "photos produit cassées le
+// lendemain") : servi désormais depuis Cloudflare R2 (stockage objet
+// persistant, cf. lib/objectStorage.js) dès que les variables d'environnement
+// R2_* sont présentes — c'est le mode attendu en production. Render (plan
+// gratuit) a confirmé lui-même que son disque n'est PAS persistant ("Disks
+// are not supported for free compute plans") : tout fichier écrit sur le
+// disque local du conteneur est perdu au prochain redémarrage (veille du
+// plan gratuit après 15 min d'inactivité, ou redéploiement) — c'est
+// exactement ce qui a rendu 423 photos injoignables du jour au lendemain
+// sans aucun changement de code. Fallback sur l'ancien disque local
+// uniquement quand R2 n'est pas configuré (developpement local sans
+// identifiants R2), pour ne jamais bloquer le travail en dev — jamais utilisé
+// en production dès que les variables sont posées sur Render.
+//
+// Bucket R2 volontairement PRIVÉ (demande explicite du client, 2026-09-17 :
+// "je ne veux pas qu'un bot puisse scraper des images qui ne sont pas sur le
+// site") — aucune "Public Access" côté Cloudflare. L'URL renvoyée au frontend
+// garde exactement la même forme qu'avant (`/uploads/products/<fichier>`),
+// mais n'est plus servie par un middleware statique : c'est désormais
+// `productPhotosRouter` ci-dessous, derrière `requireAuth`, qui va relire
+// l'objet sur R2 et le renvoyer en flux. Un bot ou toute requête sans cookie
+// de session valide du CRM reçoit 401, jamais l'image — même s'il devine ou
+// intercepte une URL.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const PRODUCT_PHOTOS_DIR = path.join(__dirname, "../../uploads/products");
 fs.mkdirSync(PRODUCT_PHOTOS_DIR, { recursive: true });
 export const PRODUCT_PHOTOS_URL_PREFIX = "/uploads/products/";
+
+const USE_R2 = isObjectStorageConfigured();
+if (USE_R2) {
+  console.log("[products] Photos produit stockées sur Cloudflare R2 (bucket privé, accès via /uploads/products authentifié).");
+} else {
+  console.warn(
+    `[products] R2 non configuré (variables manquantes : ${missingObjectStorageEnvVars().join(
+      ", "
+    )}) — fallback sur le disque local, NON PERSISTANT en production. ` +
+      "À ne voir qu'en développement local."
+  );
+}
 
 const PHOTO_MIME_EXT = {
   "image/jpeg": ".jpg",
@@ -34,14 +79,77 @@ const PHOTO_MIME_EXT = {
   "image/webp": ".webp",
 };
 
+function buildObjectKey(req, file) {
+  const ext = PHOTO_MIME_EXT[file.mimetype];
+  return `products/${req.params.id}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${ext}`;
+}
+
+// Un objet R2 est toujours sous la forme "products/<fichier>" ; l'URL stockée
+// en base est toujours "/uploads/products/<fichier>" (même préfixe qu'avant,
+// cf. commentaire plus haut) — cette fonction retrouve l'un à partir de
+// l'autre, jamais l'inverse d'une URL externe (mokenvision.com), qui ne
+// commence jamais par ce préfixe.
+function r2KeyFromLocalUrl(url) {
+  if (!url || !url.startsWith(PRODUCT_PHOTOS_URL_PREFIX)) return null;
+  return `products/${url.slice(PRODUCT_PHOTOS_URL_PREFIX.length)}`;
+}
+
+// GET /uploads/products/:filename — montée directement à la racine (voir
+// server.js), PAS sous /api, pour rester compatible avec les URLs déjà en
+// base (`/uploads/products/...`) générées avant comme après ce correctif.
+// Reste malgré tout une route API protégée comme les autres (requireAuth) :
+// express.static ne fait plus JAMAIS ce travail pour ce dossier.
+productPhotosRouter.get(
+  "/:filename",
+  requireAuth,
+  requireRole(
+    ROLES.REPRESENTANT,
+    ROLES.MASTER_REP,
+    ROLES.FRONT_DESK,
+    ROLES.DIRECTEUR,
+    ROLES.ADMINISTRATEUR
+  ),
+  async (req, res) => {
+    // Jamais de traversée de dossier : uniquement le nom de fichier généré
+    // par buildObjectKey ci-dessus (aucun "/" ni "..").
+    const filename = path.basename(req.params.filename);
+    if (filename !== req.params.filename) {
+      return res.status(400).json({ error: "Nom de fichier invalide." });
+    }
+
+    if (USE_R2) {
+      try {
+        const { stream, contentType, contentLength } = await getObject({
+          key: `products/${filename}`,
+        });
+        if (contentType) res.setHeader("Content-Type", contentType);
+        if (contentLength != null) res.setHeader("Content-Length", contentLength);
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        stream.pipe(res);
+      } catch (err) {
+        if (err.name === "NoSuchKey" || err.$metadata?.httpStatusCode === 404) {
+          return res.status(404).json({ error: "Photo introuvable." });
+        }
+        throw err;
+      }
+      return;
+    }
+
+    const filePath = path.join(PRODUCT_PHOTOS_DIR, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Photo introuvable." });
+    }
+    res.sendFile(filePath);
+  }
+);
+
 const photoUpload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, PRODUCT_PHOTOS_DIR),
-    filename: (req, file, cb) => {
-      const ext = PHOTO_MIME_EXT[file.mimetype];
-      cb(null, `${req.params.id}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${ext}`);
-    },
-  }),
+  storage: USE_R2
+    ? multer.memoryStorage()
+    : multer.diskStorage({
+        destination: (req, file, cb) => cb(null, PRODUCT_PHOTOS_DIR),
+        filename: (req, file, cb) => cb(null, path.basename(buildObjectKey(req, file))),
+      }),
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (!PHOTO_MIME_EXT[file.mimetype]) {
@@ -470,7 +578,17 @@ productsRouter.post(
   async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Fichier requis (champ 'photo')." });
 
-    const photoUrl = `${PRODUCT_PHOTOS_URL_PREFIX}${req.file.filename}`;
+    let photoUrl;
+    if (USE_R2) {
+      const key = buildObjectKey(req, req.file);
+      await putObject({ key, body: req.file.buffer, contentType: req.file.mimetype });
+      // Même forme d'URL qu'en mode disque local ("/uploads/products/<fichier>")
+      // — jamais l'URL R2 elle-même, bucket privé (cf. commentaire en tête de
+      // fichier). key = "products/<fichier>" -> on retire le préfixe "products/".
+      photoUrl = `${PRODUCT_PHOTOS_URL_PREFIX}${key.slice("products/".length)}`;
+    } else {
+      photoUrl = `${PRODUCT_PHOTOS_URL_PREFIX}${req.file.filename}`;
+    }
     const { rows: posRows } = await query(
       "SELECT COALESCE(max(position) + 1, 0) AS next FROM product_photos WHERE product_id = $1",
       [req.params.id]
@@ -506,6 +624,15 @@ productsRouter.delete(
       [req.params.photoId, req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Photo introuvable." });
+
+    // Best-effort : supprime aussi l'objet R2 sous-jacent pour ne pas
+    // accumuler de fichiers orphelins dans le bucket. Ne bloque jamais la
+    // suppression en base si R2 est indisponible ou si l'URL n'est pas une
+    // URL locale (ex. photo externe mokenvision.com, cf. r2KeyFromLocalUrl).
+    if (USE_R2) {
+      const key = r2KeyFromLocalUrl(rows[0].url);
+      if (key) await deleteObject({ key }).catch(() => {});
+    }
 
     const { rows: remaining } = await query(
       "SELECT id FROM product_photos WHERE product_id = $1 ORDER BY position",

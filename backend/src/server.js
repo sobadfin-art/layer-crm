@@ -23,7 +23,7 @@ import { interactionsRouter } from "./routes/interactions.js";
 import { attachmentsRouter } from "./routes/attachments.js";
 import { tasksRouter } from "./routes/tasks.js";
 import { catalogsRouter } from "./routes/catalogs.js";
-import { productsRouter } from "./routes/products.js";
+import { productsRouter, productPhotosRouter } from "./routes/products.js";
 import { catalogImportRouter } from "./routes/catalog-import.js";
 import { accountsImportRouter } from "./routes/accounts-import.js";
 import { businessRulesRouter } from "./routes/business-rules.js";
@@ -45,10 +45,23 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
-// Sert les photos produit téléversées directement (cf. routes/products.js,
-// POST /:id/photo) — alternative à une URL externe pour un produit pas
-// encore en vente sur mokenvision.com. Lecture seule, pas d'exécution.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Photos produit téléversées directement (cf. routes/products.js, POST
+// /:id/photos) — alternative à une URL externe pour un produit pas encore en
+// vente sur mokenvision.com. Route authentifiée (requireAuth dans
+// productPhotosRouter), PAS un simple middleware statique : correctif
+// 2026-09-17, demande explicite du client ("je ne veux pas qu'un bot puisse
+// scraper des images qui ne sont pas sur le site") — le stockage R2 sous-
+// jacent est privé, cette route est le seul chemin d'accès à ces fichiers, et
+// elle exige une session CRM valide. Montée AVANT le middleware statique
+// générique ci-dessous pour que ces requêtes ne puissent jamais retomber sur
+// un fichier local non protégé.
+app.use("/uploads/products", productPhotosRouter);
+
+// Pièces jointes de fiche client (cf. routes/attachments.js) — restent sur
+// disque local et servies statiquement ici (portée inchangée par ce
+// correctif, qui concerne uniquement les photos produit).
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.use("/api/health", healthRouter);
