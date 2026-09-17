@@ -1294,6 +1294,36 @@ body {
   max-width: 320px;
 }
 
+/* Écran Admin "Import photos en masse" (2026-09-17) */
+.import-photos-dropzone {
+  border: 2px dashed var(--line);
+  border-radius: 8px;
+  padding: 28px 16px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--ink-soft);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.import-photos-dropzone:hover,
+.import-photos-dropzone.drag-over {
+  border-color: var(--ink);
+  background: var(--bg);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
 /* Lot 6 — multilingue, notifications, hors-ligne */
 
 .lang-switch {

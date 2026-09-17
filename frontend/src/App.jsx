@@ -12,6 +12,7 @@ import {
   Settings2,
   FileUp,
   LifeBuoy,
+  ImageUp,
 } from "lucide-react";
 import { useAuth } from "./AuthContext.jsx";
 import { useI18n } from "./i18n/I18nContext.jsx";
@@ -35,6 +36,7 @@ import DirecteurDashboard from "./pages/DirecteurDashboard.jsx";
 import Data from "./pages/Data.jsx";
 import BusinessRules from "./pages/BusinessRules.jsx";
 import CatalogueAdmin from "./pages/CatalogueAdmin.jsx";
+import ImportPhotosBulk from "./pages/ImportPhotosBulk.jsx";
 import CatalogueConsult from "./pages/CatalogueConsult.jsx";
 import AccountsImportAdmin from "./pages/AccountsImportAdmin.jsx";
 import SavQueue from "./pages/SavQueue.jsx";
@@ -197,6 +199,7 @@ export default function App() {
     navItems = [
       { to: "/catalogue", label: t("nav.catalogueAdmin"), icon: Package },
       { to: "/catalogue-produits", label: t("nav.catalogueConsult"), icon: Image },
+      { to: "/import-photos", label: t("nav.importPhotos"), icon: ImageUp },
       { to: "/import-clients", label: t("nav.importClients"), icon: FileUp },
       { to: "/clients", label: t("nav.clients"), icon: Users },
     ];
@@ -271,6 +274,7 @@ export default function App() {
             <>
               <Route path="/catalogue" element={<CatalogueAdmin />} />
               <Route path="/catalogue-produits" element={<CatalogueConsult />} />
+              <Route path="/import-photos" element={<ImportPhotosBulk />} />
               <Route path="/import-clients" element={<AccountsImportAdmin />} />
               <Route path="/clients" element={<ClientsList />} />
               <Route path="/clients/:id" element={<AccountDetail />} />
