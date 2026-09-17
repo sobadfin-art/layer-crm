@@ -44,12 +44,44 @@ export function missingObjectStorageEnvVars() {
   return REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
 }
 
+// Nettoie une valeur R2_ACCOUNT_ID mal saisie (ex. l'utilisateur colle l'URL
+// d'endpoint entière affichée par Cloudflare au lieu du seul identifiant de
+// compte) — correctif 2026-09-17 après incident en production : la valeur
+// entrée était "https://<id>.r2.cloudflarestorage.com" au lieu de "<id>" tout
+// court. Résultat concret observé : l'endpoint construit devenait
+// "https://https://<id>.r2.cloudflarestorage.com.r2.cloudflarestorage.com",
+// que `new URL()` interprète avec pour hostname le seul mot "https" (le
+// deuxième "https://" est traité comme le host, tout le reste comme un
+// chemin) — combiné à l'adressage "virtual-hosted-style" par défaut du SDK
+// AWS (bucket ajouté devant le host), la requête partait vers
+// "<bucket>.https", d'où l'erreur `getaddrinfo ENOTFOUND <bucket>.https` vue
+// dans les logs Render. On accepte ici aussi bien la forme correcte que les
+// formes collées par erreur (avec "https://" et/ou le suffixe complet), pour
+// qu'une future faute de frappe similaire n'empêche plus le démarrage.
+function sanitizeAccountId(raw) {
+  if (!raw) return raw;
+  return raw
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\.r2\.cloudflarestorage\.com\/?$/i, "");
+}
+
 let _client = null;
 function getClient() {
   if (_client) return _client;
+  const accountId = sanitizeAccountId(process.env.R2_ACCOUNT_ID);
   _client = new S3Client({
     region: "auto", // R2 n'a pas de notion de région AWS — "auto" est la valeur attendue par Cloudflare.
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    // R2 ne supporte pas l'adressage "virtual-hosted-style" (bucket en
+    // sous-domaine, ex. "<bucket>.<compte>.r2.cloudflarestorage.com") —
+    // uniquement l'adressage "path-style" (bucket dans le chemin, ex.
+    // "<compte>.r2.cloudflarestorage.com/<bucket>/..."), contrairement au
+    // comportement par défaut du SDK AWS S3 v3 qui suppose virtual-hosted-style
+    // pour un endpoint personnalisé. Sans ce réglage, même une fois
+    // R2_ACCOUNT_ID corrigé, les requêtes auraient continué à échouer (DNS
+    // introuvable pour un sous-domaine par bucket que R2 ne provisionne pas).
+    forcePathStyle: true,
     credentials: {
       accessKeyId: process.env.R2_ACCESS_KEY_ID,
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
