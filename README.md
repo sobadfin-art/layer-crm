@@ -2158,6 +2158,37 @@ Corrections réellement apportées ce lot :
     ce stade) — sans les deux à la fois, le correctif reste inactif et le comportement disque local
     (donc toujours éphémère) continue de s'appliquer.
 
+- **Correctif immédiat post-déploiement — `R2_ACCOUNT_ID` mal formé (2026-09-17, suite au premier
+  test réel en production après le déploiement ci-dessus)** :
+  - **Symptôme observé** : premier test d'upload réel en production après déploiement du correctif
+    R2 → `500 Erreur serveur`. Logs Render au même horodatage :
+    `Error: getaddrinfo ENOTFOUND moken-crm-photos.https`.
+  - **Cause exacte, reproduite et vérifiée avant correction (pas de supposition)** : la valeur
+    entrée dans Render pour `R2_ACCOUNT_ID` était l'URL d'endpoint complète copiée depuis
+    Cloudflare (`https://<identifiant>...`) au lieu du seul identifiant de compte attendu par le
+    code (`<identifiant>` seul). `objectStorage.js` construit l'endpoint comme
+    `` `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com` `` — avec la valeur collée par erreur,
+    cela donnait `https://https://<identifiant>.r2.cloudflarestorage.com.r2.cloudflarestorage.com`.
+    Reproduit en local avec `new URL(...)` sur cette chaîne exacte : le `hostname` obtenu est
+    littéralement `"https"` (le deuxième `https://` est interprété comme l'hôte, tout le reste comme
+    un chemin) — puis, le SDK AWS S3 ajoutant par défaut le nom du bucket devant l'hôte
+    (adressage "virtual-hosted-style"), l'hôte final demandé devient `moken-crm-photos.https` :
+    exactement l'erreur vue dans les logs de production, caractère pour caractère.
+  - **Double correctif appliqué dans `backend/src/lib/objectStorage.js`** :
+    1. `sanitizeAccountId()` : nettoie automatiquement `R2_ACCOUNT_ID` au démarrage (retire un
+       éventuel `https://` en préfixe et/ou le suffixe `.r2.cloudflarestorage.com`) — la valeur
+       actuellement enregistrée dans Render fonctionne donc désormais telle quelle, sans repasser
+       par l'écran Environment. La corriger pour ne garder que l'identifiant seul reste conseillé
+       pour la lisibilité, mais n'est plus bloquant.
+    2. `forcePathStyle: true` ajouté à la configuration du client S3 : Cloudflare R2 ne supporte
+       pas l'adressage "virtual-hosted-style" (bucket en sous-domaine) qu'AWS SDK utilise par
+       défaut pour un endpoint personnalisé — sans ce réglage, même `R2_ACCOUNT_ID` corrigé à la
+       main aurait continué à échouer (DNS introuvable pour un sous-domaine par bucket que R2 ne
+       fournit pas). Aligné sur la documentation de compatibilité S3 de Cloudflare.
+  - Ne prendra effet qu'après déploiement de ce zip (upload GitHub habituel) — le test complet
+    (upload réel, protection anti-scraping, résistance à un redémarrage de conteneur) reprend juste
+    après ce déploiement.
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
