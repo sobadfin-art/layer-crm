@@ -2189,6 +2189,74 @@ Corrections réellement apportées ce lot :
     (upload réel, protection anti-scraping, résistance à un redémarrage de conteneur) reprend juste
     après ce déploiement.
 
+- **Correctif R2 validé de bout en bout en production, avec preuves (2026-09-17, suite au
+  déploiement du correctif `R2_ACCOUNT_ID` ci-dessus)** — les quatre conditions posées par le
+  client avant de considérer le sujet réglé sont maintenant toutes vérifiées :
+  - **Déploiement effectif** : commit `30bafa3` confirmé "Live" dans Render ; logs de démarrage
+    propres, sans erreur, avec la ligne `[products] Photos produit stockées sur Cloudflare R2...`
+    à chaque redémarrage.
+  - **Upload réel fonctionnel** : `POST /:id/photos` avec une session Administrateur → `201`, photo
+    effectivement déposée sur R2 (confirmé par une lecture immédiate de l'URL renvoyée).
+  - **Protection anti-scraping confirmée sur une URL neuve (jamais requêtée auparavant, pour
+    exclure tout effet de cache)** : `GET /uploads/products/<fichier>` → `401` sans cookie de
+    session, `200` (image/jpeg) avec une session valide. Exigence du client ("je ne veux pas qu'un
+    bot puisse scraper des images qui ne sont pas sur le site") vérifiée en conditions réelles, pas
+    seulement en local.
+  - **Résistance à un redémarrage de conteneur réel, testée en production (condition explicitement
+    posée par le client avant validation)** : photo uploadée, vérifiée (200, taille de fichier
+    notée), puis redémarrage du service déclenché depuis Render ("Restart service" — nouveau
+    process constaté dans les logs, filesystem entièrement neuf), puis la même URL relue après
+    redémarrage → `200`, taille de fichier strictement identique à l'avant-redémarrage. Preuve
+    directe que le stockage ne dépend plus du disque éphémère du conteneur.
+  - **Non-régression des 144 photos externes MokenVision confirmée après déploiement** :
+    recomptage sur l'ensemble des 408 produits en production → 144 URLs externes
+    `mokenvision.com` (inchangé) et 423 URLs internes `/uploads/products/...` (les photos encore
+    cassées, en attente de réimport, comptage inchangé lui aussi) — aucun mélange, aucune perte.
+  - Toutes les photos de test créées pour ces vérifications ont été supprimées immédiatement après
+    (aucune trace laissée dans la galerie des produits réels).
+  - **Reste à faire, seul point encore ouvert sur ce sujet** : les 423 photos cassées existantes ne
+    sont pas ré-importées par ce correctif (qui répare la cause, pas les fichiers déjà perdus) — cf.
+    l'export `photos-produit-cassees-a-reimporter-2026-09-17.csv` fourni séparément.
+
+- **Nouvel écran Admin "Import photos en masse" (2026-09-17, demande client — les 423 photos
+  cassées sont retrouvées sur son poste ; jusqu'ici une photo ne pouvait s'ajouter qu'une par une
+  depuis la fiche produit, il fallait un moyen de les redéposer par lots)** :
+  - **Backend** — `POST /api/products/photos/match` (nouveau, réservé Administrateur) : reçoit une
+    liste de noms de fichiers, renvoie pour chacun la référence produit trouvée par correspondance
+    stricte (`ref` ou `dolibarr_ref`, insensible à la casse — jamais de rapprochement approximatif
+    par modèle/couleur qui risquerait d'associer une photo au mauvais produit), en tolérant les
+    suffixes de doublon usuels (`REF (1).jpg`, `REF-2.png`, `REF_3.webp` pour plusieurs photos d'une
+    même référence). Un nom non reconnu revient tel quel, à assigner à la main côté écran — jamais
+    deviné. Aucun nouvel endpoint d'upload : l'envoi réutilise tel quel `POST /:id/photos` (déjà
+    testé et validé en production ci-dessus), un fichier à la fois, en parallèle limité (3
+    simultanés) — donc les mêmes garanties R2/anti-scraping/limite de 5 photos s'appliquent sans
+    rien dupliquer.
+  - **Frontend** — nouvelle page `ImportPhotosBulk.jsx` (`/import-photos`, lien "Import photos" dans
+    le menu Administrateur) : zone de glisser-déposer multi-fichiers (jamais utilisée ailleurs dans
+    l'appli jusqu'ici — nouveau pattern, gardé volontairement simple et cohérent avec le style
+    existant, aucune librairie ajoutée) ou sélection classique ; chaque fichier trop lourd (> 8 Mo)
+    ou d'un mauvais format (hors jpeg/png/webp) est rejeté immédiatement, avant tout appel réseau, et
+    signalé sur sa ligne sans bloquer les autres. Les fichiers reconnus par `/photos/match` affichent
+    la référence trouvée ; les autres proposent une recherche manuelle (réutilise `GET
+    /api/products?search=`, déjà existant) avec sélection au clic. Un avertissement (non bloquant,
+    la limite réelle de 5 reste appliquée côté serveur comme partout ailleurs) prévient si le nombre
+    de photos prévu sur une référence dépasse 5 compte tenu des fichiers actuellement cochés dans le
+    même lot. Bouton "Importer" : envoie en série les fichiers confirmés, ligne par ligne (statut
+    envoi/réussite/erreur visible en direct, ré-essai possible sur une ligne en erreur sans tout
+    relancer), résumé chiffré en tête d'écran.
+  - Traduit dans les 3 langues déjà supportées par l'application (fr/en/es), comme le reste de
+    l'interface.
+  - **Testé localement de bout en bout avant livraison** (Playwright, compte Administrateur) :
+    fichier au nom de référence exacte → rapprochement automatique confirmé ; fichier au nom
+    inconnu → recherche manuelle, sélection, puis import ; fichier au mauvais format → rejeté avec
+    message clair, exclu de l'import sans bloquer les deux autres lignes ; import réel des deux
+    lignes confirmées → statut "Importée" affiché, photos effectivement présentes dans la galerie des
+    deux produits ciblés (vérifié par requête API), puis supprimées immédiatement après le test
+    (aucune trace laissée en base de développement). Testé en français et en anglais (aucune clé de
+    traduction manquante).
+  - **Reste à faire** : les 423 fichiers eux-mêmes sont sur le poste du client, pas encore déposés
+    dans cet écran — prochaine étape dès que ce zip est déployé.
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
