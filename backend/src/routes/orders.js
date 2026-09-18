@@ -10,6 +10,7 @@ import { loadActiveBusinessRules } from "../lib/businessRules.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
 import { notifyUser, notifyUsers, userIdsWithRoles } from "../lib/notifications.js";
+import { sendFrontOfficeOrderAlert } from "../lib/mailer.js";
 
 export const ordersRouter = Router();
 
@@ -505,6 +506,15 @@ ordersRouter.post(
     if (order.status !== "BROUILLON") {
       return res.status(409).json({ error: `Commande déjà au statut ${order.status}.` });
     }
+    // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 3) : date de
+    // livraison obligatoire pour valider/envoyer une commande — contrôle
+    // serveur, non contournable par un appel API direct (le frontend a son
+    // propre contrôle équivalent dans NewOrder.jsx, mais ne suffit pas seul).
+    if (!order.desired_delivery_date) {
+      return res.status(400).json({
+        error: "Veuillez renseigner une date de livraison avant de valider la commande.",
+      });
+    }
 
     const { rows: updated } = await query(
       `UPDATE orders SET status = 'ENVOYEE_FRONT_DESK', updated_at = now() WHERE id = $1 RETURNING *`,
@@ -527,6 +537,28 @@ ordersRouter.post(
       entity: "orders",
       entityId: order.id,
     });
+
+    // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 4) : alerte email
+    // configurable, déclenchée uniquement ici — après le succès effectif du
+    // passage BROUILLON -> ENVOYEE_FRONT_DESK ci-dessus, jamais avant, jamais
+    // si une des vérifications précédentes a fait sortir la fonction plus
+    // tôt. Non-bloquant : une erreur d'envoi ne doit jamais faire échouer la
+    // réponse HTTP de cette route, l'envoi au front desk étant déjà acquis
+    // en base à ce stade (cf. lib/mailer.js pour le détail du non-blocage et
+    // de la garantie d'idempotence).
+    try {
+      const [{ rows: accountRows }, { rows: repRows }] = await Promise.all([
+        query("SELECT name FROM accounts WHERE id = $1", [order.account_id]),
+        query("SELECT first_name, last_name FROM users WHERE id = $1", [order.rep_id]),
+      ]);
+      await sendFrontOfficeOrderAlert({
+        order: updated[0],
+        account: accountRows[0] || null,
+        repUser: repRows[0] || null,
+      });
+    } catch (err) {
+      console.warn("[orders] Alerte email front office non envoyée :", err.message);
+    }
 
     res.json(toCamel(updated[0]));
   }

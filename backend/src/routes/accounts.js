@@ -81,6 +81,25 @@ const createSchema = z.object({
   ...addressFields,
   ...contactFields,
   ...financialFields,
+  // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 5) : SIRET/identifiant
+  // d'entreprise et adresse de facturation deviennent obligatoires à la
+  // CRÉATION uniquement — ces trois lignes surchargent volontairement les
+  // versions optionnelles héritées de addressFields/financialFields
+  // ci-dessus (l'ordre des propriétés d'un objet littéral fait gagner la
+  // dernière définition). Object.keys(addressFields)/(financialFields), eux,
+  // ne changent pas : le mécanisme générique de PATCH (simpleFields,
+  // plus bas) continue donc de fonctionner à l'identique pour ces champs.
+  // `updateSchema` ci-dessous applique `.partial()` sur ce schéma complet,
+  // ce qui les rend automatiquement de nouveau optionnels pour la mise à
+  // jour (PATCH) — seule la création exige ces informations, comme demandé.
+  billingStreet: z.string().min(1, "L'adresse de facturation (rue) est obligatoire."),
+  billingZip: z.string().min(1, "L'adresse de facturation (code postal) est obligatoire."),
+  billingCity: z.string().min(1, "L'adresse de facturation (ville) est obligatoire."),
+  taxId: z.string().min(1, "Le SIRET / identifiant d'entreprise est obligatoire."),
+  // Note / instructions de livraison — champ dédié, distinct de tout autre
+  // champ existant, jamais obligatoire (cf. migration
+  // 022_accounts_delivery_note.sql et fiche "UPDATE CRM" évolution 1).
+  deliveryNote: z.string().optional().nullable(),
 });
 
 const updateSchema = createSchema.partial().extend({
@@ -297,6 +316,7 @@ accountsRouter.post(
         shipping_street, shipping_zip, shipping_city,
         contact_name, phone, phone_country_code, mobile, mobile_country_code, email,
         tax_id, vat_number, iban, bic, sepa_mandate_status, regime_fiscal,
+        delivery_note,
         pipeline_stage, owner_rep_id, master_rep_id
       ) VALUES (
         $1, $2, $3, $4, $5, $6,
@@ -304,7 +324,8 @@ accountsRouter.post(
         $10, $11, $12,
         $13, $14, $15, $16, $17, $18,
         $19, $20, $21, $22, $23, $24,
-        'Nouveau', $25, $26
+        $25,
+        'Nouveau', $26, $27
       ) RETURNING *`,
       [
         data.type,
@@ -331,6 +352,7 @@ accountsRouter.post(
         data.bic ?? null,
         data.sepaMandateStatus ?? "NON_RENSEIGNE",
         regimeFiscal,
+        data.deliveryNote ?? null,
         ownerRepId,
         masterRepId,
       ]
@@ -408,6 +430,7 @@ accountsRouter.patch(
       "storeName",
       "ownerRepId",
       "masterRepId",
+      "deliveryNote",
       ...Object.keys(addressFields),
       ...Object.keys(contactFields),
       ...Object.keys(financialFields),
