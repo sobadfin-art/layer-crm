@@ -2257,6 +2257,86 @@ Corrections réellement apportées ce lot :
   - **Reste à faire** : les 423 fichiers eux-mêmes sont sur le poste du client, pas encore déposés
     dans cet écran — prochaine étape dès que ce zip est déployé.
 
+- **Correctif ciblé "UPDATE CRM — CORRECTIONS À IMPLÉMENTER" (2026-09-18, document client) — 5
+  évolutions fonctionnelles scopées, aucune autre modification introduite** :
+  - **1. Note / instructions de livraison** — nouveau champ dédié `accounts.delivery_note` (TEXT,
+    nullable, migration `022_accounts_delivery_note.sql`, aucune donnée existante touchée), jamais
+    obligatoire. Exposé en création (`AccountFormFields.jsx`, partagé par "Clients & prospects" et
+    le raccourci "Nouvelle commande") et en consultation/modification (`AccountDetail.jsx`, qui a sa
+    propre implémentation puisqu'il n'utilise volontairement pas le composant partagé — cf.
+    commentaire d'origine dans ce fichier) : dans les deux cas, immédiatement sous l'adresse de
+    livraison, sauvegardé avec la fiche, rechargé automatiquement à l'ouverture, modifiable à tout
+    moment.
+  - **2. Deuxième bouton panier en haut à droite du catalogue** — `NewOrder.jsx` : le bouton du bas
+    est conservé tel quel ; un second point d'accès apparaît en haut à droite de l'écran de
+    navigation catalogue (`renderCartButton()`, une seule fonction partagée par les deux boutons
+    pour garantir qu'ils restent strictement synchronisés — même libellé, même compteur, même
+    action `setSubview("cart")`, même vue panier ouverte ensuite). Responsive (`flexWrap: wrap`).
+  - **3. Date de livraison obligatoire pour valider une commande** — contrôlée aux deux niveaux,
+    comme demandé : côté UI (`NewOrder.jsx`, `handleSubmit()` bloque avant tout appel réseau si le
+    champ est vide) et côté API (`orders.js`, `POST /:id/send-to-front-desk` renvoie `400` avec le
+    message recommandé si `desired_delivery_date` est absent) — un appel API direct sans passer par
+    l'écran ne peut donc pas contourner la règle. Aucune autre règle de validation de commande
+    modifiée.
+  - **4. Email d'alerte à l'envoi effectif d'une commande au front office** — nouveau
+    `backend/src/lib/mailer.js` (même philosophie que `objectStorage.js` : configuration par
+    variables d'environnement jamais en dur, détection de configuration manquante exposée aux
+    appelants, comportement non-bloquant si mal/pas configuré). Déclenché uniquement dans
+    `orders.js`, juste après le passage réussi `BROUILLON -> ENVOYEE_FRONT_DESK` — jamais à la
+    création d'un brouillon, jamais à l'ouverture d'une commande, jamais si l'envoi échoue (toutes
+    ces sorties de la route se produisent avant l'appel à l'email). Destinataire lu depuis
+    `FRONT_OFFICE_ORDER_ALERT_EMAIL` (jamais codé en dur — valeur à renseigner par le client dans
+    Render ; valeur communiquée pour cette mise en production : `commercial.fr@mokenvision.com`).
+    Sujet exact demandé (`"Nouvelle commande envoyée vers le front office."`), corps avec référence
+    commande, client, représentant, date de livraison souhaitée, date/heure d'envoi. **Référence
+    commande = l'UUID `orders.id`** : aucun numéro de commande lisible n'existe dans le modèle
+    actuel, et la consigne du document client est explicite ("ne pas inventer de donnée") — un
+    numéro séquentiel aurait été une invention. Idempotence garantie par l'architecture existante
+    elle-même, sans mécanisme supplémentaire : la route ne peut pas être rejouée avec succès sur la
+    même commande (`status !== 'BROUILLON'` → `409` dès la deuxième tentative, avant même d'atteindre
+    l'envoi d'email) — un double-clic ou un retry technique ne peut donc jamais produire un second
+    email pour le même événement. Nouvelle dépendance `nodemailer` (ajoutée à
+    `backend/package.json`).
+  - **5. SIRET/identifiant d'entreprise + adresse de facturation obligatoires à la création d'un
+    client** — `accounts.js`, `createSchema` : `billingStreet`, `billingZip`, `billingCity` et
+    `taxId` passent de `.optional()` à requis, **uniquement pour la création** (ces trois lignes
+    surchargent volontairement, dans l'objet littéral, les versions optionnelles héritées des
+    groupes de champs partagés utilisés aussi par le PATCH générique — qui, lui, reste inchangé) ;
+    `updateSchema` applique `.partial()` sur ce schéma complet et redevient donc automatiquement
+    optionnel pour la modification, comme avant. Contrôlé aux deux niveaux : côté API (`400` avec le
+    détail exact des champs manquants si un appel direct contourne l'écran) et côté UI
+    (`AccountFormFields.jsx` + ses deux points d'entrée `ClientsList.jsx`/`NewOrderQuickAccess.jsx` :
+    message combiné si les deux informations manquent, distinct si une seule manque ; libellés
+    "(obligatoire)" ajoutés sur les sections concernées, mécanisme d'adaptation du libellé SIRET par
+    pays déjà existant réutilisé tel quel — aucun nouveau code nécessaire pour cette partie). Adresse
+    de livraison non touchée.
+  - **Tests** — aucune infrastructure de tests (frontend ou backend) n'existait dans ce projet avant
+    ce correctif, et le document client demande explicitement de ne pas en introduire une nouvelle
+    uniquement pour cette modification. Vérification donc effectuée par un script end-to-end
+    ponctuel (Playwright + appels API directs, sur la pile locale complète : Postgres, backend,
+    frontend buildé), non ajouté au dépôt (cohérent avec la consigne ci-dessus), couvrant les
+    scénarios du cahier de tests : création avec/sans SIRET, avec/sans adresse de facturation, les
+    deux absents (message combiné vérifié), note de livraison vide et remplie (sauvegarde +
+    rechargement vérifiés), commande sans date de livraison (refusée, UI et API), commande avec date
+    (acceptée), tentative de renvoi d'une commande déjà envoyée (`409`, garantit l'unicité de
+    l'email), les deux boutons panier simultanément visibles et synchronisés (même libellé, même
+    compteur). Résultat : **17/17 scénarios passés**. L'envoi d'email a en plus été vérifié avec un
+    serveur SMTP de test local (capture réelle du message : sujet, destinataire et corps conformes à
+    la demande) — voir aussi la vérification de non-blocage (commande envoyée avec succès même sans
+    configuration SMTP, avertissement journalisé sans jamais faire échouer la requête).
+  - **Build** — `npm run build` (frontend, Vite) : succès, aucune erreur. Backend : démarrage propre
+    vérifié (`node src/server.js`), aucun script de lint/typecheck n'existe dans ce projet (aucun
+    n'a donc pu être exécuté ni n'a été ajouté, hors périmètre de cette demande).
+  - **Configuration à renseigner côté Render au déploiement** (aucune valeur commitée dans le
+    dépôt) : `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (fournisseur SMTP au
+    choix du client) et `FRONT_OFFICE_ORDER_ALERT_EMAIL=commercial.fr@mokenvision.com`. Tant que ces
+    variables ne sont pas renseignées, l'alerte email reste inactive (avertissement journalisé
+    uniquement) sans jamais bloquer l'envoi d'une commande au front desk — comportement volontaire,
+    identique dans l'esprit à `objectStorage.js`.
+  - **Rien de demandé n'a été laissé de côté** : les 5 évolutions du périmètre final sont toutes
+    implémentées et vérifiées ; aucune autre fonctionnalité n'a été ajoutée, aucun composant/route
+    renommé sans nécessité, aucune donnée supprimée ou modifiée par la migration.
+
 Ce qui reste, au global : l'application couvre désormais l'intégralité des rôles et fonctionnalités
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
