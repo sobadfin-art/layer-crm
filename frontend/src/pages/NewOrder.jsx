@@ -326,6 +326,14 @@ export default function NewOrder() {
 
   async function handleSubmit() {
     if (cartItems.length === 0) return;
+    // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 3) : date de
+    // livraison obligatoire avant validation/envoi — vérifiée aussi côté
+    // serveur (orders.js, POST /:id/send-to-front-desk) pour ne pas pouvoir
+    // être contournée par un appel API direct.
+    if (!desiredDeliveryDate) {
+      setSubmitError(t("newOrder.deliveryDateRequired"));
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -370,6 +378,26 @@ export default function NewOrder() {
   if (error) return <p className="error-text">{error}</p>;
   if (!account) return <p className="error-text">{t("account.notFound")}</p>;
 
+  // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 2) : deuxième point
+  // d'accès au panier en haut à droite du catalogue, en plus du bouton du
+  // bas conservé tel quel. Fonction partagée (et non deux JSX dupliqués) pour
+  // que les deux boutons restent garantis strictement synchronisés — même
+  // libellé, même compteur (cartCount), même action (setSubview("cart")),
+  // même vue panier ouverte ensuite.
+  function renderCartButton(extraStyle) {
+    if (cartCount <= 0) return null;
+    return (
+      <button
+        type="button"
+        className="btn primary"
+        style={{ display: "flex", alignItems: "center", gap: 6, ...extraStyle }}
+        onClick={() => setSubview("cart")}
+      >
+        <ShoppingCart size={15} /> {t("newOrder.viewCart", { count: cartCount })}
+      </button>
+    );
+  }
+
   return (
     <>
       <button className="btn outline" style={{ marginBottom: 14 }} onClick={() => navigate(`/clients/${id}`)}>
@@ -378,8 +406,13 @@ export default function NewOrder() {
 
       {subview === "browse" && (
         <>
-          <h1 className="page-title">{t("newOrder.title", { name: account.name })}</h1>
-          <p className="page-sub">{t("newOrder.subtitle")}</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <h1 className="page-title">{t("newOrder.title", { name: account.name })}</h1>
+              <p className="page-sub">{t("newOrder.subtitle")}</p>
+            </div>
+            {renderCartButton({ marginTop: 2 })}
+          </div>
 
           <div className="filter-label" style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6, marginTop: 4 }}>
             {t("newOrder.catalogFilterLabel")}
@@ -468,15 +501,7 @@ export default function NewOrder() {
             })}
           </div>
 
-          {cartCount > 0 && (
-            <button
-              className="btn primary"
-              style={{ position: "sticky", bottom: 14, marginTop: 18, display: "flex", alignItems: "center", gap: 6 }}
-              onClick={() => setSubview("cart")}
-            >
-              <ShoppingCart size={15} /> {t("newOrder.viewCart", { count: cartCount })}
-            </button>
-          )}
+          {renderCartButton({ position: "sticky", bottom: 14, marginTop: 18 })}
         </>
       )}
 

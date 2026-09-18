@@ -323,6 +323,7 @@ export default function AccountDetail() {
       iban: account.iban || "",
       bic: account.bic || "",
       sepaMandateStatus: account.sepaMandateStatus || "NON_RENSEIGNE",
+      deliveryNote: account.deliveryNote || "",
     });
     setEditMode(true);
   }
@@ -654,6 +655,10 @@ export default function AccountDetail() {
                 <span>{shipping || t("account.noValue")}</span>
               </div>
               <div className="task-row">
+                <span>{t("account.deliveryNote")}</span>
+                <span style={{ whiteSpace: "pre-wrap" }}>{account.deliveryNote || t("account.noValue")}</span>
+              </div>
+              <div className="task-row">
                 <span>{t("account.contact")}</span>
                 <span>{account.contactName || t("account.noValue")}</span>
               </div>
@@ -732,7 +737,10 @@ export default function AccountDetail() {
               </div>
               <div className="form-row">
                 <div className="field">
-                  <label>{t("account.billingAddress")}</label>
+                  <label>
+                    {t("account.billingAddress")}
+                    {t("account.billingAddressRequiredSuffix")}
+                  </label>
                   <input
                     placeholder="Rue"
                     value={editForm.billingStreet}
@@ -782,6 +790,14 @@ export default function AccountDetail() {
                   />
                 </div>
               </div>
+              <div className="field">
+                <label>{t("account.deliveryNote")}</label>
+                <textarea
+                  placeholder={t("account.deliveryNotePlaceholder")}
+                  value={editForm.deliveryNote}
+                  onChange={(e) => setEditForm((f) => ({ ...f, deliveryNote: e.target.value }))}
+                />
+              </div>
               <div className="form-row">
                 <div className="field">
                   <label>{t("account.contact")}</label>
@@ -804,7 +820,10 @@ export default function AccountDetail() {
               </div>
               <div className="form-row">
                 <div className="field">
-                  <label>{account.taxIdLabel || "N° fiscal"}</label>
+                  <label>
+                    {account.taxIdLabel || "N° fiscal"}
+                    {t("account.taxIdRequiredSuffix")}
+                  </label>
                   <input value={editForm.taxId} onChange={(e) => setEditForm((f) => ({ ...f, taxId: e.target.value }))} />
                 </div>
                 <div className="field">

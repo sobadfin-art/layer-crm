@@ -101,6 +101,19 @@ export default function NewOrderQuickAccess() {
       setCreateError(t("clients.newAccountMissing"));
       return;
     }
+    // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 5) : mêmes règles
+    // que ClientsList.jsx — SIRET/identifiant et adresse de facturation
+    // obligatoires, avec indication combinée si les deux manquent.
+    const missingTaxId = !createForm.taxId.trim();
+    const missingBilling =
+      !createForm.billingStreet.trim() || !createForm.billingZip.trim() || !createForm.billingCity.trim();
+    if (missingTaxId || missingBilling) {
+      const messages = [];
+      if (missingTaxId) messages.push(t("clients.newAccountMissingTaxId"));
+      if (missingBilling) messages.push(t("clients.newAccountMissingBilling"));
+      setCreateError(messages.join(" "));
+      return;
+    }
     setCreating(true);
     try {
       const created = await api.post("/accounts", {

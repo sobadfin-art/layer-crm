@@ -135,6 +135,21 @@ export default function ClientsList() {
       setNewAccountError(t("clients.newAccountMissing"));
       return;
     }
+    // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 5) : SIRET/identifiant
+    // d'entreprise et adresse de facturation deviennent obligatoires à la
+    // création — les deux messages sont combinés si les deux informations
+    // manquent, pour que le commercial voie tout ce qu'il lui manque en une
+    // fois (cf. cahier de tests section 8, scénario "les deux absents").
+    const missingTaxId = !newAccountForm.taxId.trim();
+    const missingBilling =
+      !newAccountForm.billingStreet.trim() || !newAccountForm.billingZip.trim() || !newAccountForm.billingCity.trim();
+    if (missingTaxId || missingBilling) {
+      const messages = [];
+      if (missingTaxId) messages.push(t("clients.newAccountMissingTaxId"));
+      if (missingBilling) messages.push(t("clients.newAccountMissingBilling"));
+      setNewAccountError(messages.join(" "));
+      return;
+    }
     setCreating(true);
     try {
       // Correctif 2026-09-16 (spec "PROFIL REPRÉSENTANT" section 3) : tous

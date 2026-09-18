@@ -57,6 +57,7 @@ const OPTIONAL_TEXT_FIELDS = [
   "vatNumber",
   "iban",
   "bic",
+  "deliveryNote",
 ];
 
 export function accountPayloadFromForm(form) {
@@ -100,6 +101,7 @@ export function emptyAccountForm() {
     iban: "",
     bic: "",
     sepaMandateStatus: "NON_RENSEIGNE",
+    deliveryNote: "",
   };
 }
 
@@ -193,7 +195,10 @@ export default function AccountFormFields({
         </div>
       </div>
 
-      <p className="cc-section-label">{t("account.billingAddress")}</p>
+      <p className="cc-section-label">
+        {t("account.billingAddress")}
+        {t("account.billingAddressRequiredSuffix")}
+      </p>
       <div className="field">
         <input
           placeholder={t("clients.addressStreet")}
@@ -244,6 +249,15 @@ export default function AccountFormFields({
       </div>
 
       <div className="field">
+        <label>{t("account.deliveryNote")}</label>
+        <textarea
+          placeholder={t("account.deliveryNotePlaceholder")}
+          value={form.deliveryNote}
+          onChange={(e) => setField("deliveryNote", e.target.value)}
+        />
+      </div>
+
+      <div className="field">
         <label>{t("account.contact")}</label>
         <input value={form.contactName} onChange={(e) => setField("contactName", e.target.value)} />
       </div>
@@ -286,7 +300,10 @@ export default function AccountFormFields({
       <p className="cc-section-label">{t("clients.legalInfoTitle")}</p>
       <div className="form-row">
         <div className="field">
-          <label>{taxIdLabel}</label>
+          <label>
+            {taxIdLabel}
+            {t("account.taxIdRequiredSuffix")}
+          </label>
           <input value={form.taxId} onChange={(e) => setField("taxId", e.target.value)} />
         </div>
         <div className="field">
