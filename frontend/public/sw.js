@@ -13,7 +13,14 @@
 //     silencieusement "réussir" avec une réponse en cache périmée. C'est du
 //     lecture-seule hors-ligne, jamais de fausse impression d'écriture qui
 //     aurait fonctionné.
-const CACHE_NAME = "moken-crm-v1";
+// Correctif 2026-09-22 (diagnostic "le site ne s'affiche pas/plus après un
+// déploiement", signalé en production) : nom de cache incrémenté pour que
+// `activate` ci-dessous (qui supprime tout cache dont la clé diffère de
+// CACHE_NAME) purge bien l'ancien cache "moken-crm-v1" — sans ce changement,
+// un navigateur qui avait déjà visité le site garde indéfiniment son ancien
+// document HTML en cache (cf. explication détaillée plus bas sur le
+// changement de stratégie pour les navigations).
+const CACHE_NAME = "moken-crm-v2";
 
 // Endpoints GET dont on accepte de servir une réponse en cache si le réseau
 // échoue — seulement des lectures sans effet de bord, jamais un endpoint qui
@@ -62,6 +69,30 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.startsWith("/api/")) {
     if (!isOfflineReadableApi(url.pathname)) return; // laisse passer sans interception
+    event.respondWith(networkFirstWithCache(request));
+    return;
+  }
+
+  // BUG RÉEL CORRIGÉ (2026-09-22, "le site ne s'affiche pas sur desktop"
+  // signalé juste après un déploiement) : une navigation de page (chargement
+  // de "/", ou d'une route SPA comme "/clients" tapée/rechargée directement)
+  // passait par cacheFirstWithNetwork comme le reste — donc servait le
+  // document HTML tel qu'il était en cache lors de la visite PRÉCÉDENTE, sans
+  // attendre le réseau. Or chaque `vite build` change le nom des fichiers
+  // JS/CSS (hash de contenu, cf. dist/assets/index-<hash>.js) et l'ancien
+  // fichier n'existe plus après un nouveau déploiement : un navigateur ayant
+  // déjà visité le site avant ce déploiement recevait donc un HTML pointant
+  // vers un bundle qui n'existe plus -> 404 -> page blanche, jusqu'à ce que le
+  // rafraîchissement en arrière-plan (stale-while-revalidate) se termine —
+  // pas fiable, et jamais avant le premier chargement cassé. Une navigation
+  // (request.mode === "navigate") repart donc désormais TOUJOURS du réseau en
+  // priorité, avec repli sur le cache uniquement si hors-ligne — c'est
+  // exactement le comportement réseau-prioritaire déjà utilisé pour les
+  // lectures API ci-dessus, appliqué ici au document HTML lui-même. Les
+  // fichiers JS/CSS/police restent en cache-first plus bas : eux sont
+  // immuables pour une URL donnée (le hash change, jamais le contenu d'un
+  // hash donné), donc sans risque de péremption.
+  if (request.mode === "navigate") {
     event.respondWith(networkFirstWithCache(request));
     return;
   }
