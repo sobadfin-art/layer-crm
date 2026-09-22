@@ -549,6 +549,18 @@ export default function AccountDetail() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
         <div>
           <h1 className="page-title">{account.name}</h1>
+          {/* Correctif 2026-09-22 (demande client — "faire apparaître dans la
+              fiche les deux noms") : le nom commercial n'était visible qu'en
+              bas de fiche, noyé parmi les autres champs (cf. section
+              "read-mode" plus loin, conservée telle quelle) — jamais à côté du
+              nom, contrairement au listing "Clients & prospects" où les deux
+              noms sont déjà affichés ensemble. Même style que là-bas
+              (.account-nom-commercial), directement sous le titre. */}
+          {account.nomCommercial && (
+            <p className="account-nom-commercial" style={{ marginTop: -4, marginBottom: 6 }}>
+              {account.nomCommercial}
+            </p>
+          )}
           <p className="page-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {account.type === "CLIENT" ? t("account.client") : t("account.prospect")} · {account.countryName}
             <span className="stage-badge">{t(`pipelineStage.${account.pipelineStage}`) || account.pipelineStage}</span>
