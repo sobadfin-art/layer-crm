@@ -561,6 +561,15 @@ export default function AccountDetail() {
               {account.nomCommercial}
             </p>
           )}
+          {/* Correctif 2026-09-22 (suite — "ajoute le nom du magasin à
+              l'affichage") : même principe que ci-dessus, étendu au nom du
+              magasin (storeName), désormais lui aussi recherchable (cf.
+              lib/clientSearch.js). */}
+          {account.storeName && (
+            <p className="account-nom-commercial" style={{ marginTop: -4, marginBottom: 6 }}>
+              {account.storeName}
+            </p>
+          )}
           <p className="page-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {account.type === "CLIENT" ? t("account.client") : t("account.prospect")} · {account.countryName}
             <span className="stage-badge">{t(`pipelineStage.${account.pipelineStage}`) || account.pipelineStage}</span>

@@ -35,6 +35,7 @@ export default function ClientSearchPicker({ accounts, value, onChange, allowNon
         <div className="account-row" style={{ cursor: "default" }}>
           <div className="account-name">{selected.name}</div>
           {selected.nomCommercial && <div className="account-nom-commercial">{selected.nomCommercial}</div>}
+          {selected.storeName && <div className="account-nom-commercial">{selected.storeName}</div>}
           <button type="button" className="btn outline" onClick={() => onChange("")}>
             {t("clientSearchPicker.change")}
           </button>
@@ -62,6 +63,7 @@ export default function ClientSearchPicker({ accounts, value, onChange, allowNon
             <div className="account-row" key={a.id} style={{ cursor: "pointer" }} onClick={() => onChange(a.id)}>
               <div className="account-name">{a.name}</div>
               {a.nomCommercial && <div className="account-nom-commercial">{a.nomCommercial}</div>}
+              {a.storeName && <div className="account-nom-commercial">{a.storeName}</div>}
             </div>
           ))}
         </div>

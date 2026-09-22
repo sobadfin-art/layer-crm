@@ -173,6 +173,7 @@ export default function NewOrderQuickAccess() {
                         <div>
                           <div className="account-name">{a.name}</div>
                           {a.nomCommercial && <div className="account-nom-commercial">{a.nomCommercial}</div>}
+                          {a.storeName && <div className="account-nom-commercial">{a.storeName}</div>}
                           <div className="account-meta">{a.countryName || t("newOrderQuickAccess.noCountry")}</div>
                         </div>
                         <span className="typology-badge">{t(a.type === "CLIENT" ? "account.client" : "account.prospect")}</span>

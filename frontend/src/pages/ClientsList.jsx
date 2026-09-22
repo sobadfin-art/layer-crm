@@ -272,6 +272,13 @@ export default function ClientsList() {
                   que ce soit clair pourquoi la fiche est ressortie, pas
                   seulement en cas de match. */}
               {a.nomCommercial && <div className="account-nom-commercial">{a.nomCommercial}</div>}
+              {/* Correctif 2026-09-22 (suite — "ajoute le nom du magasin à
+                  l'affichage") : même raisonnement que ci-dessus, étendu au
+                  nom du magasin (storeName), désormais recherchable lui aussi
+                  (cf. lib/clientSearch.js) — sans cet affichage, un résultat
+                  qui ne matche QUE via son nom de magasin apparaîtrait sans
+                  aucune indication de pourquoi il est ressorti. */}
+              {a.storeName && <div className="account-nom-commercial">{a.storeName}</div>}
               <div className="account-meta">
                 <MapPin size={11} /> {a.countryName || a.countryCode}
                 <span className="typology-badge">{t(`typology.${a.typology}`)}</span>
