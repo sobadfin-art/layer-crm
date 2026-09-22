@@ -4,6 +4,24 @@ import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { dateTime, shortDate } from "../lib/format.js";
+import ClientSearchPicker from "../components/ClientSearchPicker.jsx";
+
+// Mêmes valeurs que le backend (backend/src/lib/interactionTypes.js) et que
+// AccountDetail.jsx (qui les redéfinit aussi localement plutôt que de les
+// importer, aucun module partagé côté frontend n'existe pour ça) — à garder
+// synchronisé si l'énum change côté serveur.
+const INTERACTION_TYPES = ["VISITE", "APPEL", "EMAIL", "RDV_COURTOISIE", "SAV", "AUTRE"];
+
+// Correctif 2026-09-22 (demande client — "Création de RDV et de tâches avec
+// allocation client directe, depuis l'Agenda") : le RDV créé depuis l'Agenda
+// utilise EXACTEMENT les mêmes champs que le formulaire de planification déjà
+// présent sur la fiche client (AccountDetail.jsx#handlePlanRdv — objet, type
+// via INTERACTION_TYPES, date, heure) et le même endpoint POST /api/tasks
+// avec type: "RDV" — donc la même structure de données, la même validation
+// serveur (accountId obligatoire pour un RDV, cf. tasks.js) et les mêmes
+// règles de visibilité par rôle. Seule différence : le client est choisi ici
+// via ClientSearchPicker (composant réutilisable du point 1) plutôt qu'être
+// implicite à la fiche déjà ouverte.
 
 // Agenda — deux sous-vues fidèles à la maquette (docs/prototype-crm-commercial.jsx,
 // view === "agenda") : "Rendez-vous" (issus de GET /api/dashboard/rdv, qui
@@ -44,6 +62,17 @@ export default function Agenda() {
   const [newTaskAccountId, setNewTaskAccountId] = useState("");
   const [newTaskDueDate, setNewTaskDueDate] = useState("");
   const [creatingTask, setCreatingTask] = useState(false);
+
+  // Formulaire "Créer un RDV" (point 3) — replie/déplie, mêmes champs que
+  // AccountDetail.jsx#handlePlanRdv (cf. commentaire en tête de fichier).
+  const [newRdvOpen, setNewRdvOpen] = useState(false);
+  const [newRdvAccountId, setNewRdvAccountId] = useState("");
+  const [newRdvTitle, setNewRdvTitle] = useState("");
+  const [newRdvType, setNewRdvType] = useState("");
+  const [newRdvDate, setNewRdvDate] = useState("");
+  const [newRdvTime, setNewRdvTime] = useState("");
+  const [savingRdv, setSavingRdv] = useState(false);
+  const [rdvCreateError, setRdvCreateError] = useState(null);
 
   const loadRdv = useCallback(async () => {
     setLoadingRdv(true);
@@ -136,6 +165,57 @@ export default function Agenda() {
     }
   }
 
+  // Mêmes règles que handlePlanRdv (AccountDetail.jsx) : titre + date
+  // obligatoires, POST /api/tasks avec type: "RDV" (le serveur refuse un RDV
+  // sans accountId, cf. tasks.js — d'où la validation client identique ici),
+  // rdvSubtype optionnel issu de INTERACTION_TYPES. Seule différence : le
+  // compte est choisi explicitement via ClientSearchPicker plutôt qu'implicite
+  // à la fiche déjà ouverte.
+  function openNewRdvForm() {
+    setNewRdvOpen(true);
+    setRdvCreateError(null);
+  }
+
+  function closeNewRdvForm() {
+    setNewRdvOpen(false);
+    setRdvCreateError(null);
+    setNewRdvAccountId("");
+    setNewRdvTitle("");
+    setNewRdvType("");
+    setNewRdvDate("");
+    setNewRdvTime("");
+  }
+
+  async function handleCreateRdv(e) {
+    e.preventDefault();
+    if (!newRdvAccountId) {
+      setRdvCreateError(t("agenda.newRdvClientRequired"));
+      return;
+    }
+    if (!newRdvTitle.trim() || !newRdvDate) {
+      setRdvCreateError(t("account.planMissing"));
+      return;
+    }
+    setRdvCreateError(null);
+    setSavingRdv(true);
+    try {
+      const dueDate = new Date(`${newRdvDate}T${newRdvTime || "09:00"}:00`).toISOString();
+      await api.post("/tasks", {
+        title: newRdvTitle.trim(),
+        dueDate,
+        accountId: newRdvAccountId,
+        type: "RDV",
+        rdvSubtype: newRdvType || null,
+      });
+      closeNewRdvForm();
+      await loadRdv();
+    } catch (err) {
+      setRdvCreateError(err.message);
+    } finally {
+      setSavingRdv(false);
+    }
+  }
+
   const pendingTasks = taskList.filter((tk) => !tk.done);
   const doneTasks = taskList.filter((tk) => tk.done);
 
@@ -224,6 +304,58 @@ export default function Agenda() {
 
       {subview === "rdv" && (
         <>
+          <div className="panel">
+            {!newRdvOpen ? (
+              <button className="btn primary" type="button" onClick={openNewRdvForm}>
+                {t("agenda.newRdvButton")}
+              </button>
+            ) : (
+              <form onSubmit={handleCreateRdv}>
+                <div className="field">
+                  <label>{t("agenda.newRdvClientLabel")}</label>
+                  <ClientSearchPicker accounts={accounts} value={newRdvAccountId} onChange={setNewRdvAccountId} />
+                </div>
+                <div className="field">
+                  <input
+                    placeholder={t("account.planTitlePlaceholder")}
+                    value={newRdvTitle}
+                    onChange={(e) => setNewRdvTitle(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label>{t("account.planTypeLabel")}</label>
+                  <select value={newRdvType} onChange={(e) => setNewRdvType(e.target.value)}>
+                    <option value="">{t("directeurDashboard.objectiveRepChoose")}</option>
+                    {INTERACTION_TYPES.map((ty) => (
+                      <option key={ty} value={ty}>
+                        {t(`interactionType.${ty}`)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <div className="field">
+                    <label>{t("account.planDate")}</label>
+                    <input type="date" value={newRdvDate} onChange={(e) => setNewRdvDate(e.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label>{t("account.planTime")}</label>
+                    <input type="time" value={newRdvTime} onChange={(e) => setNewRdvTime(e.target.value)} />
+                  </div>
+                </div>
+                {rdvCreateError && <p className="error-text">{rdvCreateError}</p>}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn primary" type="submit" disabled={savingRdv}>
+                    {savingRdv ? t("account.planSaving") : t("account.planSubmit")}
+                  </button>
+                  <button className="btn outline" type="button" onClick={closeNewRdvForm}>
+                    {t("agenda.newRdvCancel")}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+
           {rdvError && <p className="error-text">{rdvError}</p>}
           {!loadingRdv && rdvList.length === 0 && !rdvError && <p className="empty-state">{t("agenda.rdvEmpty")}</p>}
 
@@ -247,38 +379,45 @@ export default function Agenda() {
       {subview === "taches" && (
         <>
           <div className="panel">
-            <form onSubmit={handleCreateTask} className="filter-row" style={{ marginBottom: 0, alignItems: "center" }}>
-              <input
-                placeholder={t("agenda.newTaskTitlePlaceholder")}
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                style={{
-                  flex: 1,
-                  minWidth: 160,
-                  padding: "8px 10px",
-                  border: "1px solid var(--line)",
-                  borderRadius: 5,
-                  fontSize: 13,
-                  fontFamily: "inherit",
-                }}
-              />
-              <select value={newTaskAccountId} onChange={(e) => setNewTaskAccountId(e.target.value)}>
-                <option value="">{t("agenda.newTaskAccountNone")}</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="date"
-                value={newTaskDueDate}
-                onChange={(e) => setNewTaskDueDate(e.target.value)}
-                style={{ padding: "8px 10px", border: "1px solid var(--line)", borderRadius: 5, fontSize: 13, fontFamily: "inherit" }}
-              />
-              <button className="btn primary" type="submit" disabled={creatingTask || !newTaskTitle.trim()}>
-                {creatingTask ? t("agenda.newTaskCreating") : t("agenda.newTaskSubmit")}
-              </button>
+            <form onSubmit={handleCreateTask}>
+              <div className="filter-row" style={{ marginBottom: 10, alignItems: "center" }}>
+                <input
+                  placeholder={t("agenda.newTaskTitlePlaceholder")}
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: 160,
+                    padding: "8px 10px",
+                    border: "1px solid var(--line)",
+                    borderRadius: 5,
+                    fontSize: 13,
+                    fontFamily: "inherit",
+                  }}
+                />
+                <input
+                  type="date"
+                  value={newTaskDueDate}
+                  onChange={(e) => setNewTaskDueDate(e.target.value)}
+                  style={{ padding: "8px 10px", border: "1px solid var(--line)", borderRadius: 5, fontSize: 13, fontFamily: "inherit" }}
+                />
+                <button className="btn primary" type="submit" disabled={creatingTask || !newTaskTitle.trim()}>
+                  {creatingTask ? t("agenda.newTaskCreating") : t("agenda.newTaskSubmit")}
+                </button>
+              </div>
+              {/* Correctif 2026-09-22 (point 3) : ClientSearchPicker remplace le
+                  <select> à plat — même comportement "Moi-même si aucun client
+                  sélectionné" qu'avant (allowNone + noneLabel), déjà le cas
+                  pour une tâche créée depuis la fiche client. */}
+              <div className="field">
+                <ClientSearchPicker
+                  accounts={accounts}
+                  value={newTaskAccountId}
+                  onChange={setNewTaskAccountId}
+                  allowNone
+                  noneLabel={t("agenda.newTaskAccountNone")}
+                />
+              </div>
             </form>
           </div>
 

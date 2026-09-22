@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import AccountFormFields, { accountPayloadFromForm, emptyAccountForm } from "./AccountFormFields.jsx";
+import { filterAccountsBySearch } from "../lib/clientSearch.js";
 
 // Parcours C — "Accès rapide depuis le dashboard" (fiche corrective Parcours
 // de création de commande, 2026-09-16) : bouton "Nouvelle commande" visible
@@ -82,11 +83,12 @@ export default function NewOrderQuickAccess() {
     }
   }
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return accounts;
-    return accounts.filter((a) => [a.name, a.contactName, a.countryName].filter(Boolean).join(" ").toLowerCase().includes(q));
-  }, [accounts, search]);
+  // Correctif 2026-09-22 (demande client — "Recherche client par nom
+  // commercial ET raison sociale... composant réutilisable") : logique de
+  // correspondance déplacée dans lib/clientSearch.js (filterAccountsBySearch),
+  // partagée avec ClientsList.jsx et le nouveau ClientSearchPicker
+  // (Agenda.jsx, point 3) — comportement strictement identique à avant.
+  const filtered = useMemo(() => filterAccountsBySearch(accounts, search), [accounts, search]);
 
   function pick(account) {
     setOpen(false);
@@ -170,6 +172,7 @@ export default function NewOrderQuickAccess() {
                       <div className="account-row" key={a.id} style={{ cursor: "pointer" }} onClick={() => pick(a)}>
                         <div>
                           <div className="account-name">{a.name}</div>
+                          {a.nomCommercial && <div className="account-nom-commercial">{a.nomCommercial}</div>}
                           <div className="account-meta">{a.countryName || t("newOrderQuickAccess.noCountry")}</div>
                         </div>
                         <span className="typology-badge">{t(a.type === "CLIENT" ? "account.client" : "account.prospect")}</span>

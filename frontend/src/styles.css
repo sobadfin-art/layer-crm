@@ -989,6 +989,48 @@ body {
   font-size: 13.5px;
 }
 
+/* Correctif 2026-09-22 (ajustement demandé — écran "Clients & prospects") :
+   nom commercial affiché EN DESSOUS de la raison sociale sur les résultats de
+   recherche client (bloc propre plutôt qu'en ligne avec un tiret, pour
+   rester lisible même sur les noms longs) — poids/taille/couleur atténués
+   pour rester secondaire par rapport au nom principal. */
+.account-nom-commercial {
+  font-weight: 400;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 1px;
+}
+
+/* Correctif 2026-09-22 : composant réutilisable ClientSearchPicker
+   (Agenda.jsx — création de RDV/tâches avec allocation client directe).
+   Réutilise .account-row/.account-name/.account-nom-commercial pour un
+   rendu identique aux autres écrans de recherche client. */
+.client-search-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.client-search-picker-option {
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+.client-search-picker-option:hover {
+  background: #fafaf8;
+}
+
+.client-search-picker-results {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 8px;
+}
+
 .account-meta {
   font-size: 11.5px;
   color: var(--ink-soft);

@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import AccountFormFields, { accountPayloadFromForm, emptyAccountForm } from "../components/AccountFormFields.jsx";
+import { filterAccountsBySearch } from "../lib/clientSearch.js";
 
 // Liste des comptes (clients + prospects) — GET /api/accounts est déjà filtré
 // côté serveur selon le rôle (accountsScopeClause) : un représentant n'y voit
@@ -113,17 +114,19 @@ export default function ClientsList() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // Correctif 2026-09-22 (demande client — "Recherche client par nom
+  // commercial ET raison sociale... construis cette recherche comme un
+  // composant réutilisable") : la logique de correspondance texte
+  // (name/nomCommercial/contact/pays, insensible casse+accents) est
+  // désormais centralisée dans lib/clientSearch.js — filterAccountsBySearch()
+  // — partagée avec NewOrderQuickAccess.jsx et le nouveau ClientSearchPicker
+  // (réutilisé depuis Agenda.jsx, point 3). Le filtre type/représentant reste
+  // ici, propre à cet écran.
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return accounts.filter((a) => {
+    return filterAccountsBySearch(accounts, search).filter((a) => {
       if (typeFilter !== "all" && a.type !== typeFilter) return false;
       if (repFilter !== "all" && a.ownerRepId !== repFilter && a.masterRepId !== repFilter) return false;
-      if (!q) return true;
-      return (
-        a.name.toLowerCase().includes(q) ||
-        (a.contactName && a.contactName.toLowerCase().includes(q)) ||
-        (a.countryName && a.countryName.toLowerCase().includes(q))
-      );
+      return true;
     });
   }, [accounts, search, typeFilter, repFilter]);
 
@@ -261,6 +264,14 @@ export default function ClientsList() {
           <div className="account-row" key={a.id} onClick={() => navigate(`/clients/${a.id}`)}>
             <div>
               <div className="account-name">{a.name}</div>
+              {/* Correctif 2026-09-22 (ajustement demandé — capture d'écran
+                  "Clients & prospects") : le nom commercial est affiché EN
+                  DESSOUS du nom principal (plus lisible qu'en ligne avec un
+                  tiret) — la recherche peut matcher sur l'un ou l'autre (name
+                  OU nomCommercial), donc les deux doivent être visibles pour
+                  que ce soit clair pourquoi la fiche est ressortie, pas
+                  seulement en cas de match. */}
+              {a.nomCommercial && <div className="account-nom-commercial">{a.nomCommercial}</div>}
               <div className="account-meta">
                 <MapPin size={11} /> {a.countryName || a.countryCode}
                 <span className="typology-badge">{t(`typology.${a.typology}`)}</span>

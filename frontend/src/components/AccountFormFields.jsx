@@ -58,6 +58,7 @@ const OPTIONAL_TEXT_FIELDS = [
   "iban",
   "bic",
   "deliveryNote",
+  "nomCommercial",
 ];
 
 export function accountPayloadFromForm(form) {
@@ -102,6 +103,7 @@ export function emptyAccountForm() {
     bic: "",
     sepaMandateStatus: "NON_RENSEIGNE",
     deliveryNote: "",
+    nomCommercial: "",
   };
 }
 
@@ -121,6 +123,14 @@ export default function AccountFormFields({
       <div className="field">
         <label>{t("clients.newAccountName")}</label>
         <input value={form.name} onChange={(e) => setField("name", e.target.value)} />
+      </div>
+      <div className="field">
+        <label>{t("account.nomCommercial")}</label>
+        <input
+          placeholder={t("account.nomCommercialPlaceholder")}
+          value={form.nomCommercial}
+          onChange={(e) => setField("nomCommercial", e.target.value)}
+        />
       </div>
       <div className="field">
         <label>{t("account.storeName")}</label>

@@ -304,6 +304,7 @@ export default function AccountDetail() {
     setEditError(null);
     setEditForm({
       name: account.name || "",
+      nomCommercial: account.nomCommercial || "",
       storeName: account.storeName || "",
       typology: account.typology || "AUTRE",
       billingStreet: account.billingStreet || "",
@@ -640,6 +641,10 @@ export default function AccountDetail() {
           </h3>
           {!editMode ? (
             <>
+              <div className="task-row">
+                <span>{t("account.nomCommercial")}</span>
+                <span>{account.nomCommercial || t("account.noValue")}</span>
+              </div>
               {account.storeName && (
                 <div className="task-row">
                   <span>{t("account.storeName")}</span>
@@ -718,6 +723,16 @@ export default function AccountDetail() {
                   <label>{t("clients.newAccountName")}</label>
                   <input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} />
                 </div>
+                <div className="field">
+                  <label>{t("account.nomCommercial")}</label>
+                  <input
+                    placeholder={t("account.nomCommercialPlaceholder")}
+                    value={editForm.nomCommercial}
+                    onChange={(e) => setEditForm((f) => ({ ...f, nomCommercial: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="form-row">
                 <div className="field">
                   <label>{t("account.storeName")}</label>
                   <input value={editForm.storeName} onChange={(e) => setEditForm((f) => ({ ...f, storeName: e.target.value }))} />
