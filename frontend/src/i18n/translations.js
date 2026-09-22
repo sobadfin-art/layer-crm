@@ -589,6 +589,9 @@ export const translations = {
       none: "Moi-même",
       empty: "Aucun client ne correspond à cette recherche.",
     },
+    productPhotoCarousel: {
+      unavailable: "Photo indisponible",
+    },
     orders: {
       title: "Commandes",
       subtitle: "Historique de tes commandes — les plus récentes en premier.",
@@ -1542,6 +1545,9 @@ export const translations = {
       none: "Myself",
       empty: "No client matches this search.",
     },
+    productPhotoCarousel: {
+      unavailable: "Photo unavailable",
+    },
     orders: {
       title: "Orders",
       subtitle: "Your order history — most recent first.",
@@ -2494,6 +2500,9 @@ export const translations = {
       searchPlaceholder: "Buscar un cliente (nombre de la tienda, razón social o nombre comercial)...",
       none: "Yo mismo",
       empty: "Ningún cliente coincide con esta búsqueda.",
+    },
+    productPhotoCarousel: {
+      unavailable: "Foto no disponible",
     },
     orders: {
       title: "Pedidos",

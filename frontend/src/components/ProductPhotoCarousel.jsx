@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
 import PhotoLightbox from "./PhotoLightbox.jsx";
+import { useI18n } from "../i18n/I18nContext.jsx";
 
 // Carrousel photo pour les vignettes produit du catalogue (fiche corrective
 // Administrateur V3, section carrousel) : swipe mobile/trackpad, flèches sur
@@ -19,17 +20,39 @@ import PhotoLightbox from "./PhotoLightbox.jsx";
 // pourra activer le carroussel en plus grand. prevoir une croix pour
 // fermer") : un clic sur l'image ouvre PhotoLightbox.jsx avec la galerie
 // complète, ouverte sur la photo actuellement affichée dans la vignette.
+// Correctif 2026-09-22 (demande client — "certaines photos ne s'affichent
+// pas dans le catalogue") : diagnostic du protocole de stockage (R2 en
+// production, cf. routes/products.js) n'a révélé aucune anomalie — le
+// symptôme (icône "image cassée" du navigateur, PAS la case grise vide de
+// la ligne juste au-dessus) veut dire que `photo_url` est bien renseignée
+// en base mais que le fichier qu'elle désigne n'existe plus (typiquement,
+// une fiche pas encore réimportée depuis l'incident de stockage du
+// 2026-09-17, cf. commentaire products.js "423 photos cassées"). Plutôt que
+// l'icône brute du navigateur (perturbante, ne dit rien à l'utilisateur),
+// on affiche désormais un repli explicite dès que le chargement échoue —
+// et, si la galerie a plusieurs photos, uniquement CETTE vignette bascule
+// en repli (les autres continuent de s'afficher normalement).
 export default function ProductPhotoCarousel({ photoUrls, fallbackUrl, alt }) {
+  const { t } = useI18n();
   const urls = photoUrls && photoUrls.length > 0 ? photoUrls : fallbackUrl ? [fallbackUrl] : [];
   const [index, setIndex] = useState(0);
   const [touchStartX, setTouchStartX] = useState(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [failedUrls, setFailedUrls] = useState(() => new Set());
 
   if (urls.length === 0) {
     return <div style={{ height: 100, background: "var(--bg)" }} />;
   }
 
   const safeIndex = Math.min(index, urls.length - 1);
+  const currentUrl = urls[safeIndex];
+  const currentFailed = failedUrls.has(currentUrl);
+
+  function handleError() {
+    // eslint-disable-next-line no-console
+    console.warn(`[ProductPhotoCarousel] Photo introuvable (404/erreur réseau) : ${currentUrl}`);
+    setFailedUrls((prev) => (prev.has(currentUrl) ? prev : new Set(prev).add(currentUrl)));
+  }
 
   function go(delta, e) {
     e.stopPropagation();
@@ -68,15 +91,23 @@ export default function ProductPhotoCarousel({ photoUrls, fallbackUrl, alt }) {
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
     >
-      <img
-        src={urls[safeIndex]}
-        alt={alt}
-        style={{ cursor: "zoom-in" }}
-        onClick={(e) => {
-          e.stopPropagation();
-          setLightboxOpen(true);
-        }}
-      />
+      {currentFailed ? (
+        <div className="product-photo-unavailable" title={currentUrl}>
+          <ImageOff size={18} />
+          <span>{t("productPhotoCarousel.unavailable")}</span>
+        </div>
+      ) : (
+        <img
+          src={currentUrl}
+          alt={alt}
+          style={{ cursor: "zoom-in" }}
+          onError={handleError}
+          onClick={(e) => {
+            e.stopPropagation();
+            setLightboxOpen(true);
+          }}
+        />
+      )}
       {urls.length > 1 && (
         <>
           <button type="button" className="carousel-arrow left" onClick={(e) => go(-1, e)} aria-label="Previous photo">

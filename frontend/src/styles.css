@@ -444,6 +444,36 @@ body {
   background: var(--bg);
 }
 
+/* Repli quand la photo échoue à charger (2026-09-22) — remplace l'icône
+   brute "image cassée" du navigateur par un repli explicite et discret,
+   cohérent avec le reste de l'UI (mêmes tons que .empty-state). */
+.product-photo-unavailable {
+  width: 100%;
+  height: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: var(--bg);
+  color: #8892a0;
+  font-size: 10px;
+  text-align: center;
+  padding: 0 6px;
+}
+
+.lightbox-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #8892a0;
+  font-size: 14px;
+  min-height: 200px;
+  min-width: 280px;
+}
+
 .carousel-arrow {
   position: absolute;
   top: 50%;

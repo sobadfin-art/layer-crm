@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
 import { largePhotoUrl } from "../lib/photoUrl";
+import { useI18n } from "../i18n/I18nContext.jsx";
 
 // Vue "photo en grand" (demande directe : "rendre cliquable la photo et
 // faire en sorte de pouvoir voir le produit en plus grand. On pourra
@@ -13,7 +14,11 @@ import { largePhotoUrl } from "../lib/photoUrl";
 // avec ses propres classes `.lightbox-*` pour l'affichage plein écran de
 // la photo et la navigation carrousel en grand.
 export default function PhotoLightbox({ photos, initialIndex = 0, alt, onClose }) {
+  const { t } = useI18n();
   const [index, setIndex] = useState(initialIndex);
+  // Même correctif que ProductPhotoCarousel.jsx (2026-09-22) : repli propre
+  // si la photo en grand échoue aussi, plutôt que l'icône brute du navigateur.
+  const [failedUrls, setFailedUrls] = useState(() => new Set());
 
   // Toujours repartir de la photo affichée dans la vignette au moment du
   // clic, y compris si le lightbox était déjà monté pour une autre fiche.
@@ -39,6 +44,8 @@ export default function PhotoLightbox({ photos, initialIndex = 0, alt, onClose }
 
   if (!photos || photos.length === 0) return null;
   const safeIndex = Math.min(index, photos.length - 1);
+  const currentLargeUrl = largePhotoUrl(photos[safeIndex]);
+  const currentFailed = failedUrls.has(currentLargeUrl);
 
   function go(delta, e) {
     e.stopPropagation();
@@ -48,7 +55,21 @@ export default function PhotoLightbox({ photos, initialIndex = 0, alt, onClose }
   return (
     <div className="lightbox-overlay" onClick={onClose}>
       <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
-        <img src={largePhotoUrl(photos[safeIndex])} alt={alt} className="lightbox-image" />
+        {currentFailed ? (
+          <div className="lightbox-image lightbox-unavailable">
+            <ImageOff size={32} />
+            <span>{t("productPhotoCarousel.unavailable")}</span>
+          </div>
+        ) : (
+          <img
+            src={currentLargeUrl}
+            alt={alt}
+            className="lightbox-image"
+            onError={() =>
+              setFailedUrls((prev) => (prev.has(currentLargeUrl) ? prev : new Set(prev).add(currentLargeUrl)))
+            }
+          />
+        )}
         {photos.length > 1 && (
           <>
             <button type="button" className="lightbox-arrow left" onClick={(e) => go(-1, e)} aria-label="Photo précédente">
