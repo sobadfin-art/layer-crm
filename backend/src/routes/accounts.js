@@ -100,6 +100,11 @@ const createSchema = z.object({
   // champ existant, jamais obligatoire (cf. migration
   // 022_accounts_delivery_note.sql et fiche "UPDATE CRM" évolution 1).
   deliveryNote: z.string().optional().nullable(),
+  // Nom commercial — champ dédié, distinct de `name` (raison sociale) et de
+  // `storeName` (usage différent, cf. migration
+  // 023_accounts_nom_commercial.sql), jamais obligatoire. Utilisé par la
+  // recherche client (ClientsList.jsx, NewOrderQuickAccess.jsx).
+  nomCommercial: z.string().optional().nullable(),
 });
 
 const updateSchema = createSchema.partial().extend({
@@ -316,7 +321,7 @@ accountsRouter.post(
         shipping_street, shipping_zip, shipping_city,
         contact_name, phone, phone_country_code, mobile, mobile_country_code, email,
         tax_id, vat_number, iban, bic, sepa_mandate_status, regime_fiscal,
-        delivery_note,
+        delivery_note, nom_commercial,
         pipeline_stage, owner_rep_id, master_rep_id
       ) VALUES (
         $1, $2, $3, $4, $5, $6,
@@ -324,8 +329,8 @@ accountsRouter.post(
         $10, $11, $12,
         $13, $14, $15, $16, $17, $18,
         $19, $20, $21, $22, $23, $24,
-        $25,
-        'Nouveau', $26, $27
+        $25, $26,
+        'Nouveau', $27, $28
       ) RETURNING *`,
       [
         data.type,
@@ -353,6 +358,7 @@ accountsRouter.post(
         data.sepaMandateStatus ?? "NON_RENSEIGNE",
         regimeFiscal,
         data.deliveryNote ?? null,
+        data.nomCommercial ?? null,
         ownerRepId,
         masterRepId,
       ]
@@ -431,6 +437,7 @@ accountsRouter.patch(
       "ownerRepId",
       "masterRepId",
       "deliveryNote",
+      "nomCommercial",
       ...Object.keys(addressFields),
       ...Object.keys(contactFields),
       ...Object.keys(financialFields),

@@ -20,7 +20,7 @@ import { healthRouter } from "./routes/health.js";
 import { meRouter } from "./routes/protected-demo.js";
 import { accountsRouter } from "./routes/accounts.js";
 import { interactionsRouter } from "./routes/interactions.js";
-import { attachmentsRouter } from "./routes/attachments.js";
+import { attachmentsRouter, attachmentFilesRouter } from "./routes/attachments.js";
 import { tasksRouter } from "./routes/tasks.js";
 import { catalogsRouter } from "./routes/catalogs.js";
 import { productsRouter, productPhotosRouter } from "./routes/products.js";
@@ -59,9 +59,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // un fichier local non protégé.
 app.use("/uploads/products", productPhotosRouter);
 
-// Pièces jointes de fiche client (cf. routes/attachments.js) — restent sur
-// disque local et servies statiquement ici (portée inchangée par ce
-// correctif, qui concerne uniquement les photos produit).
+// Pièces jointes de fiche client (cf. routes/attachments.js) — correctif
+// 2026-09-22 : même traitement que les photos produit ci-dessus (R2 quand
+// configuré, route authentifiée + vérification d'accès au compte propriétaire
+// plutôt que le middleware statique générique). Montée AVANT ce middleware
+// pour la même raison : ces requêtes ne doivent jamais retomber sur un
+// fichier local non protégé.
+app.use("/uploads/attachments", attachmentFilesRouter);
+
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.use("/api/health", healthRouter);

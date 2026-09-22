@@ -10,21 +10,64 @@ import { ROLES } from "../lib/roles.js";
 import { canAccessAccount } from "../lib/scope.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
+import {
+  isObjectStorageConfigured,
+  missingObjectStorageEnvVars,
+  putObject,
+  getObject,
+} from "../lib/objectStorage.js";
 
 // Pièces jointes de la fiche client (PDF Représentant section 4 : "Pièces
 // jointes : ajout de fichier et possibilité de prendre une photo") — table
-// `attachments` définie dès migration 001_init.sql mais jamais exposée par
-// une route jusqu'ici. Même schéma de stockage que les photos produit
-// (routes/products.js) : sur disque sous uploads/attachments, servi en
-// statique par server.js, jamais en base64 en base. "Prendre une photo"
+// `attachments` définie dès migration 001_init.sql. "Prendre une photo"
 // depuis un mobile est un détail d'UI (input file avec capture="environment")
 // — côté API c'est le même endpoint d'upload qu'un fichier classique.
+//
+// Correctif 2026-09-22 (demande client, point 2 — "même classe de bug que les
+// photos produit") : jusqu'ici ce fichier écrivait TOUJOURS sur le disque
+// local du conteneur (multer.diskStorage sans condition), et le fichier était
+// servi par le middleware express.static générique monté sur /uploads dans
+// server.js. Or Render (plan gratuit) l'a confirmé lui-même : "Disks are not
+// supported for free compute plans" — tout fichier écrit là est perdu à
+// chaque redémarrage (veille après 15 min d'inactivité, ou redéploiement).
+// C'est exactement le bug déjà diagnostiqué et corrigé pour les photos
+// produit le 2026-09-17 (cf. routes/products.js), jamais appliqué ici.
+// Correction : même pattern exact que products.js — bascule vers Cloudflare
+// R2 (stockage objet persistant, cf. lib/objectStorage.js) dès que les
+// variables R2_* sont présentes, fallback sur le disque local uniquement en
+// développement local sans identifiants R2 (jamais en production dès que les
+// variables sont posées sur Render). Le fichier est désormais servi par
+// `attachmentFilesRouter` ci-dessous (monté AVANT le middleware statique
+// générique, cf. server.js), qui exige une session valide ET vérifie que
+// l'utilisateur a accès au compte propriétaire (canAccessAccount, même règle
+// que GET/POST/DELETE ci-dessous) — avant ce correctif, l'URL d'une pièce
+// jointe était accessible SANS AUCUNE authentification via le middleware
+// statique générique ; effet de bord bienvenu de l'alignement sur le pattern
+// déjà validé des photos produit, pas une régression fonctionnelle (aucun
+// écran du CRM ne dépendait de cet accès non authentifié).
 export const attachmentsRouter = Router({ mergeParams: true });
+// Route de service (téléchargement d'une pièce jointe) — séparée
+// d'attachmentsRouter car montée sous /uploads/attachments dans server.js,
+// pas sous /api/accounts/:accountId/attachments (même principe que
+// productPhotosRouter dans routes/products.js).
+export const attachmentFilesRouter = Router();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ATTACHMENTS_DIR = path.join(__dirname, "../../uploads/attachments");
 fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
 export const ATTACHMENTS_URL_PREFIX = "/uploads/attachments/";
+
+const USE_R2 = isObjectStorageConfigured();
+if (USE_R2) {
+  console.log("[attachments] Pièces jointes stockées sur Cloudflare R2, accès via /uploads/attachments authentifié.");
+} else {
+  console.warn(
+    `[attachments] R2 non configuré (variables manquantes : ${missingObjectStorageEnvVars().join(
+      ", "
+    )}) — fallback sur le disque local, NON PERSISTANT en production. ` +
+      "À ne voir qu'en développement local."
+  );
+}
 
 const ACCOUNTS_MODULE_ROLES = [
   ROLES.REPRESENTANT,
@@ -48,14 +91,22 @@ const MIME_EXT = {
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
 };
 
+// Même principe que buildObjectKey dans routes/products.js : le nom de
+// fichier local ET la clé R2 partagent la même base
+// "<accountId>-<timestamp>-<random><ext>", seule la clé R2 porte en plus le
+// préfixe "attachments/" (répertoire logique du bucket).
+function buildObjectKey(req, file) {
+  const ext = MIME_EXT[file.mimetype] || path.extname(file.originalname || "") || "";
+  return `attachments/${req.params.accountId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${ext}`;
+}
+
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, ATTACHMENTS_DIR),
-    filename: (req, file, cb) => {
-      const ext = MIME_EXT[file.mimetype] || path.extname(file.originalname || "") || "";
-      cb(null, `${req.params.accountId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${ext}`);
-    },
-  }),
+  storage: USE_R2
+    ? multer.memoryStorage()
+    : multer.diskStorage({
+        destination: (req, file, cb) => cb(null, ATTACHMENTS_DIR),
+        filename: (req, file, cb) => cb(null, path.basename(buildObjectKey(req, file))),
+      }),
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (!MIME_EXT[file.mimetype]) {
@@ -73,6 +124,62 @@ async function loadAccountOr404(accountId, res) {
   }
   return rows[0];
 }
+
+// GET /uploads/attachments/:filename — montée directement à la racine (voir
+// server.js), PAS sous /api, pour rester compatible avec les URLs déjà en
+// base (`/uploads/attachments/...`) générées avant comme après ce correctif.
+// Contrairement aux photos produit (accessibles à tout utilisateur d'un des
+// ACCOUNTS_MODULE_ROLES, cf. products.js), une pièce jointe reste rattachée à
+// UN compte précis dont l'accès est scopé par rôle (canAccessAccount, même
+// règle que GET/POST/DELETE ci-dessus) — d'où la recherche en base pour
+// retrouver le compte propriétaire à partir du nom de fichier, avant de
+// décider d'autoriser le téléchargement.
+attachmentFilesRouter.get(
+  "/:filename",
+  requireAuth,
+  requireRole(...ACCOUNTS_MODULE_ROLES),
+  async (req, res) => {
+    // Jamais de traversée de dossier : uniquement le nom de fichier généré
+    // par buildObjectKey ci-dessus (aucun "/" ni "..").
+    const filename = path.basename(req.params.filename);
+    if (filename !== req.params.filename) {
+      return res.status(400).json({ error: "Nom de fichier invalide." });
+    }
+
+    const fileUrl = `${ATTACHMENTS_URL_PREFIX}${filename}`;
+    const { rows } = await query("SELECT account_id FROM attachments WHERE file_url = $1", [fileUrl]);
+    if (!rows[0]) return res.status(404).json({ error: "Pièce jointe introuvable." });
+    const account = await loadAccountOr404(rows[0].account_id, res);
+    if (!account) return;
+    if (!(await canAccessAccount(req.user, account))) {
+      return res.status(403).json({ error: "Accès refusé à ce fichier." });
+    }
+
+    if (USE_R2) {
+      try {
+        const { stream, contentType, contentLength } = await getObject({
+          key: `attachments/${filename}`,
+        });
+        if (contentType) res.setHeader("Content-Type", contentType);
+        if (contentLength != null) res.setHeader("Content-Length", contentLength);
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        stream.pipe(res);
+      } catch (err) {
+        if (err.name === "NoSuchKey" || err.$metadata?.httpStatusCode === 404) {
+          return res.status(404).json({ error: "Pièce jointe introuvable." });
+        }
+        throw err;
+      }
+      return;
+    }
+
+    const filePath = path.join(ATTACHMENTS_DIR, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Pièce jointe introuvable." });
+    }
+    res.sendFile(filePath);
+  }
+);
 
 // GET /api/accounts/:accountId/attachments
 attachmentsRouter.get(
@@ -115,7 +222,17 @@ attachmentsRouter.post(
   async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Fichier requis (champ 'file')." });
 
-    const fileUrl = `${ATTACHMENTS_URL_PREFIX}${req.file.filename}`;
+    let fileUrl;
+    if (USE_R2) {
+      const key = buildObjectKey(req, req.file);
+      await putObject({ key, body: req.file.buffer, contentType: req.file.mimetype });
+      // Même forme d'URL qu'en mode disque local ("/uploads/attachments/<fichier>")
+      // — jamais l'URL R2 elle-même. key = "attachments/<fichier>" -> on
+      // retire le préfixe "attachments/".
+      fileUrl = `${ATTACHMENTS_URL_PREFIX}${key.slice("attachments/".length)}`;
+    } else {
+      fileUrl = `${ATTACHMENTS_URL_PREFIX}${req.file.filename}`;
+    }
     const { rows } = await query(
       `INSERT INTO attachments (account_id, file_url, file_name, mime_type)
        VALUES ($1, $2, $3, $4) RETURNING *`,
