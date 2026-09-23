@@ -2440,3 +2440,52 @@ composant partagé).
     créer un compte de test avec une adresse connue juste après déploiement pour vérifier
     visuellement le point sur la carte, puis de lancer `npm run geocode-accounts` pour rattraper les
     fiches existantes et lire son résumé.
+
+## Rattrapage rétroactif sans accès Shell — écran Admin "Géocodage" (2026-09-23)
+
+Retour client après la mise en production de la fonctionnalité précédente : **"je n'ai pas pu me
+connecter à Shell sans upgrade de plan"** — `npm run geocode-accounts` (section précédente) suppose
+un accès Shell à l'instance Render, non inclus dans le palier gratuit du client. Ajout d'un écran
+Admin qui obtient le même résultat depuis le navigateur, sans rien nécessiter côté Render au-delà de
+ce qui est déjà déployé.
+
+- **Nouvel écran** `Administrateur → Géocodage` (`/geocodage`, `frontend/src/pages/
+  GeocodeRetroactive.jsx`) : affiche le nombre de fiches actives encore sans coordonnées, un bouton
+  "Lancer le géocodage" qui traite tout par lots de 15 (appels successifs à la route ci-dessous,
+  jamais un seul appel HTTP bloquant qui dépasserait son délai d'expiration vu la limite d'1 requête
+  Nominatim/seconde), avec statut en direct et résumé final identique à celui du script CLI
+  (converties / échecs faute d'adresse / échecs adresse non reconnue, détail nominatif). Même
+  principe que l'écran "Import photos en masse" déjà existant.
+- **Deux nouvelles routes**, réservées au rôle Administrateur (`routes/accounts.js`) :
+  - `GET /api/accounts/geocode-retroactive/count` — lecture pure (aucun effet de bord ; le nombre de
+    fiches restantes doit pouvoir s'afficher à l'arrivée sur l'écran sans déclencher de géocodage).
+  - `POST /api/accounts/geocode-retroactive?limit=…` (1 à 25, 10 par défaut) — traite un lot et
+    renvoie `{ processed, converted, failedNoAddress, failedNotFound, remaining, details }`.
+  - `lib/geocoding.js` factorisé en conséquence : `fetchUngeocodedAccounts()`, `countUngeocodedAccounts()`
+    et `geocodeAccountsBatch()` sont désormais partagés par la route HTTP **et** par `npm run
+    geocode-accounts` (toujours disponible tel quel pour un hébergeur qui, lui, offre un accès
+    Shell — aucune régression sur ce script).
+- **Correctif de fond apporté à cette occasion (migration `025_accounts_geocoded_at.sql`)** :
+  le critère "fiche restant à traiter" reposait initialement sur `latitude IS NULL AND longitude IS
+  NULL`. Or une fiche sans **aucune** adresse exploitable (ni livraison ni facturation renseignées)
+  ne peut par nature jamais obtenir de coordonnées : elle repassait donc le même test à chaque lot
+  suivant, sans jamais en sortir — `remaining` ne diminuait pas pour ce genre de fiche, et la boucle
+  `while (left > 0)` de l'écran Admin ne se serait jamais arrêtée sur une base contenant ne serait-ce
+  qu'une seule fiche sans adresse. Repéré par le test automatisé écrit pour cette fonctionnalité
+  (`remaining` ne diminuait pas de `processed` après un lot 100 % "sans adresse") avant toute
+  livraison, jamais en production. Corrigé en ajoutant une colonne `geocoded_at` (horodatage de la
+  **tentative**, posée que le géocodage réussisse ou non — distincte de `latitude`/`longitude`, qui
+  restent `NULL` en cas d'échec) : `fetchUngeocodedAccounts`/`countUngeocodedAccounts` filtrent
+  désormais sur `geocoded_at IS NULL`, si bien qu'une fiche sort définitivement du lot dès sa
+  première tentative, réussie ou non — le résumé continue de distinguer correctement les deux types
+  d'échec pour l'utilisateur.
+- **Testé** : suite API dédiée (10/10, y compris le cas qui a révélé le bug ci-dessus), un test de
+  "vidage" complet confirmant que la boucle s'arrête bien à `remaining = 0` et n'y revient jamais sur
+  un relancement immédiat, un test Playwright de bout en bout sur `/geocodage` avec un lot mixte
+  (une fiche sans adresse + une fiche avec adresse) confirmant que l'écran se termine et affiche le
+  bon résumé, ainsi que la suite de non-régression complète et la suite de recherche par nom de
+  magasin (aucune régression).
+- **Procédure de rattrapage mise à jour** pour un hébergement sans accès Shell : se connecter en
+  Administrateur, aller sur `Administrateur → Géocodage`, cliquer "Lancer le géocodage", attendre la
+  fin (le bouton indique la progression), lire le résumé affiché à l'écran — remplace entièrement
+  l'étape "se connecter en Shell et lancer `npm run geocode-accounts`" des instructions précédentes.
