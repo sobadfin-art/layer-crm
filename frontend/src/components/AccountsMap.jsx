@@ -1,22 +1,35 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 import { Map as MapIcon } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 
-// Bloc "Carte & tournées" — V1 volontairement NON géographique (décision
-// documentée, cf. README : aucune colonne lat/lng dans le schéma réel). Les 3
-// PDF qui le demandent (Directeur commercial section 2, Master Rep section 2,
-// Représentant section 1) sont explicites sur ce point : "l'optimisation de
-// tournée et la connexion Google Maps peuvent être traitées ultérieurement en
-// V2, mais le bloc, les filtres et les comptes doivent exister en V1" — la
-// maquette montre une zone de visualisation avec des points positionnés
-// illustrativement, pas une vraie carte. Ce composant reproduit donc une
-// zone de visualisation filtrable (Type / Typologie / Représentant), avec les
-// comptes positionnés de façon illustrative (groupés par typologie), jamais
-// une géolocalisation réelle.
+// Correctif 2026-09-23 (demande client — "Intègre une vraie carte
+// interactive (pas le SVG stylisé actuel) qui positionne tous les
+// clients/prospects, en remplacement de l'écran Carte existant chez le
+// représentant et le directeur") : remplace la visualisation illustrative
+// V1 (groupage par typologie, positions non géographiques, cf. historique
+// git de ce fichier) par une vraie carte Mapbox GL JS, un point par compte à
+// sa position réelle (latitude/longitude calculées par géocodage
+// automatique — cf. migration 024_accounts_geocoding.sql et
+// backend/src/lib/geocoding.js), coloré par TYPE (client/prospect) plutôt
+// que par typologie comme avant — cette dernière reste un filtre, pas un
+// code couleur, la distinction client/prospect étant l'information la plus
+// utile en un coup d'œil sur une carte de tournée.
 //
-// `scope` détermine le filtre représentant supplémentaire :
+// Fournisseur carte : Mapbox GL JS (token PUBLIC — c'est volontaire et
+// normal chez Mapbox qu'il soit visible dans le bundle JS livré au
+// navigateur, cf. échange du 2026-09-23 ; restreint par domaine côté
+// Mapbox pour éviter toute réutilisation ailleurs). Fournisseur géocodage :
+// Nominatim/OpenStreetMap, PAS Mapbox (cf. lib/geocoding.js côté backend
+// pour le détail complet de ce choix) — ce composant ne fait lui-même
+// jamais aucun géocodage, il ne fait qu'afficher les coordonnées déjà
+// calculées et stockées en base.
+//
+// `scope` détermine le filtre représentant supplémentaire (comportement
+// inchangé depuis la V1) :
 //  - "representant" : pas de filtre représentant (le rep ne voit que les
 //    siens, déjà garanti côté serveur par accountsScopeClause).
 //  - "masterrep" : filtre représentant limité à son équipe (fourni par
@@ -28,21 +41,21 @@ const TYPOLOGIES = [
   "CONCEPT_STORE", "USHIP", "BIKE_STORE", "KEY_ACCOUNT", "DISTRIBUTOR", "AUTRE",
 ];
 
-// Palette fixe par typologie — purement visuelle (aucune donnée géographique
-// réelle), pour distinguer les points au premier coup d'œil.
-const TYPOLOGY_COLORS = {
-  OPTICIEN: "#2f7d6b",
-  SURF_SHOP: "#1f7fbf",
-  FASHION_STORE: "#b1548a",
-  SKATE_SHOP: "#c9762c",
-  SKI_SHOP: "#5b6fd6",
-  CONCEPT_STORE: "#8a5cc4",
-  USHIP: "#2aa198",
-  BIKE_STORE: "#4c8c3a",
-  KEY_ACCOUNT: "#c9a227",
-  DISTRIBUTOR: "#c0392b",
-  AUTRE: "#7a8792",
+// Palette fixe par TYPE (client/prospect) — remplace l'ancienne palette par
+// typologie de la V1 (conservée nulle part ailleurs, la typologie reste un
+// filtre texte uniquement désormais). Reprend des teintes déjà présentes
+// dans le reste de l'UI (le vert de OPTICIEN pour "client" — relation
+// établie ; un orange proche de SURF_SHOP/DISTRIBUTOR pour "prospect" —
+// démarche en cours) plutôt que d'inventer une nouvelle palette.
+const TYPE_COLORS = {
+  CLIENT: "#2f7d6b",
+  PROSPECT: "#c9762c",
 };
+
+const FRANCE_CENTER = [2.3522, 46.6034];
+const FRANCE_ZOOM = 5;
+
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
 export default function AccountsMap({ scope, repOptions = [], masterRepOptions = [] }) {
   const { t } = useI18n();
@@ -55,6 +68,12 @@ export default function AccountsMap({ scope, repOptions = [], masterRepOptions =
   const [typologyFilter, setTypologyFilter] = useState("all");
   const [repFilter, setRepFilter] = useState("all");
   const [masterRepFilter, setMasterRepFilter] = useState("all");
+
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markersRef = useRef([]);
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
 
   useEffect(() => {
     let cancelled = false;
@@ -81,26 +100,97 @@ export default function AccountsMap({ scope, repOptions = [], masterRepOptions =
     };
   }, [typeFilter, typologyFilter, repFilter, masterRepFilter]);
 
-  // Positionnement illustratif : groupé par typologie (jamais une vraie
-  // coordonnée géographique) — chaque typologie occupe une zone stable de la
-  // surface, les comptes de cette typologie s'y répartissent en grille.
-  const grouped = useMemo(() => {
-    const byTypology = new Map();
-    for (const a of accounts) {
-      if (!byTypology.has(a.typology)) byTypology.set(a.typology, []);
-      byTypology.get(a.typology).push(a);
+  // Comptes avec des coordonnées exploitables (géocodage jamais fait ou
+  // sans résultat = latitude/longitude à null, cf. lib/geocoding.js côté
+  // serveur) — jamais une erreur bloquante, juste exclus du rendu carte ;
+  // le compteur `withoutCoordinates` en informe l'utilisateur sous la carte
+  // plutôt que de le laisser deviner pourquoi un compte n'apparaît pas.
+  const geocoded = useMemo(
+    () => accounts.filter((a) => typeof a.latitude === "number" && typeof a.longitude === "number"),
+    [accounts]
+  );
+  const withoutCoordinates = accounts.length - geocoded.length;
+
+  // Initialisation de la carte — une seule fois (le token ne change jamais
+  // en cours de session, et re-créer l'objet Map à chaque changement de
+  // filtre serait à la fois inutile et visuellement désagréable, la vue
+  // "sauterait" en permanence). React.StrictMode (main.jsx) monte/démonte
+  // les effets deux fois en développement — map.remove() au nettoyage est
+  // donc indispensable pour ne pas accumuler plusieurs instances Mapbox
+  // superposées sur le même conteneur.
+  useEffect(() => {
+    if (!MAPBOX_TOKEN || !mapContainerRef.current || mapRef.current) return;
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: "mapbox://styles/mapbox/streets-v12",
+      center: FRANCE_CENTER,
+      zoom: FRANCE_ZOOM,
+    });
+    map.addControl(new mapboxgl.NavigationControl(), "top-right");
+    mapRef.current = map;
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  // Marqueurs — recréés à chaque changement de `geocoded` (nouveau fetch
+  // filtré, ou premier chargement). Les marqueurs Mapbox sont des éléments
+  // DOM positionnés par-dessus la carte, indépendants du chargement des
+  // tuiles/du style : ils s'affichent même si le fond de carte met du temps
+  // à charger (connexion lente), jamais besoin d'attendre l'événement
+  // `load` de la carte pour les poser.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    for (const marker of markersRef.current) marker.remove();
+    markersRef.current = [];
+
+    for (const account of geocoded) {
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "map-marker";
+      el.style.setProperty("--marker-color", TYPE_COLORS[account.type] || "#7a8792");
+      el.title = `${account.name} — ${account.type === "CLIENT" ? t("account.client") : t("account.prospect")}`;
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        navigateRef.current(`/clients/${account.id}`);
+      });
+
+      const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
+        .setLngLat([account.longitude, account.latitude])
+        .addTo(map);
+      markersRef.current.push(marker);
     }
-    return TYPOLOGIES.filter((ty) => byTypology.has(ty)).map((ty) => ({ typology: ty, accounts: byTypology.get(ty) }));
-  }, [accounts]);
+
+    // Cadre automatiquement la vue sur les comptes affichés — évite de
+    // laisser l'utilisateur sur un centrage France par défaut alors que le
+    // filtre actif ne montre par exemple qu'un seul pays/représentant.
+    if (geocoded.length > 0) {
+      const bounds = new mapboxgl.LngLatBounds();
+      for (const account of geocoded) bounds.extend([account.longitude, account.latitude]);
+      map.fitBounds(bounds, { padding: 60, maxZoom: 12, duration: 400 });
+    }
+  }, [geocoded, t]);
+
+  if (!MAPBOX_TOKEN) {
+    return (
+      <div className="panel">
+        <h3>
+          <MapIcon size={14} /> {t("accountsMap.title")}
+        </h3>
+        <p className="empty-state">{t("accountsMap.notConfigured")}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="panel">
       <h3>
         <MapIcon size={14} /> {t("accountsMap.title")}
       </h3>
-      <p className="page-sub" style={{ marginTop: -6, marginBottom: 12 }}>
-        {t("accountsMap.v1Note")}
-      </p>
 
       <div className="filter-row">
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
@@ -138,34 +228,25 @@ export default function AccountsMap({ scope, repOptions = [], masterRepOptions =
         )}
       </div>
 
+      <div className="map-legend">
+        <span className="map-legend-item">
+          <span className="map-legend-dot" style={{ "--marker-color": TYPE_COLORS.CLIENT }} /> {t("account.client")}
+        </span>
+        <span className="map-legend-item">
+          <span className="map-legend-dot" style={{ "--marker-color": TYPE_COLORS.PROSPECT }} /> {t("account.prospect")}
+        </span>
+      </div>
+
       {loading && <p className="empty-state">{t("accountsMap.loading")}</p>}
       {error && <p className="error-text">{error}</p>}
+      {!loading && !error && accounts.length === 0 && <p className="empty-state">{t("accountsMap.empty")}</p>}
 
-      {!loading && !error && (
-        <div className="accounts-map-canvas">
-          {accounts.length === 0 && <p className="empty-state">{t("accountsMap.empty")}</p>}
-          {grouped.map((group) => (
-            <div className="map-typology-zone" key={group.typology}>
-              <div className="map-typology-label" style={{ color: TYPOLOGY_COLORS[group.typology] }}>
-                {t(`typology.${group.typology}`)} · {group.accounts.length}
-              </div>
-              <div className="map-dots">
-                {group.accounts.map((a) => (
-                  <button
-                    key={a.id}
-                    className="map-dot"
-                    style={{ "--dot-color": TYPOLOGY_COLORS[group.typology] }}
-                    title={`${a.name} — ${a.type === "CLIENT" ? t("account.client") : t("account.prospect")}`}
-                    onClick={() => navigate(`/clients/${a.id}`)}
-                  >
-                    <span className="map-dot-marker" />
-                    <span className="map-dot-label">{a.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+      <div className="accounts-map-container" ref={mapContainerRef} style={{ display: loading || error ? "none" : "block" }} />
+
+      {!loading && !error && withoutCoordinates > 0 && (
+        <p className="page-sub" style={{ marginTop: 8 }}>
+          {t("accountsMap.withoutCoordinates", { count: withoutCoordinates })}
+        </p>
       )}
     </div>
   );

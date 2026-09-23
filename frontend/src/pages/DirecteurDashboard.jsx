@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Globe } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate, dateTime } from "../lib/format.js";
-import AccountsMap from "../components/AccountsMap.jsx";
+// Chargement paresseux (2026-09-23) — cf. commentaire équivalent dans
+// Dashboard.jsx : mapbox-gl (~1.9 Mo minifié) ne doit jamais peser sur les
+// pages qui ne montrent pas la carte.
+const AccountsMap = lazy(() => import("../components/AccountsMap.jsx"));
 import { fiscalYearBounds, fiscalYearLabel } from "../lib/fiscalYear.js";
 import { useAgendaSummary } from "../hooks/useAgendaSummary.js";
 import { useObjectiveForm } from "../hooks/useObjectiveForm.jsx";
@@ -389,7 +392,11 @@ export default function DirecteurDashboard() {
       {/* Carte & tournées — directement sous "Performance par représentant"
           (PDF Directeur commercial section 2 : "Le bloc Carte & tournées doit
           apparaître directement sous « Performance par représentant »"). */}
-      {!loading && !error && <AccountsMap scope="directeur" repOptions={reps} masterRepOptions={masterReps} />}
+      {!loading && !error && (
+        <Suspense fallback={<div className="panel"><p className="empty-state">{t("accountsMap.loading")}</p></div>}>
+          <AccountsMap scope="directeur" repOptions={reps} masterRepOptions={masterReps} />
+        </Suspense>
+      )}
 
       {toast && <div className="toast">{toast}</div>}
     </>

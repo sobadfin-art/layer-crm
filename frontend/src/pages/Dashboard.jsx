@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate, dateTime } from "../lib/format.js";
 import { useAgendaSummary } from "../hooks/useAgendaSummary.js";
-import AccountsMap from "../components/AccountsMap.jsx";
+// Chargement paresseux (2026-09-23, passage à une vraie carte Mapbox GL
+// JS) : mapbox-gl pèse ~1.9 Mo une fois minifié, à ne jamais faire payer à
+// TOUTES les pages de l'application juste parce que le Dashboard affiche
+// la carte en bas de page — seul son propre chunk est chargé, et
+// uniquement au moment où ce composant est effectivement monté.
+const AccountsMap = lazy(() => import("../components/AccountsMap.jsx"));
 import NewOrderQuickAccess from "../components/NewOrderQuickAccess.jsx";
 import { fiscalYearBounds, fiscalYearLabel } from "../lib/fiscalYear.js";
 
@@ -256,7 +261,9 @@ export default function Dashboard() {
       {/* Carte & tournées — sous les tâches et rendez-vous du jour (PDF
           Représentant section 1 : "Le bloc doit être présent directement sur
           le Dashboard, sous les tâches et rendez-vous."). */}
-      <AccountsMap scope="representant" />
+      <Suspense fallback={<div className="panel"><p className="empty-state">{t("accountsMap.loading")}</p></div>}>
+        <AccountsMap scope="representant" />
+      </Suspense>
     </>
   );
 }

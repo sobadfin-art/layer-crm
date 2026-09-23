@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Globe } from "lucide-react";
 import { api } from "../api.js";
@@ -6,7 +6,10 @@ import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, dateTime } from "../lib/format.js";
 import { useAgendaSummary } from "../hooks/useAgendaSummary.js";
-import AccountsMap from "../components/AccountsMap.jsx";
+// Chargement paresseux (2026-09-23) — cf. commentaire équivalent dans
+// Dashboard.jsx : mapbox-gl (~1.9 Mo minifié) ne doit jamais peser sur les
+// pages qui ne montrent pas la carte.
+const AccountsMap = lazy(() => import("../components/AccountsMap.jsx"));
 import { fiscalYearLabel } from "../lib/fiscalYear.js";
 
 // Un objectif est "actif" si la date du jour tombe dans sa période.
@@ -244,7 +247,11 @@ export default function MasterRepDashboard() {
           Rendez-vous du jour / Tâches du jour"), filtrée à l'équipe affiliée
           uniquement (accountsScopeClause côté serveur garantit déjà ce
           périmètre). */}
-      {!loading && !error && <AccountsMap scope="masterrep" repOptions={reps} />}
+      {!loading && !error && (
+        <Suspense fallback={<div className="panel"><p className="empty-state">{t("accountsMap.loading")}</p></div>}>
+          <AccountsMap scope="masterrep" repOptions={reps} />
+        </Suspense>
+      )}
     </>
   );
 }
