@@ -9,7 +9,13 @@ import { getManagedRepUserIds } from "../lib/managedReps.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
 import { notifyUsers, userIdsWithRoles } from "../lib/notifications.js";
-import { geocodeAndStoreAccount, GEOCODING_TRIGGER_FIELDS } from "../lib/geocoding.js";
+import {
+  geocodeAndStoreAccount,
+  GEOCODING_TRIGGER_FIELDS,
+  fetchUngeocodedAccounts,
+  countUngeocodedAccounts,
+  geocodeAccountsBatch,
+} from "../lib/geocoding.js";
 import {
   accountsScopeClause,
   canAccessAccount,
@@ -213,6 +219,56 @@ accountsRouter.get(
       params
     );
     res.json(toCamelList(rows));
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/accounts/geocode-retroactive — rattrapage du géocodage pour les
+// fiches déjà en base au moment du correctif 2026-09-23 (cf. migration
+// 024_accounts_geocoding.sql). Traite un LOT à la fois (`?limit=`, 10 par
+// défaut, plafonné à 25) plutôt que toutes les fiches d'un coup : avec la
+// limite d'1 requête Nominatim/seconde (lib/geocoding.js), un lot trop
+// grand dépasserait le délai d'expiration d'une requête HTTP. L'écran Admin
+// dédié (frontend/src/pages/GeocodeRetroactive.jsx) boucle sur cet endpoint
+// jusqu'à ce que `remaining` atteigne 0. Existe spécifiquement parce que le
+// plan Render du client n'inclut pas l'accès Shell, qui aurait autrement
+// permis de lancer `npm run geocode-accounts` directement (toujours
+// disponible pour un environnement qui, lui, a le Shell).
+// Réservé à l'Administrateur, comme "Import photos en masse" (même
+// registre : opération de maintenance de données, pas un usage courant).
+// Déclarée AVANT /:id pour ne pas être interceptée par ce paramètre
+// générique.
+// ---------------------------------------------------------------------------
+// Compteur seul (pas de traitement) — utilisé par l'écran Admin pour savoir
+// s'il y a quelque chose à faire, sans déclencher un géocodage juste en
+// arrivant sur la page (une lecture ne doit jamais avoir d'effet de bord).
+accountsRouter.get(
+  "/geocode-retroactive/count",
+  requireAuth,
+  requireRole(ROLES.ADMINISTRATEUR),
+  async (req, res) => {
+    res.json({ remaining: await countUngeocodedAccounts() });
+  }
+);
+
+accountsRouter.post(
+  "/geocode-retroactive",
+  requireAuth,
+  requireRole(ROLES.ADMINISTRATEUR),
+  async (req, res) => {
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 10, 1), 25);
+    const accounts = await fetchUngeocodedAccounts(limit);
+    const { converted, failedNoAddress, failedNotFound, details } = await geocodeAccountsBatch(accounts);
+    const remaining = await countUngeocodedAccounts();
+
+    res.json({
+      processed: accounts.length,
+      converted,
+      failedNoAddress,
+      failedNotFound,
+      remaining,
+      details,
+    });
   }
 );
 

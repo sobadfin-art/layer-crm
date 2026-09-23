@@ -132,10 +132,102 @@ export function pickAddressForGeocoding(account) {
 export async function geocodeAndStoreAccount(accountId, addressLike, countryCode) {
   const address = pickAddressForGeocoding(addressLike);
   const coords = await geocodeAddress({ ...address, countryCode });
-  await query(`UPDATE accounts SET latitude = $1, longitude = $2 WHERE id = $3`, [
+  // `geocoded_at` est toujours posé, même en cas d'échec (adresse absente ou
+  // introuvable) : c'est ce qui distingue "jamais tenté" de "tenté, sans
+  // résultat" et empêche fetchUngeocodedAccounts de reboucler indéfiniment
+  // sur les mêmes fiches (cf. commentaire de la colonne, migration 025).
+  await query(`UPDATE accounts SET latitude = $1, longitude = $2, geocoded_at = now() WHERE id = $3`, [
     coords?.latitude ?? null,
     coords?.longitude ?? null,
     accountId,
   ]);
   return coords;
+}
+
+// ---------------------------------------------------------------------------
+// Rattrapage rétroactif — partagé par le script `scripts/geocode-accounts.js`
+// ET par la route HTTP `POST /api/accounts/geocode-retroactive`
+// (routes/accounts.js). Cette dernière existe parce que le plan Render du
+// client n'inclut pas l'accès Shell (nécessaire pour lancer un script
+// directement) — cf. échange du 2026-09-23 : "je n'ai pas pu me connecter à
+// Shell sans upgrade de plan". Le traitement se fait donc par LOTS
+// (`limit`), appelés en boucle depuis l'écran Admin dédié
+// (frontend/src/pages/GeocodeRetroactive.jsx) plutôt qu'en une seule requête
+// HTTP qui, avec la limite d'1 requête Nominatim/seconde, dépasserait vite
+// le délai d'expiration d'une requête HTTP sur un nombre important de
+// fiches.
+// ---------------------------------------------------------------------------
+
+// Fiches actives jamais encore tentées, les plus anciennes d'abord (ordre
+// stable d'un lot à l'autre : chaque appel traite les fiches suivantes,
+// jamais les mêmes qu'un appel précédent puisqu'une fiche traitée sort du
+// critère `geocoded_at IS NULL` — que la tentative ait réussi ou non, cf.
+// geocodeAndStoreAccount). On filtre sur `geocoded_at`, PAS sur
+// `latitude IS NULL` : une fiche sans adresse exploitable ou dont l'adresse
+// n'est pas reconnue par Nominatim garde latitude/longitude à NULL pour
+// toujours, mais ne doit être RE-proposée à aucun lot suivant, sous peine de
+// boucle infinie côté écran Admin (frontend/src/pages/
+// GeocodeRetroactive.jsx, `while (left > 0)`).
+export async function fetchUngeocodedAccounts(limit) {
+  const { rows } = await query(
+    `SELECT a.id, a.name, a.status,
+            a.shipping_street, a.shipping_zip, a.shipping_city,
+            a.billing_street, a.billing_zip, a.billing_city,
+            c.code AS country_code
+     FROM accounts a
+     JOIN countries c ON c.id = a.country_id
+     WHERE a.geocoded_at IS NULL AND a.status != 'ARCHIVE'
+     ORDER BY a.created_at ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows;
+}
+
+export async function countUngeocodedAccounts() {
+  const { rows } = await query(
+    `SELECT count(*)::int AS n FROM accounts WHERE geocoded_at IS NULL AND status != 'ARCHIVE'`
+  );
+  return rows[0].n;
+}
+
+// Géocode une liste de fiches (déjà chargées par fetchUngeocodedAccounts) et
+// renvoie un résumé chiffré + le détail de chaque échec — jamais
+// d'exception : une erreur individuelle reste un échec de CETTE fiche,
+// jamais un échec de tout le lot.
+//
+// IMPORTANT : on appelle toujours geocodeAndStoreAccount, même pour une
+// fiche sans adresse exploitable — c'est cet appel qui pose `geocoded_at`
+// (cf. fetchUngeocodedAccounts) et fait donc sortir la fiche du lot suivant.
+// Pas de coût réseau/throttle superflu pour autant : geocodeAddress()
+// renvoie `null` immédiatement, avant tout appel à Nominatim, quand
+// street/zip/city sont tous absents.
+export async function geocodeAccountsBatch(accounts) {
+  let converted = 0;
+  let failedNoAddress = 0;
+  let failedNotFound = 0;
+  const details = [];
+
+  for (const account of accounts) {
+    const address = pickAddressForGeocoding(account);
+    const hasAddress = Boolean(address.street || address.zip || address.city);
+    const coords = await geocodeAndStoreAccount(account.id, account, account.country_code);
+
+    if (coords) {
+      converted += 1;
+      details.push({ name: account.name, status: "converted", latitude: coords.latitude, longitude: coords.longitude });
+    } else if (!hasAddress) {
+      failedNoAddress += 1;
+      details.push({ name: account.name, status: "no_address", reason: "aucune adresse exploitable (livraison et facturation vides)" });
+    } else {
+      failedNotFound += 1;
+      details.push({
+        name: account.name,
+        status: "not_found",
+        reason: `adresse non reconnue par Nominatim (${[address.street, address.zip, address.city].filter(Boolean).join(", ")})`,
+      });
+    }
+  }
+
+  return { converted, failedNoAddress, failedNotFound, details };
 }
