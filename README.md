@@ -2341,3 +2341,102 @@ Ce qui reste, au global : l'application couvre désormais l'intégralité des r�
 métier décrits dans le handoff d'origine, plus les demandes formulées depuis. La suite serait un
 passage d'hébergement en production (voir la note sur l'absence de Prisma plus haut, et la section
 Environnement de développement vs production) — à engager quand vous le déciderez.
+
+## Carte interactive (Mapbox GL JS) et géocodage automatique (2026-09-23)
+
+Demande client : remplacer le bloc "Carte" (rendu illustratif V1 — comptes groupés visuellement par
+typologie, jamais positionnés à leur coordonnée réelle, cf. ancien commentaire de
+`components/AccountsMap.jsx`) par une vraie carte interactive, un point par client/prospect à sa
+position réelle, chez le représentant et le directeur (le Master Rep en bénéficie aussi, même
+composant partagé).
+
+- **Deux fournisseurs distincts, pas un seul** — décision prise en cours d'échange avec le client :
+  - **Affichage de la carte : Mapbox GL JS**, comme demandé. Token **public** (`pk.…`), volontairement
+    visible dans le bundle JS livré au navigateur — c'est le fonctionnement normal et voulu par
+    Mapbox pour ce type de token (à restreindre par domaine dans les paramètres du token côté
+    mapbox.com, pour qu'il ne puisse pas être réutilisé ailleurs même si quelqu'un le récupère dans
+    le code source).
+  - **Géocodage (conversion adresse → coordonnées) : Nominatim/OpenStreetMap, PAS Mapbox.** Leur API
+    de géocodage classe par défaut tout résultat comme "temporaire" — stocker les coordonnées
+    durablement en base ("permanent") exige une carte bancaire enregistrée sur le compte Mapbox,
+    même si l'usage reste dans le palier gratuit. Le client a explicitement refusé d'ajouter une
+    carte bancaire ("je ne peux pas créer d'autres token sans insérer un moyen de paiement"), d'où ce
+    choix : Nominatim est gratuit, sans compte ni carte, et leur politique d'usage officielle
+    (`operations.osmfoundation.org/policies/nominatim`) autorise et même recommande explicitement de
+    mettre les résultats en cache côté application — exactement notre cas d'usage. Contrepartie
+    acceptée : limite d'1 requête/seconde (`throttle()`, `backend/src/lib/geocoding.js`), sans impact
+    perceptible pour un volume de fiches client d'un CRM interne.
+  - Cf. le fil complet de cette décision : le client a d'abord fourni un token public seul, la
+    contrainte de carte bancaire a été découverte en vérifiant la documentation officielle Mapbox
+    avant d'implémenter (jamais supposée), présentée avec la source exacte, et la bascule vers
+    Nominatim validée explicitement avant tout code.
+
+- **Backend** :
+  - Migration `024_accounts_geocoding.sql` — deux colonnes `latitude`/`longitude`
+    (`DOUBLE PRECISION`) sur `accounts`, jamais saisies à la main, `NULL` tant qu'aucun géocodage
+    n'a réussi.
+  - `lib/geocoding.js` — `geocodeAddress()` (appel Nominatim, throttlé, User-Agent identifié comme
+    exigé par leur politique, tolère toute erreur réseau/HTTP sans jamais lever d'exception) et
+    `pickAddressForGeocoding()` : **adresse de livraison en priorité, repli sur la facturation si
+    vide** (choix validé avec le client — la livraison correspond en général au point de vente
+    physique que le représentant visite sur le terrain, la facturation pouvant être un cabinet
+    comptable ailleurs).
+  - `routes/accounts.js` — géocodage automatique et invisible : à la **création** d'une fiche
+    (après l'insertion, l'audit et la notification, jamais avant — pour ne jamais les retarder en
+    cas de lenteur Nominatim) et à la **modification**, mais uniquement si le PATCH touche au moins
+    un des 6 champs d'adresse (`GEOCODING_TRIGGER_FIELDS`) — un changement de représentant, de
+    typologie, etc. ne redéclenche jamais d'appel, conformément à la limite d'1 req/s.
+  - `GET /api/accounts/map` renvoie désormais aussi `latitude`/`longitude` (auparavant absentes du
+    schéma, cf. ancien commentaire de cette route).
+  - **Script de rattrapage rétroactif** — `npm run geocode-accounts` (`backend/src/scripts/
+    geocode-accounts.js`) : géocode une fois toute fiche active encore sans coordonnées, résumé
+    chiffré en fin d'exécution (converties / échecs faute d'adresse exploitable / échecs adresse non
+    reconnue par Nominatim, détail nominatif de chaque échec). Idempotent — ne retraite jamais une
+    fiche déjà géocodée (avec succès ou non) ; pour forcer un nouveau géocodage après correction
+    d'une adresse, une modification normale de la fiche suffit (redéclenche l'appel automatiquement).
+- **Frontend** — `components/AccountsMap.jsx` réécrit sur `mapbox-gl` (marqueurs positionnés aux
+  coordonnées réelles, colorés par **type** client/prospect — vert `#2f7d6b` / orange `#c9762c` —
+  plutôt que par typologie comme la V1, la typologie restant un filtre texte uniquement ; clic sur un
+  marqueur → fiche client, comme demandé) ; **filtres strictement inchangés** (Type / Typologie /
+  Représentant / Master Rep selon le rôle — confirmé avec le client qu'aucune recherche ni mode
+  "tournée" n'existait déjà sur cet écran avant cette bascule, donc rien à préserver de plus). Repli
+  explicite si `VITE_MAPBOX_TOKEN` est absent (message "carte non configurée", jamais un écran
+  cassé) et compteur informatif sous la carte pour les comptes sans coordonnées encore connues.
+  `mapbox-gl` (~1,9 Mo minifié) est chargé en `React.lazy()` dans les 3 tableaux de bord qui
+  affichent ce composant (`Dashboard.jsx`, `MasterRepDashboard.jsx`, `DirecteurDashboard.jsx`) — son
+  propre chunk n'est jamais téléchargé par une page qui n'affiche pas la carte.
+- **Variable d'environnement à renseigner côté Render** (aucune valeur commitée dans le dépôt,
+  jamais en dur dans le code) : `VITE_MAPBOX_TOKEN` — c'est la **seule** requise (le géocodage
+  Nominatim n'a besoin d'aucune clé). Doit être posée sur le service Render **avant** un déploiement
+  pour être prise en compte : Vite l'intègre au bundle JS au moment du build (`npm run build`, dans
+  `buildCommand` de `render.yaml`), pas au démarrage du serveur — un ajout après coup exige un
+  nouveau déploiement (pas seulement un redémarrage) pour être effectif.
+- **Testé avant livraison, avec une limite honnête à signaler** : ce environnement de développement
+  n'a accès à internet que via une liste d'domaines autorisés côté organisation, qui exclut
+  `api.mapbox.com` et `nominatim.openstreetmap.org` — impossible d'y observer un vrai chargement de
+  tuiles de carte ni un vrai appel de géocodage abouti. Ce qui a donc été vérifié à la place :
+  - `lib/geocoding.js` testé unitairement avec un `fetch` simulé (9/9 tests) — construction exacte de
+    la requête Nominatim, parsing des coordonnées (chaînes de caractères côté Nominatim, converties
+    en nombres), choix livraison/repli facturation, throttle 1 req/s mesuré, gestion des erreurs
+    HTTP et réseau sans exception.
+  - Écriture en base testée en conditions réelles (1/1 test) avec ce même `fetch` simulé.
+  - `POST`/`PATCH /api/accounts` testés via le vrai serveur (8/8) : création réussie (`201`) malgré
+    Nominatim inaccessible dans ce bac à sable plutôt qu'une erreur bloquante, `latitude`/`longitude`
+    bien présentes (à `null`) dans la réponse, PATCH sans champ d'adresse ne retente jamais l'appel
+    (répond en quelques millisecondes), PATCH avec champ d'adresse le retente bien.
+  - Script `geocode-accounts.js` exécuté de bout en bout sur les 29 fiches de test sans coordonnées :
+    résumé correctement chiffré (7 sans adresse exploitable, 22 échecs réseau dans ce bac à sable —
+    comptées comme "adresse non reconnue", la seule catégorie disponible pour un échec Nominatim
+    depuis cet environnement).
+  - `AccountsMap.jsx` testé avec Playwright (9/9) en forçant manuellement des coordonnées connues en
+    base sur deux comptes de test (un client, un prospect) : le composant se monte sans erreur JS
+    malgré l'absence de fond de carte visuel, les 2 marqueurs apparaissent aux bonnes couleurs, la
+    légende s'affiche, les 4 filtres du scope Directeur sont présents, le clic sur un marqueur ouvre
+    bien la fiche client correspondante.
+  - Suite de non-régression complète (18/18) repassée après ces changements — rien d'autre cassé.
+  - **Ce qui reste à confirmer une fois déployé sur Render (accès internet complet, contrairement à
+    cet environnement)** : le rendu visuel réel du fond de carte Mapbox, et un vrai géocodage
+    Nominatim retournant des coordonnées correctes sur une adresse française réelle — recommandé de
+    créer un compte de test avec une adresse connue juste après déploiement pour vérifier
+    visuellement le point sur la carte, puis de lancer `npm run geocode-accounts` pour rattraper les
+    fiches existantes et lire son résumé.
