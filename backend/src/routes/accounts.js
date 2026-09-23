@@ -9,6 +9,7 @@ import { getManagedRepUserIds } from "../lib/managedReps.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
 import { notifyUsers, userIdsWithRoles } from "../lib/notifications.js";
+import { geocodeAndStoreAccount, GEOCODING_TRIGGER_FIELDS } from "../lib/geocoding.js";
 import {
   accountsScopeClause,
   canAccessAccount,
@@ -166,16 +167,14 @@ accountsRouter.get(
 );
 
 // ---------------------------------------------------------------------------
-// GET /api/accounts/map — données pour le bloc "Carte & tournées" (V1 : une
-// visualisation non géographique, PAS une vraie carte — cf. PDF Représentant
-// section 1 / Master Rep section 2 / Directeur section 2 : "l'optimisation de
-// tournée et la connexion Google Maps peuvent être traitées ultérieurement en
-// V2, mais le bloc, les filtres et les comptes doivent exister en V1"). Aucun
-// lat/lng n'existe dans le schéma (décision documentée, cf. README) — on
-// renvoie donc uniquement ce qu'il faut pour un composant de visualisation
-// illustrative filtrable par Type/Typologie/Représentant, jamais une vraie
-// géolocalisation. Doit être déclarée AVANT /:id pour ne pas être interceptée
-// par ce paramètre générique.
+// GET /api/accounts/map — données pour l'écran Carte. Depuis le correctif
+// 2026-09-23 ("vraie carte interactive Mapbox GL JS en remplacement du rendu
+// stylisé V1"), renvoie aussi latitude/longitude (cf. migration
+// 024_accounts_geocoding.sql et lib/geocoding.js) — une fiche sans
+// coordonnées (géocodage jamais fait ou sans résultat exploitable) renvoie
+// latitude/longitude à `null` ; c'est au frontend de l'exclure du rendu de
+// la carte plutôt que de fausser le filtre ici. Doit être déclarée AVANT
+// /:id pour ne pas être interceptée par ce paramètre générique.
 // ---------------------------------------------------------------------------
 accountsRouter.get(
   "/map",
@@ -204,7 +203,7 @@ accountsRouter.get(
     }
 
     const { rows } = await query(
-      `SELECT a.id, a.name, a.type, a.typology, a.pipeline_stage,
+      `SELECT a.id, a.name, a.type, a.typology, a.pipeline_stage, a.latitude, a.longitude,
               a.owner_rep_id, owner_u.first_name AS owner_rep_first_name, owner_u.last_name AS owner_rep_last_name
        FROM accounts a
        LEFT JOIN users owner_u ON owner_u.id = a.owner_rep_id
@@ -390,6 +389,15 @@ accountsRouter.post(
       entityId: rows[0].id,
     });
 
+    // Géocodage automatique (demande client 2026-09-23, invisible pour
+    // l'utilisateur) — cf. lib/geocoding.js. Fait après l'INSERT/l'audit/la
+    // notification pour ne jamais les retarder en cas de lenteur Nominatim ;
+    // avant la réponse pour que la fiche apparaisse sur la carte dès son
+    // premier affichage plutôt que d'attendre une prochaine modification.
+    const coords = await geocodeAndStoreAccount(rows[0].id, data, data.countryCode);
+    rows[0].latitude = coords?.latitude ?? null;
+    rows[0].longitude = coords?.longitude ?? null;
+
     res.status(201).json(toCamel(rows[0]));
   }
 );
@@ -491,6 +499,24 @@ accountsRouter.patch(
       entityId: req.params.id,
       details: { fields: Object.keys(data) },
     });
+
+    // Re-géocodage automatique (demande client 2026-09-23, invisible pour
+    // l'utilisateur) — UNIQUEMENT si ce PATCH touche un champ d'adresse
+    // (cf. GEOCODING_TRIGGER_FIELDS, lib/geocoding.js) : une mise à jour qui
+    // ne change que le représentant, la typologie, etc. ne doit jamais
+    // rappeler Nominatim (limite d'1 requête/seconde de leur politique
+    // d'usage). `rows[0]` (résultat du RETURNING *, en snake_case) contient
+    // déjà l'adresse à jour, qu'elle ait ou non été modifiée par CE patch —
+    // pickAddressForGeocoding() choisit toujours livraison puis repli
+    // facturation sur l'état actuel complet de la fiche.
+    if (GEOCODING_TRIGGER_FIELDS.some((field) => data[field] !== undefined)) {
+      const { rows: countryRows } = await query("SELECT code FROM countries WHERE id = $1", [
+        rows[0].country_id,
+      ]);
+      const coords = await geocodeAndStoreAccount(rows[0].id, rows[0], countryRows[0]?.code);
+      rows[0].latitude = coords?.latitude ?? null;
+      rows[0].longitude = coords?.longitude ?? null;
+    }
 
     res.json(toCamel(rows[0]));
   }
