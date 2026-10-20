@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Search, Plus, Minus, ShoppingCart } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate } from "../lib/format.js";
 import ProductPhotoCarousel from "../components/ProductPhotoCarousel.jsx";
+import OrderDraftsPanel from "../components/OrderDraftsPanel.jsx";
+import { deleteDraft, getDraft, listDrafts, newDraftId, saveDraft } from "../lib/orderDrafts.js";
+
+// Délai de débounce de la sauvegarde automatique du brouillon local (point 8).
+const DRAFT_SAVE_DELAY_MS = 1000;
 
 const CATEGORIES = ["PREMIUM", "CLASSIC", "OPTICS", "ACCESS", "DISPLAY", "MERCH", "GOGGLES", "KIDS"];
 
@@ -92,9 +97,19 @@ function pickDiscountRule(rules, category, repId, countryId) {
 // view === "prise-commande" / "panier") pour ne pas perdre l'état du panier
 // entre deux routes. Toujours rattachée à un compte (accountId dans l'URL),
 // jamais accessible depuis le catalogue de référence.
+//
+// Point 8 (brouillons) : l'écran est remonté à neuf à chaque changement de
+// compte (key={id}) — reprendre le brouillon d'un AUTRE compte depuis cet
+// écran ne doit jamais mélanger son panier avec celui du compte courant.
 export default function NewOrder() {
   const { id } = useParams();
+  return <NewOrderScreen key={id} />;
+}
+
+function NewOrderScreen() {
+  const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { t, locale } = useI18n();
   const { user } = useAuth();
 
@@ -146,6 +161,20 @@ export default function NewOrder() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [toast, setToast] = useState(null);
+
+  // Brouillon local (point 8). L'identifiant du brouillon en cours est porté
+  // par l'URL (?draft=…, posé en `replace` à la première sauvegarde) : un
+  // refresh ou un retour arrière du navigateur rouvre donc exactement ce
+  // brouillon, sans action du représentant. Une ouverture "neuve" de l'écran
+  // (sans ?draft) ne reprend jamais rien d'office — elle liste les brouillons
+  // existants, et la nouvelle saisie démarre son propre brouillon, sans
+  // jamais écraser un brouillon non repris.
+  const draftIdRef = useRef(searchParams.get("draft") || null);
+  const pendingDraftRef = useRef(null);
+  const draftTimerRef = useRef(null);
+  const submittedRef = useRef(false);
+  const [draftHydrated, setDraftHydrated] = useState(false);
+  const [drafts, setDrafts] = useState([]);
 
   useEffect(() => {
     setLoading(true);
@@ -215,6 +244,152 @@ export default function NewOrder() {
     const timer = setTimeout(() => setToast(null), 3200);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  const refreshDrafts = useCallback(() => setDrafts(listDrafts(user?.id)), [user?.id]);
+
+  // Écrit immédiatement le dernier état en attente (sans attendre le
+  // débounce) — appelé quand l'app passe en arrière-plan (appel entrant,
+  // changement d'app sur mobile : une PWA peut être tuée sans autre
+  // préavis), à la fermeture de l'onglet et en quittant l'écran.
+  const flushDraft = useCallback(() => {
+    clearTimeout(draftTimerRef.current);
+    const pending = pendingDraftRef.current;
+    pendingDraftRef.current = null;
+    if (!pending || submittedRef.current) return;
+    if (pending.empty) deleteDraft(user?.id, pending.draftId);
+    else saveDraft(user?.id, pending);
+  }, [user?.id]);
+
+  // Recharge l'état exact d'un brouillon. Les produits du panier sont
+  // restaurés depuis l'instantané du brouillon (pour qu'ils restent
+  // affichables même si leur catalogue n'est plus sélectionné), puis
+  // rafraîchis par le rechargement des catalogues sélectionnés. Seuls les
+  // catalogues encore actifs sont resélectionnés. Le prix affiché reste un
+  // aperçu : le serveur le recalcule toujours à l'envoi.
+  function applyDraft(draft) {
+    const selectable = new Set(catalogs.filter((c) => c.active && (c.productCount ?? 0) > 0).map((c) => c.id));
+    setProductsById((prev) => {
+      const next = new Map(prev);
+      for (const p of draft.products || []) if (!next.has(p.id)) next.set(p.id, p);
+      return next;
+    });
+    setCart(new Map(draft.cart || []));
+    setSelectedCatalogIds((draft.selectedCatalogIds || []).filter((c) => selectable.has(c)));
+    setDiscountApplied(draft.discountApplied || {});
+    setShippingOffered(Boolean(draft.shippingOffered));
+    setIsPrecommande(Boolean(draft.isPrecommande));
+    setDesiredDeliveryDate(draft.desiredDeliveryDate || "");
+    setNote(draft.note || "");
+    setSearch(draft.search || "");
+    setCategory(draft.category || "all");
+    setSubview(draft.subview === "cart" ? "cart" : "browse");
+    draftIdRef.current = draft.draftId;
+  }
+
+  // Restauration automatique du brouillon désigné par ?draft=… une fois le
+  // compte et les catalogues chargés (jamais avant : le chargement initial
+  // réinitialise la sélection de catalogues).
+  useEffect(() => {
+    if (loading || !account || draftHydrated) return;
+    const draft = getDraft(user?.id, draftIdRef.current);
+    if (draft && draft.accountId === id) {
+      applyDraft(draft);
+    } else if (draftIdRef.current) {
+      // Brouillon introuvable (supprimé, expiré, autre appareil/utilisateur)
+      // ou d'un autre compte : on repart d'une saisie vierge, sans rien
+      // réutiliser.
+      draftIdRef.current = null;
+      setSearchParams({}, { replace: true });
+    }
+    refreshDrafts();
+    setDraftHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, account, draftHydrated]);
+
+  // Sauvegarde automatique, débouncée, à chaque modification de la saisie.
+  // Rien n'est enregistré tant que la saisie est vide (simple consultation du
+  // catalogue) ; si un brouillon existant est vidé, il est supprimé.
+  useEffect(() => {
+    if (!draftHydrated || !account || submittedRef.current) return;
+    const hasContent =
+      cart.size > 0 ||
+      note.trim() !== "" ||
+      desiredDeliveryDate !== "" ||
+      isPrecommande ||
+      shippingOffered ||
+      Object.values(discountApplied).some((v) => v === true);
+    if (!hasContent && !draftIdRef.current) return;
+    if (!draftIdRef.current) {
+      draftIdRef.current = newDraftId();
+      setSearchParams({ draft: draftIdRef.current }, { replace: true });
+    }
+    pendingDraftRef.current = hasContent
+      ? {
+          draftId: draftIdRef.current,
+          accountId: id,
+          accountName: account.name,
+          cart: [...cart.entries()],
+          products: [...cart.keys()]
+            .map((pid) => productsById.get(pid) || productById.get(pid))
+            .filter(Boolean),
+          selectedCatalogIds,
+          discountApplied,
+          shippingOffered,
+          isPrecommande,
+          desiredDeliveryDate,
+          note,
+          search,
+          category,
+          subview,
+        }
+      : { draftId: draftIdRef.current, empty: true };
+    clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(flushDraft, DRAFT_SAVE_DELAY_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    draftHydrated,
+    cart,
+    note,
+    desiredDeliveryDate,
+    isPrecommande,
+    shippingOffered,
+    discountApplied,
+    selectedCatalogIds,
+    search,
+    category,
+    subview,
+  ]);
+
+  useEffect(() => {
+    function onHide() {
+      if (document.visibilityState === "hidden") flushDraft();
+    }
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flushDraft);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flushDraft);
+      flushDraft();
+    };
+  }, [flushDraft]);
+
+  function resumeDraft(draft) {
+    flushDraft();
+    if (draft.accountId !== id) {
+      navigate(`/clients/${draft.accountId}/commande?draft=${encodeURIComponent(draft.draftId)}`);
+      return;
+    }
+    applyDraft(draft);
+    setSearchParams({ draft: draft.draftId }, { replace: true });
+    refreshDrafts();
+  }
+
+  function removeDraft(draft) {
+    deleteDraft(user?.id, draft.draftId);
+    refreshDrafts();
+  }
+
+  const otherDrafts = drafts.filter((d) => d.draftId !== draftIdRef.current);
 
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
@@ -360,6 +535,14 @@ export default function NewOrder() {
 
       await api.post(`/orders/${order.id}/send-to-front-desk`);
 
+      // Point 8 : le brouillon local n'est supprimé qu'ici, une fois la
+      // commande créée ET envoyée avec succès — jamais avant, pour qu'un
+      // échec d'envoi ne fasse jamais perdre la saisie.
+      submittedRef.current = true;
+      clearTimeout(draftTimerRef.current);
+      pendingDraftRef.current = null;
+      if (draftIdRef.current) deleteDraft(user?.id, draftIdRef.current);
+
       setCart(new Map());
       // Le Directeur n'a pas d'écran /commandes séparé (celui-ci reste pensé
       // pour la vue "mes commandes" Représentant/Master Rep) : après envoi il
@@ -413,6 +596,8 @@ export default function NewOrder() {
             </div>
             {renderCartButton({ marginTop: 2 })}
           </div>
+
+          <OrderDraftsPanel drafts={otherDrafts} onResume={resumeDraft} onDelete={removeDraft} t={t} locale={locale} />
 
           <div className="filter-label" style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6, marginTop: 4 }}>
             {t("newOrder.catalogFilterLabel")}
