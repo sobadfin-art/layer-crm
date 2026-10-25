@@ -143,7 +143,8 @@ export default function ClientsList() {
     // création — les deux messages sont combinés si les deux informations
     // manquent, pour que le commercial voie tout ce qu'il lui manque en une
     // fois (cf. cahier de tests section 8, scénario "les deux absents").
-    const missingTaxId = !newAccountForm.taxId.trim();
+    // Point 5 : SIRET facultatif pour un prospect, toujours requis pour un client.
+    const missingTaxId = newAccountForm.type !== "PROSPECT" && !newAccountForm.taxId.trim();
     const missingBilling =
       !newAccountForm.billingStreet.trim() || !newAccountForm.billingZip.trim() || !newAccountForm.billingCity.trim();
     if (missingTaxId || missingBilling) {

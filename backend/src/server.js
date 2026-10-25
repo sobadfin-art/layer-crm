@@ -37,6 +37,7 @@ import { teamRouter } from "./routes/team.js";
 import { auditLogsRouter } from "./routes/audit-logs.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { adminUsersRouter } from "./routes/admin-users.js";
+import { adminMembersRouter } from "./routes/admin-members.js";
 import { countriesRouter } from "./routes/countries.js";
 
 const app = express();
@@ -91,6 +92,7 @@ app.use("/api/team", teamRouter);
 app.use("/api/audit-logs", auditLogsRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/admin/users", adminUsersRouter);
+app.use("/api/admin/members", adminMembersRouter);
 app.use("/api/countries", countriesRouter);
 
 // Sert le frontend buildé (frontend/dist) — utilisé en déploiement (ex. Render,

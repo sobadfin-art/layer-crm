@@ -75,7 +75,7 @@ const financialFields = {
   regimeFiscal: z.enum(REGIMES_FISCAUX).optional(),
 };
 
-const createSchema = z.object({
+const createFields = z.object({
   type: z.enum(["CLIENT", "PROSPECT"]),
   name: z.string().min(1),
   // "Nom alternatif" dans l'export Dolibarr — nom du magasin, distinct du nom
@@ -102,7 +102,11 @@ const createSchema = z.object({
   billingStreet: z.string().min(1, "L'adresse de facturation (rue) est obligatoire."),
   billingZip: z.string().min(1, "L'adresse de facturation (code postal) est obligatoire."),
   billingCity: z.string().min(1, "L'adresse de facturation (ville) est obligatoire."),
-  taxId: z.string().min(1, "Le SIRET / identifiant d'entreprise est obligatoire."),
+  //
+  // Point 5 (2026-10-25) : le SIRET/identifiant n'est plus exigé que pour la
+  // création d'un CLIENT — facultatif pour un PROSPECT (vérifié dans
+  // `createSchema` ci-dessous, la règle dépendant du type).
+  taxId: z.string().optional().nullable(),
   // Note / instructions de livraison — champ dédié, distinct de tout autre
   // champ existant, jamais obligatoire (cf. migration
   // 022_accounts_delivery_note.sql et fiche "UPDATE CRM" évolution 1).
@@ -114,7 +118,18 @@ const createSchema = z.object({
   nomCommercial: z.string().optional().nullable(),
 });
 
-const updateSchema = createSchema.partial().extend({
+const TAX_ID_REQUIRED_MESSAGE = "Le SIRET / identifiant d'entreprise est obligatoire.";
+
+const createSchema = createFields.superRefine((data, ctx) => {
+  if (data.type === "CLIENT" && !data.taxId?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["taxId"], message: TAX_ID_REQUIRED_MESSAGE });
+  }
+});
+
+const updateSchema = createFields.partial().extend({
+  // SIRET au PATCH : règle appliquée dans la route (dépend de la fiche
+  // existante), cf. PATCH /:id ci-dessous.
+  taxId: z.string().optional().nullable(),
   // le type et la typologie restent modifiables indépendamment de la création.
   // ownerRepId accepte explicitement `null` ici (jamais à la création,
   // ci-dessus) — un compte peut désormais arriver sans représentant assigné
@@ -481,6 +496,19 @@ accountsRouter.patch(
       return res.status(403).json({ error: "Accès refusé à ce compte." });
     }
 
+    // Point 5 : un SIRET vide envoyé par le formulaire ne bloque plus la
+    // modification d'une fiche qui n'en a pas (prospect, ou client passé en
+    // client sans SIRET — avertissement, jamais blocage). Seul l'effacement
+    // d'un SIRET déjà renseigné sur un client reste refusé, comme avant.
+    if (data.taxId !== undefined && !data.taxId?.trim()) {
+      const resultingType = data.type ?? existing.type;
+      if (existing.tax_id?.trim() && resultingType === "CLIENT") {
+        return res.status(400).json({ error: TAX_ID_REQUIRED_MESSAGE });
+      }
+      if (existing.tax_id?.trim()) data.taxId = null;
+      else delete data.taxId;
+    }
+
     if (
       (data.ownerRepId !== undefined || data.masterRepId !== undefined) &&
       !canReassignAccount(req.user.role)
@@ -573,6 +601,79 @@ accountsRouter.patch(
       rows[0].latitude = coords?.latitude ?? null;
       rows[0].longitude = coords?.longitude ?? null;
     }
+
+    res.json(toCamel(rows[0]));
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/accounts/:id/convert-to-client — point 5 (2026-10-25) : passage
+// explicite d'un prospect en client. Autorisés : le représentant
+// propriétaire, le front desk et le directeur — jamais le Master Rep (ni
+// l'administrateur, non listé par la demande). Les informations manquantes
+// (SIRET, adresse de facturation, coordonnées bancaires) sont signalées par
+// l'interface en avertissement, jamais bloquantes ici.
+// `won_date` est posée seulement si elle est encore vide (COALESCE) : une
+// date déjà enregistrée par le pipeline ("Gagné") n'est jamais écrasée.
+// ---------------------------------------------------------------------------
+const CONVERT_ROLES = [ROLES.REPRESENTANT, ROLES.FRONT_DESK, ROLES.DIRECTEUR];
+
+accountsRouter.post(
+  "/:id/convert-to-client",
+  requireAuth,
+  requireRole(...CONVERT_ROLES),
+  async (req, res) => {
+    const { rows: existingRows } = await query("SELECT * FROM accounts WHERE id = $1", [
+      req.params.id,
+    ]);
+    const existing = existingRows[0];
+    if (!existing) return res.status(404).json({ error: "Compte introuvable." });
+    if (req.user.role === ROLES.REPRESENTANT && existing.owner_rep_id !== req.user.id) {
+      return res.status(403).json({ error: "Seul le représentant propriétaire peut passer ce prospect en client." });
+    }
+    if (existing.type !== "PROSPECT") {
+      return res.status(409).json({ error: "Ce compte est déjà un client." });
+    }
+
+    const { rows } = await query(
+      `UPDATE accounts
+       SET type = 'CLIENT', won_date = COALESCE(won_date, now()), updated_at = now()
+       WHERE id = $1 AND type = 'PROSPECT'
+       RETURNING *`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(409).json({ error: "Ce compte est déjà un client." });
+
+    const { rows: authorRows } = await query("SELECT first_name, last_name FROM users WHERE id = $1", [
+      req.user.id,
+    ]);
+    const authorName = `${authorRows[0]?.first_name || ""} ${authorRows[0]?.last_name || ""}`.trim();
+
+    // Trace dans l'historique de la fiche (même mécanisme que les traces
+    // automatiques de RDV, cf. routes/tasks.js) : qui (author_id) et quand
+    // (created_at).
+    await query(
+      `INSERT INTO interactions (account_id, author_id, note)
+       VALUES ($1, $2, $3)`,
+      [req.params.id, req.user.id, `Prospect passé en client par ${authorName || req.user.email}.`]
+    );
+
+    await logAudit({
+      userId: req.user.id,
+      action: "ACCOUNT_CONVERTED_TO_CLIENT",
+      entity: "accounts",
+      entityId: req.params.id,
+      details: { from: "PROSPECT", to: "CLIENT", wonDate: rows[0].won_date },
+    });
+
+    const recipients = (await userIdsWithRoles([ROLES.FRONT_DESK])).filter((uid) => uid !== req.user.id);
+    await notifyUsers(recipients, {
+      type: "ACCOUNT_CONVERTED_TO_CLIENT",
+      title: "Prospect passé en client",
+      body: rows[0].name,
+      entity: "accounts",
+      entityId: rows[0].id,
+    });
 
     res.json(toCamel(rows[0]));
   }

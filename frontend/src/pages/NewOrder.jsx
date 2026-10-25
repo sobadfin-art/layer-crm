@@ -92,6 +92,61 @@ function pickDiscountRule(rules, category, repId, countryId) {
   );
 }
 
+// Point 2 (2026-10-25) : quantité modifiable directement sur chaque ligne du
+// récapitulatif (boutons −/+ et saisie directe). La saisie clavier garde une
+// valeur locale tant que le champ a le focus : effacer "5" pour taper "8" ne
+// doit jamais déclencher la suppression de la ligne en cours de frappe. La
+// valeur n'est validée qu'au fil de la saisie si elle est > 0, et à la sortie
+// du champ sinon — une quantité à 0 (bouton − ou saisie) demande toujours
+// confirmation avant de retirer la ligne.
+function CartLineQty({ qty, label, onChange, t }) {
+  const [draft, setDraft] = useState(null);
+
+  function commit(next) {
+    if (next > 0) {
+      onChange(next);
+      return;
+    }
+    if (window.confirm(t("newOrder.removeLineConfirm", { label }))) onChange(0);
+  }
+
+  return (
+    <div className="qty-row cart-qty">
+      <button type="button" aria-label={t("newOrder.qtyDecrease")} onClick={() => commit(qty - 1)}>
+        <Minus size={14} />
+      </button>
+      <input
+        type="number"
+        min="0"
+        inputMode="numeric"
+        className="qty-input"
+        aria-label={t("newOrder.qtyInputLabel")}
+        value={draft ?? qty}
+        onFocus={(e) => {
+          setDraft(String(qty));
+          e.target.select();
+        }}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const parsed = Math.floor(Number(e.target.value));
+          if (parsed > 0) onChange(parsed);
+        }}
+        onBlur={() => {
+          const parsed = Math.max(0, Math.floor(Number(draft) || 0));
+          setDraft(null);
+          if (parsed !== qty) commit(parsed);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.target.blur();
+        }}
+      />
+      <button type="button" aria-label={t("newOrder.qtyIncrease")} onClick={() => commit(qty + 1)}>
+        <Plus size={14} />
+      </button>
+    </div>
+  );
+}
+
 // Prise de commande + panier, combinés en un seul écran (deux sous-vues
 // internes, fidèle à la maquette docs/prototype-crm-commercial.jsx —
 // view === "prise-commande" / "panier") pour ne pas perdre l'état du panier
@@ -444,6 +499,21 @@ function NewOrderScreen() {
     });
   }
 
+  // Modification de quantité depuis le récapitulatif (point 2) — volontairement
+  // sans le garde-fou "catalogue sélectionné" de changeQty/setQtyDirect : une
+  // ligne déjà au panier reste modifiable même si son catalogue a été
+  // désélectionné depuis (ou après reprise d'un brouillon).
+  function setCartLineQty(productId, qty) {
+    setCart((prev) => {
+      const next = new Map(prev);
+      const current = next.get(productId);
+      if (!current) return prev;
+      if (qty <= 0) next.delete(productId);
+      else next.set(productId, { ...current, qty });
+      return next;
+    });
+  }
+
   function toggleGift(productId) {
     setCart((prev) => {
       const next = new Map(prev);
@@ -716,8 +786,14 @@ function NewOrderScreen() {
                 </div>
                 {g.items.map((i) => (
                   <div className="line-item" key={i.productId}>
-                    <span>
-                      {i.qty} × {i.product.label} {i.isGift && <span className="offert-badge">{t("newOrder.giftLabel")}</span>}
+                    <CartLineQty
+                      qty={i.qty}
+                      label={i.product.label}
+                      onChange={(q) => setCartLineQty(i.productId, q)}
+                      t={t}
+                    />
+                    <span style={{ flex: 1, minWidth: 120 }}>
+                      {i.product.label} {i.isGift && <span className="offert-badge">{t("newOrder.giftLabel")}</span>}
                       {!isPrecommande && i.product.stockStatus === "REASSORT_PREVU" && (
                         <span className="offert-badge" style={{ marginLeft: 4 }}>
                           {t("newOrder.reliquatBadge")}

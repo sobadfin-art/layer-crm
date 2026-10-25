@@ -122,7 +122,8 @@ export default function NewOrderQuickAccess() {
     // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 5) : mêmes règles
     // que ClientsList.jsx — SIRET/identifiant et adresse de facturation
     // obligatoires, avec indication combinée si les deux manquent.
-    const missingTaxId = !createForm.taxId.trim();
+    // Point 5 : SIRET facultatif pour un prospect, toujours requis pour un client.
+    const missingTaxId = createForm.type !== "PROSPECT" && !createForm.taxId.trim();
     const missingBilling =
       !createForm.billingStreet.trim() || !createForm.billingZip.trim() || !createForm.billingCity.trim();
     if (missingTaxId || missingBilling) {

@@ -23,6 +23,16 @@
   box-sizing: border-box;
 }
 
+/* Point 4 (2026-10-25) : désactive le "tirer pour rafraîchir" natif du
+   navigateur (Chrome/Edge Android, PWA installée Android) — un geste de
+   scroll vers le bas en haut de page rechargeait l'appli et faisait perdre
+   la saisie en cours. Le défilement normal des pages n'est pas affecté ;
+   les boutons "Rafraîchir" explicites restent en place. */
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
 body {
   margin: 0;
   font-family: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -598,6 +608,25 @@ body {
   -moz-appearance: textfield;
 }
 
+/* Point 2 : sélecteur de quantité sur les lignes du récapitulatif panier —
+   cibles tactiles plus grandes (32px) que la vignette catalogue, utilisable
+   au doigt sur téléphone. */
+.qty-row.cart-qty {
+  margin-top: 0;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.qty-row.cart-qty button {
+  width: 32px;
+  height: 32px;
+}
+
+.qty-row.cart-qty .qty-input {
+  width: 46px;
+  padding: 6px 2px;
+}
+
 .qty-row .qty-input::-webkit-outer-spin-button,
 .qty-row .qty-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -941,6 +970,44 @@ body {
   background: white;
   border-color: var(--danger);
   color: var(--danger);
+}
+
+/* Point 5 : "Passer en client" — couleur volontairement distincte du bouton
+   principal (jaune) pour être repérable en haut de fiche prospect. */
+.btn.convert {
+  background: var(--teal);
+  color: white;
+}
+
+.btn.convert:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+/* Point 6 : récapitulatif avant/après d'une modification de membre. */
+.confirm-diff {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.confirm-diff th,
+.confirm-diff td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.convert-warning {
+  background: var(--gold-soft);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+}
+
+.convert-warning ul {
+  margin: 6px 0;
+  padding-left: 18px;
 }
 
 .btn:disabled {

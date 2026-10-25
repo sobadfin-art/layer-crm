@@ -312,7 +312,8 @@ export default function AccountFormFields({
         <div className="field">
           <label>
             {taxIdLabel}
-            {t("account.taxIdRequiredSuffix")}
+            {/* Point 5 : facultatif pour un prospect. */}
+            {form.type !== "PROSPECT" && t("account.taxIdRequiredSuffix")}
           </label>
           <input value={form.taxId} onChange={(e) => setField("taxId", e.target.value)} />
         </div>

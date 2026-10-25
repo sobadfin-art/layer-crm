@@ -16,6 +16,7 @@ import {
   LifeBuoy,
   Trash2,
   Camera,
+  UserCheck,
 } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
@@ -172,6 +173,11 @@ export default function AccountDetail() {
 
   const [toast, setToast] = useState(null);
 
+  // Point 5 (2026-10-25) : passage explicite prospect -> client.
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [converting, setConverting] = useState(false);
+  const [convertError, setConvertError] = useState(null);
+
   const loadAccount = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -299,6 +305,21 @@ export default function AccountDetail() {
     const timer = setTimeout(() => setToast(null), 3200);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  async function handleConvertToClient() {
+    setConverting(true);
+    setConvertError(null);
+    try {
+      await api.post(`/accounts/${id}/convert-to-client`);
+      setConvertOpen(false);
+      setToast(t("account.convertDone"));
+      await Promise.all([loadAccount(), loadHistory()]);
+    } catch (err) {
+      setConvertError(err.message);
+    } finally {
+      setConverting(false);
+    }
+  }
 
   function startEdit() {
     setEditError(null);
@@ -537,6 +558,22 @@ export default function AccountDetail() {
   if (error) return <p className="error-text">{error}</p>;
   if (!account) return <p className="error-text">{t("account.notFound")}</p>;
 
+  // Point 5 : représentant propriétaire, front desk, directeur — jamais le
+  // Master Rep (même règle vérifiée côté serveur, POST /convert-to-client).
+  const canConvertToClient =
+    account.type === "PROSPECT" &&
+    (user.role === "FRONT_DESK" ||
+      user.role === "DIRECTEUR" ||
+      (user.role === "REPRESENTANT" && account.ownerRepId === user.id));
+  // Informations attendues pour un client, signalées en avertissement dans
+  // la confirmation — jamais bloquantes.
+  const convertMissing = [
+    !account.taxId?.trim() && (account.taxIdLabel || t("account.taxIdGeneric")),
+    !(account.billingStreet?.trim() && account.billingZip?.trim() && account.billingCity?.trim()) &&
+      t("account.convertMissingBilling"),
+    !(account.iban?.trim() && account.bic?.trim()) && t("account.convertMissingBank"),
+  ].filter(Boolean);
+
   const billing = fullAddress(account.billingStreet, account.billingZip, account.billingCity, account.countryName);
   const shipping = fullAddress(account.shippingStreet, account.shippingZip, account.shippingCity, account.countryName);
 
@@ -589,6 +626,11 @@ export default function AccountDetail() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {canConvertToClient && (
+            <button className="btn convert" onClick={() => { setConvertError(null); setConvertOpen(true); }}>
+              <UserCheck size={15} /> {t("account.convertButton")}
+            </button>
+          )}
           {account.status !== "ARCHIVE" && (
             <button className="btn outline" disabled={statusBusy} onClick={handleToggleStatus}>
               {statusBusy
@@ -858,7 +900,8 @@ export default function AccountDetail() {
                 <div className="field">
                   <label>
                     {account.taxIdLabel || "N° fiscal"}
-                    {t("account.taxIdRequiredSuffix")}
+                    {/* Point 5 : facultatif pour un prospect. */}
+                    {account.type !== "PROSPECT" && t("account.taxIdRequiredSuffix")}
                   </label>
                   <input value={editForm.taxId} onChange={(e) => setEditForm((f) => ({ ...f, taxId: e.target.value }))} />
                 </div>
@@ -1174,6 +1217,37 @@ export default function AccountDetail() {
           </div>
         ))}
       </div>
+
+      {convertOpen && (
+        <div className="modal-overlay" onClick={() => !converting && setConvertOpen(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>{t("account.convertTitle", { name: account.name })}</h3>
+            <p className="page-sub" style={{ marginTop: 0 }}>{t("account.convertIntro")}</p>
+            {convertMissing.length > 0 ? (
+              <div className="convert-warning">
+                <strong>{t("account.convertMissingTitle")}</strong>
+                <ul>
+                  {convertMissing.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
+                </ul>
+                <span>{t("account.convertMissingHint")}</span>
+              </div>
+            ) : (
+              <p style={{ fontSize: 13 }}>{t("account.convertNothingMissing")}</p>
+            )}
+            {convertError && <p className="error-text">{convertError}</p>}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14, flexWrap: "wrap" }}>
+              <button className="btn outline" disabled={converting} onClick={() => setConvertOpen(false)}>
+                {t("teamManagement.cancel")}
+              </button>
+              <button className="btn convert" disabled={converting} onClick={handleConvertToClient}>
+                {converting ? t("account.convertSaving") : t("account.convertConfirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && <div className="toast">{toast}</div>}
     </>
