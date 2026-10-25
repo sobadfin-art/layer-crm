@@ -9,6 +9,7 @@ import { getManagedRepUserIds } from "../lib/managedReps.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
 import { notifyUsers, userIdsWithRoles } from "../lib/notifications.js";
+import { BankKeyMissingError, canSeeBankData, decryptBankValue, encryptBankValue, presentAccountRow } from "../lib/bankData.js";
 import {
   geocodeAndStoreAccount,
   GEOCODING_TRIGGER_FIELDS,
@@ -75,6 +76,20 @@ const financialFields = {
   regimeFiscal: z.enum(REGIMES_FISCAUX).optional(),
 };
 
+// Point 1 : agence bancaire et titulaire du compte — volontairement HORS de
+// financialFields : ils sont chiffrés au repos (lib/bankData.js) et ne doivent
+// jamais passer par l'écriture générique en clair du PATCH (simpleFields).
+const bankFields = {
+  bankName: z.string().optional().nullable(),
+  accountHolder: z.string().optional().nullable(),
+};
+
+const HOLDER_REQUIRED_MESSAGE =
+  "Le titulaire du compte est obligatoire dès qu'un IBAN est renseigné (prélèvements SEPA).";
+
+const isFilled = (v) => v !== null && v !== undefined && String(v).trim() !== "";
+const BANK_INPUT_FIELDS = ["iban", "bic", "bankName", "accountHolder"];
+
 const createFields = z.object({
   type: z.enum(["CLIENT", "PROSPECT"]),
   name: z.string().min(1),
@@ -88,6 +103,7 @@ const createFields = z.object({
   ...addressFields,
   ...contactFields,
   ...financialFields,
+  ...bankFields,
   // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 5) : SIRET/identifiant
   // d'entreprise et adresse de facturation deviennent obligatoires à la
   // CRÉATION uniquement — ces trois lignes surchargent volontairement les
@@ -183,7 +199,7 @@ accountsRouter.get(
        ORDER BY a.created_at DESC`,
       params
     );
-    res.json(toCamelList(rows));
+    res.json(toCamelList(rows.map((r) => presentAccountRow(r, req.user.role))));
   }
 );
 
@@ -309,7 +325,7 @@ accountsRouter.get(
     if (!(await canAccessAccount(req.user, account))) {
       return res.status(403).json({ error: "Accès refusé à ce compte." });
     }
-    res.json(toCamel(account));
+    res.json(toCamel(presentAccountRow(account, req.user.role)));
   }
 );
 
@@ -326,6 +342,22 @@ accountsRouter.post(
       return res.status(400).json({ error: parsed.error.flatten() });
     }
     const data = parsed.data;
+
+    // Point 1 : titulaire obligatoire dès qu'un IBAN est saisi (jamais pour
+    // un prospect sans coordonnées bancaires).
+    if (isFilled(data.iban) && !isFilled(data.accountHolder)) {
+      return res.status(400).json({ error: HOLDER_REQUIRED_MESSAGE, code: "ACCOUNT_HOLDER_REQUIRED" });
+    }
+    let encryptedBank;
+    try {
+      encryptedBank = {
+        bankName: encryptBankValue(isFilled(data.bankName) ? data.bankName.trim() : null),
+        accountHolder: encryptBankValue(isFilled(data.accountHolder) ? data.accountHolder.trim() : null),
+      };
+    } catch (err) {
+      if (err instanceof BankKeyMissingError) return res.status(503).json({ error: err.message, code: err.code });
+      throw err;
+    }
 
     const countryId = await resolveCountryId(data.countryCode);
     if (!countryId) {
@@ -392,7 +424,8 @@ accountsRouter.post(
         contact_name, phone, phone_country_code, mobile, mobile_country_code, email,
         tax_id, vat_number, iban, bic, sepa_mandate_status, regime_fiscal,
         delivery_note, nom_commercial,
-        pipeline_stage, owner_rep_id, master_rep_id
+        pipeline_stage, owner_rep_id, master_rep_id,
+        bank_name, account_holder
       ) VALUES (
         $1, $2, $3, $4, $5, $6,
         $7, $8, $9,
@@ -400,7 +433,8 @@ accountsRouter.post(
         $13, $14, $15, $16, $17, $18,
         $19, $20, $21, $22, $23, $24,
         $25, $26,
-        'Nouveau', $27, $28
+        'Nouveau', $27, $28,
+        $29, $30
       ) RETURNING *`,
       [
         data.type,
@@ -431,6 +465,8 @@ accountsRouter.post(
         data.nomCommercial ?? null,
         ownerRepId,
         masterRepId,
+        encryptedBank.bankName,
+        encryptedBank.accountHolder,
       ]
     );
 
@@ -469,7 +505,7 @@ accountsRouter.post(
     rows[0].latitude = coords?.latitude ?? null;
     rows[0].longitude = coords?.longitude ?? null;
 
-    res.status(201).json(toCamel(rows[0]));
+    res.status(201).json(toCamel(presentAccountRow(rows[0], req.user.role)));
   }
 );
 
@@ -509,6 +545,46 @@ accountsRouter.patch(
       else delete data.taxId;
     }
 
+    // Point 1 — bloc bancaire (IBAN, BIC, agence, titulaire).
+    //  - Représentant / Master Rep ne voient pas les valeurs enregistrées :
+    //    un champ vide envoyé par leur formulaire signifie "inchangé", jamais
+    //    "effacer" (ils ne peuvent que saisir une nouvelle valeur).
+    //  - Seuls les champs réellement modifiés sont réécrits.
+    //  - Titulaire obligatoire uniquement si le bloc bancaire est modifié et
+    //    qu'un IBAN reste renseigné : une fiche existante avec IBAN sans
+    //    titulaire reste modifiable pour tout le reste (signalée "titulaire à
+    //    compléter", jamais bloquée).
+    const normBank = (v) => (isFilled(v) ? String(v).trim() : null);
+    if (!canSeeBankData(req.user.role)) {
+      for (const f of BANK_INPUT_FIELDS) if (data[f] !== undefined && !isFilled(data[f])) delete data[f];
+    }
+    const currentBank = {
+      iban: existing.iban,
+      bic: existing.bic,
+      bankName: decryptBankValue(existing.bank_name),
+      accountHolder: decryptBankValue(existing.account_holder),
+    };
+    const bankTouched = BANK_INPUT_FIELDS.filter(
+      (f) => data[f] !== undefined && normBank(data[f]) !== normBank(currentBank[f])
+    );
+    for (const f of BANK_INPUT_FIELDS) if (data[f] !== undefined && !bankTouched.includes(f)) delete data[f];
+    if (bankTouched.length > 0) {
+      const resultingIban = data.iban !== undefined ? normBank(data.iban) : normBank(existing.iban);
+      const resultingHolder =
+        data.accountHolder !== undefined ? normBank(data.accountHolder) : isFilled(existing.account_holder);
+      if (resultingIban && !resultingHolder) {
+        return res.status(400).json({ error: HOLDER_REQUIRED_MESSAGE, code: "ACCOUNT_HOLDER_REQUIRED" });
+      }
+    }
+    let encryptedBank = {};
+    try {
+      if (data.bankName !== undefined) encryptedBank.bank_name = encryptBankValue(normBank(data.bankName));
+      if (data.accountHolder !== undefined) encryptedBank.account_holder = encryptBankValue(normBank(data.accountHolder));
+    } catch (err) {
+      if (err instanceof BankKeyMissingError) return res.status(503).json({ error: err.message, code: err.code });
+      throw err;
+    }
+
     if (
       (data.ownerRepId !== undefined || data.masterRepId !== undefined) &&
       !canReassignAccount(req.user.role)
@@ -541,6 +617,10 @@ accountsRouter.patch(
         sets.push(`${columnFor(field)} = $${i++}`);
         params.push(data[field]);
       }
+    }
+    for (const [column, value] of Object.entries(encryptedBank)) {
+      sets.push(`${column} = $${i++}`);
+      params.push(value);
     }
 
     if (data.typology !== undefined) {
@@ -602,7 +682,7 @@ accountsRouter.patch(
       rows[0].longitude = coords?.longitude ?? null;
     }
 
-    res.json(toCamel(rows[0]));
+    res.json(toCamel(presentAccountRow(rows[0], req.user.role)));
   }
 );
 
@@ -675,7 +755,7 @@ accountsRouter.post(
       entityId: rows[0].id,
     });
 
-    res.json(toCamel(rows[0]));
+    res.json(toCamel(presentAccountRow(rows[0], req.user.role)));
   }
 );
 
@@ -732,7 +812,7 @@ accountsRouter.patch(
       details: { from: existing.pipeline_stage, to: stage },
     });
 
-    res.json(toCamel(rows[0]));
+    res.json(toCamel(presentAccountRow(rows[0], req.user.role)));
   }
 );
 
@@ -795,6 +875,6 @@ accountsRouter.patch(
       details: { from: existing.status, to: target },
     });
 
-    res.json(toCamel(rows[0]));
+    res.json(toCamel(presentAccountRow(rows[0], req.user.role)));
   }
 );

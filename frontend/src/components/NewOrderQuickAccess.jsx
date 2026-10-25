@@ -126,10 +126,14 @@ export default function NewOrderQuickAccess() {
     const missingTaxId = createForm.type !== "PROSPECT" && !createForm.taxId.trim();
     const missingBilling =
       !createForm.billingStreet.trim() || !createForm.billingZip.trim() || !createForm.billingCity.trim();
-    if (missingTaxId || missingBilling) {
+    // Point 1 : titulaire obligatoire dès qu'un IBAN est saisi (vérifié aussi
+    // côté serveur).
+    const missingHolder = createForm.iban.trim() !== "" && !createForm.accountHolder.trim();
+    if (missingTaxId || missingBilling || missingHolder) {
       const messages = [];
       if (missingTaxId) messages.push(t("clients.newAccountMissingTaxId"));
       if (missingBilling) messages.push(t("clients.newAccountMissingBilling"));
+      if (missingHolder) messages.push(t("account.accountHolderRequired"));
       setCreateError(messages.join(" "));
       return;
     }

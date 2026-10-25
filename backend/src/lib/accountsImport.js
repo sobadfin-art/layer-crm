@@ -4,6 +4,7 @@
 // importables). Séparée des routes pour rester testable indépendamment de
 // HTTP (même approche que lib/catalogImport.js).
 import { pool } from "./db.js";
+import { encryptBankValue } from "./bankData.js";
 import { defaultRegimeFiscalForCountry, REGIMES_FISCAUX } from "./taxRegime.js";
 import { resolveTypology, sectorForTypology } from "./typology.js";
 
@@ -211,6 +212,8 @@ export function classifyRows(rows, mapping, countriesByName) {
     if (mapping.taxId) fields.taxId = trimOrNull(row[mapping.taxId]);
     if (mapping.iban) fields.iban = trimOrNull(row[mapping.iban]);
     if (mapping.bic) fields.bic = trimOrNull(row[mapping.bic]);
+    if (mapping.bankName) fields.bankName = trimOrNull(row[mapping.bankName]);
+    if (mapping.accountHolder) fields.accountHolder = trimOrNull(row[mapping.accountHolder]);
     if (mapping.sepaMandateStatus) fields.sepaMandateStatus = resolveSepaStatus(row[mapping.sepaMandateStatus]);
     if (mapping.regimeFiscal) {
       const resolved = resolveRegimeFiscal(row[mapping.regimeFiscal]);
@@ -285,12 +288,17 @@ export async function summarizeImport(classified) {
   const newCount = validRows.filter((r) => !existingIds.has(r.dolibarrId)).length;
   const updateCount = validRows.filter((r) => existingIds.has(r.dolibarrId)).length;
 
+  // Point 1 : une ligne avec IBAN sans titulaire n'est PAS rejetée (aucune
+  // donnée perdue) — la fiche sera signalée "titulaire à compléter".
+  const holderMissingCount = validRows.filter((r) => r.fields.iban && !r.fields.accountHolder).length;
+
   return {
     total: classified.length,
     newCount,
     updateCount,
     errorCount,
     repFallbackCount,
+    holderMissingCount,
     ...extractErrorDetails(classified),
   };
 }
@@ -327,6 +335,18 @@ const SIMPLE_FIELD_COLUMNS = {
 // sans représentant reconnu dans le fichier ET sans repli par défaut est
 // importée avec owner_rep_id = NULL, à affecter manuellement ensuite.
 export async function applyImport({ classified, defaultRepId = null, mode, userId }) {
+  // Point 1 : agence et titulaire chiffrés AVANT toute écriture — sans clé
+  // configurée, l'import est refusé d'emblée (BankKeyMissingError) plutôt
+  // que d'écrire ces valeurs en clair ou d'importer à moitié.
+  const encryptedBankByRow = new Map();
+  for (const row of classified) {
+    if (row.error) continue;
+    const enc = {};
+    if ("bankName" in row.fields) enc.bank_name = encryptBankValue(row.fields.bankName);
+    if ("accountHolder" in row.fields) enc.account_holder = encryptBankValue(row.fields.accountHolder);
+    encryptedBankByRow.set(row, enc);
+  }
+
   const client = await pool.connect();
   let created = 0;
   let updated = 0;
@@ -385,14 +405,16 @@ export async function applyImport({ classified, defaultRepId = null, mode, userI
             shipping_street, shipping_zip, shipping_city,
             contact_name, phone, phone_country_code, mobile, mobile_country_code, email,
             tax_id, vat_number, iban, bic, sepa_mandate_status, regime_fiscal,
-            status, pipeline_stage, owner_rep_id, master_rep_id, dolibarr_code_client
+            status, pipeline_stage, owner_rep_id, master_rep_id, dolibarr_code_client,
+            bank_name, account_holder
           ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9,
             $10, $11, $12,
             $13, $14, $15, $16, $17, $18,
             $19, $20, $21, $22, $23, $24,
-            $25, 'Nouveau', $26, $27, $28
+            $25, 'Nouveau', $26, $27, $28,
+            $29, $30
           )`,
           [
             type,
@@ -423,6 +445,8 @@ export async function applyImport({ classified, defaultRepId = null, mode, userI
             ownerRepId,
             masterRepId,
             row.dolibarrId,
+            encryptedBankByRow.get(row)?.bank_name ?? null,
+            encryptedBankByRow.get(row)?.account_holder ?? null,
           ]
         );
         created++;
@@ -447,6 +471,7 @@ export async function applyImport({ classified, defaultRepId = null, mode, userI
         pushField("country_id", row.countryId);
         if ("ownerRepIdRaw" in row.fields) pushField("owner_rep_id", ownerRepId);
         if ("masterRepIdRaw" in row.fields) pushField("master_rep_id", masterRepId);
+        for (const [column, value] of Object.entries(encryptedBankByRow.get(row) || {})) pushField(column, value);
 
         params.push(existingAccountId);
         await client.query(`UPDATE accounts SET ${sets.join(", ")} WHERE id = $${i}`, params);

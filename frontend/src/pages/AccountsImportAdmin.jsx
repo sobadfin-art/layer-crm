@@ -36,6 +36,8 @@ const FIELD_LABELS = {
   shippingCity: "Ville (livraison, si distincte)",
   iban: "IBAN",
   bic: "BIC",
+  bankName: "Agence bancaire (optionnel)",
+  accountHolder: "Titulaire du compte (optionnel)",
   sepaMandateStatus: "Statut mandat SEPA",
   regimeFiscal: "Régime fiscal",
   masterRepId: "Master Rep (ID dans l'app, si distinct du commercial)",
@@ -95,18 +97,28 @@ export default function AccountsImportAdmin() {
         requiredFields={REQUIRED_FIELDS}
         modeChoiceLabel={t("accountsImportAdmin.modeLabel")}
         onDownloadTemplate={() => downloadFile("/accounts-import/template", "modele-import-fiches-client.xlsx")}
-        renderSummaryExtra={(summary) =>
-          summary.repFallbackCount > 0 && (
-            <div className="task-row">
-              <span>
-                {defaultRepId
-                  ? t("accountsImportAdmin.summaryRepFallback")
-                  : t("accountsImportAdmin.summaryRepUnassigned")}
-              </span>
-              <span>{summary.repFallbackCount}</span>
-            </div>
-          )
-        }
+        renderSummaryExtra={(summary) => (
+          <>
+            {summary.repFallbackCount > 0 && (
+              <div className="task-row">
+                <span>
+                  {defaultRepId
+                    ? t("accountsImportAdmin.summaryRepFallback")
+                    : t("accountsImportAdmin.summaryRepUnassigned")}
+                </span>
+                <span>{summary.repFallbackCount}</span>
+              </div>
+            )}
+            {/* Point 1 : IBAN sans titulaire — importé quand même, fiche
+                signalée "titulaire à compléter". */}
+            {summary.holderMissingCount > 0 && (
+              <div className="task-row">
+                <span>{t("accountsImportAdmin.summaryHolderMissing")}</span>
+                <span>{summary.holderMissingCount}</span>
+              </div>
+            )}
+          </>
+        )}
         onPreview={async (file) => {
           const form = new FormData();
           form.append("file", file);

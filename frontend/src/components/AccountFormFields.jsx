@@ -57,6 +57,8 @@ const OPTIONAL_TEXT_FIELDS = [
   "vatNumber",
   "iban",
   "bic",
+  "bankName",
+  "accountHolder",
   "deliveryNote",
   "nomCommercial",
 ];
@@ -101,6 +103,8 @@ export function emptyAccountForm() {
     vatNumber: "",
     iban: "",
     bic: "",
+    bankName: "",
+    accountHolder: "",
     sepaMandateStatus: "NON_RENSEIGNE",
     deliveryNote: "",
     nomCommercial: "",
@@ -332,6 +336,25 @@ export default function AccountFormFields({
         <div className="field">
           <label>{t("account.bic")}</label>
           <input placeholder="ex : BNPAFRPP" value={form.bic} onChange={(e) => setField("bic", e.target.value)} />
+        </div>
+      </div>
+      {/* Point 1 : agence bancaire et titulaire du compte (chiffrés côté
+          serveur). Titulaire obligatoire dès qu'un IBAN est saisi. */}
+      <div className="form-row">
+        <div className="field">
+          <label>{t("account.bankName")}</label>
+          <input value={form.bankName} onChange={(e) => setField("bankName", e.target.value)} />
+        </div>
+        <div className="field">
+          <label>
+            {t("account.accountHolder")}
+            {form.iban?.trim() && t("account.taxIdRequiredSuffix")}
+          </label>
+          <input
+            placeholder={t("account.accountHolderPlaceholder")}
+            value={form.accountHolder}
+            onChange={(e) => setField("accountHolder", e.target.value)}
+          />
         </div>
       </div>
       <div className="field">

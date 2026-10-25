@@ -344,6 +344,8 @@ export default function AccountDetail() {
       vatNumber: account.vatNumber || "",
       iban: account.iban || "",
       bic: account.bic || "",
+      bankName: account.bankName || "",
+      accountHolder: account.accountHolder || "",
       sepaMandateStatus: account.sepaMandateStatus || "NON_RENSEIGNE",
       deliveryNote: account.deliveryNote || "",
     });
@@ -571,8 +573,16 @@ export default function AccountDetail() {
     !account.taxId?.trim() && (account.taxIdLabel || t("account.taxIdGeneric")),
     !(account.billingStreet?.trim() && account.billingZip?.trim() && account.billingCity?.trim()) &&
       t("account.convertMissingBilling"),
-    !(account.iban?.trim() && account.bic?.trim()) && t("account.convertMissingBank"),
+    !(account.hasIban && account.hasBic) && t("account.convertMissingBank"),
   ].filter(Boolean);
+
+  // Point 1 : coordonnées bancaires masquées par le serveur pour le
+  // représentant et le Master Rep (bankDataMasked) — seul l'indicateur
+  // "renseigné" leur parvient, jamais la valeur.
+  const bankMasked = Boolean(account.bankDataMasked);
+  const bankValue = (value, has) =>
+    bankMasked ? (has ? t("account.bankMaskedValue") : t("account.noValue")) : value || t("account.noValue");
+  const bankPlaceholder = (has) => (bankMasked && has ? t("account.bankMaskedPlaceholder") : undefined);
 
   const billing = fullAddress(account.billingStreet, account.billingZip, account.billingCity, account.countryName);
   const shipping = fullAddress(account.shippingStreet, account.shippingZip, account.shippingCity, account.countryName);
@@ -917,16 +927,31 @@ export default function AccountDetail() {
         <div className="panel">
           <h3>
             <CreditCard size={14} /> {t("account.sectionBank")}
+            {account.holderMissing && (
+              <span className="typology-badge swiss-missing" style={{ marginLeft: 8 }}>
+                {t("account.holderMissingBadge")}
+              </span>
+            )}
           </h3>
+          {bankMasked && <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 0 }}>{t("account.bankMaskedHint")}</p>}
+          {account.bankDataUnreadable && <p className="error-text">{t("account.bankUnreadable")}</p>}
           {!editMode ? (
             <>
               <div className="task-row">
                 <span>{t("account.iban")}</span>
-                <span>{account.iban || t("account.noValue")}</span>
+                <span>{bankValue(account.iban, account.hasIban)}</span>
               </div>
               <div className="task-row">
                 <span>{t("account.bic")}</span>
-                <span>{account.bic || t("account.noValue")}</span>
+                <span>{bankValue(account.bic, account.hasBic)}</span>
+              </div>
+              <div className="task-row">
+                <span>{t("account.bankName")}</span>
+                <span>{bankValue(account.bankName, account.hasBankName)}</span>
+              </div>
+              <div className="task-row">
+                <span>{t("account.accountHolder")}</span>
+                <span>{bankValue(account.accountHolder, account.hasAccountHolder)}</span>
               </div>
               <div className="task-row">
                 <span>{t("account.sepaStatusLabel")}</span>
@@ -938,11 +963,40 @@ export default function AccountDetail() {
               <div className="form-row">
                 <div className="field">
                   <label>{t("account.iban")}</label>
-                  <input value={editForm.iban} onChange={(e) => setEditForm((f) => ({ ...f, iban: e.target.value }))} />
+                  <input
+                    value={editForm.iban}
+                    placeholder={bankPlaceholder(account.hasIban)}
+                    onChange={(e) => setEditForm((f) => ({ ...f, iban: e.target.value }))}
+                  />
                 </div>
                 <div className="field">
                   <label>{t("account.bic")}</label>
-                  <input value={editForm.bic} onChange={(e) => setEditForm((f) => ({ ...f, bic: e.target.value }))} />
+                  <input
+                    value={editForm.bic}
+                    placeholder={bankPlaceholder(account.hasBic)}
+                    onChange={(e) => setEditForm((f) => ({ ...f, bic: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label>{t("account.bankName")}</label>
+                  <input
+                    value={editForm.bankName}
+                    placeholder={bankPlaceholder(account.hasBankName)}
+                    onChange={(e) => setEditForm((f) => ({ ...f, bankName: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label>
+                    {t("account.accountHolder")}
+                    {(editForm.iban.trim() || (bankMasked && account.hasIban)) && t("account.taxIdRequiredSuffix")}
+                  </label>
+                  <input
+                    value={editForm.accountHolder}
+                    placeholder={bankPlaceholder(account.hasAccountHolder) || t("account.accountHolderPlaceholder")}
+                    onChange={(e) => setEditForm((f) => ({ ...f, accountHolder: e.target.value }))}
+                  />
                 </div>
               </div>
               <div className="field">
