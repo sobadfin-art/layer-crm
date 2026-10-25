@@ -6,6 +6,7 @@ SELECT 'clients/prospects' AS element, count(*) FROM accounts
 UNION ALL SELECT 'commandes', count(*) FROM orders
 UNION ALL SELECT 'commandes EUR', count(*) FROM orders WHERE currency = 'EUR'
 UNION ALL SELECT 'commandes CHF', count(*) FROM orders WHERE currency = 'CHF'
+UNION ALL SELECT 'commandes existantes de clients suisses (en EUR)', count(*) FROM orders o JOIN accounts a ON a.id = o.account_id JOIN countries c ON c.id = a.country_id WHERE c.code = 'CH' AND o.currency = 'EUR'
 UNION ALL SELECT 'lignes de commande', count(*) FROM order_lines
 UNION ALL SELECT 'produits', count(*) FROM products
 UNION ALL SELECT 'produits avec photo', count(*) FROM products WHERE photo_url IS NOT NULL
