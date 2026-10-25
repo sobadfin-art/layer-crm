@@ -5,6 +5,11 @@ import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { dateTime, shortDate } from "../lib/format.js";
 import ClientSearchPicker from "../components/ClientSearchPicker.jsx";
+import AgendaCalendar from "../components/AgendaCalendar.jsx";
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
 
 // Mêmes valeurs que le backend (backend/src/lib/interactionTypes.js) et que
 // AccountDetail.jsx (qui les redéfinit aussi localement plutôt que de les
@@ -37,12 +42,25 @@ const INTERACTION_TYPES = ["VISITE", "APPEL", "EMAIL", "RDV_COURTOISIE", "SAV", 
 // équipe restent strictement en lecture seule (section 3 : "tâches, agenda"
 // en lecture seule pour le Master Rep), avec le nom du titulaire affiché pour
 // les distinguer des siens.
+//
+// Point 3 (2026-10-25) : nouvelle sous-vue "Calendrier" (par défaut) — Jour,
+// Semaine, Mois, Année (components/AgendaCalendar.jsx), alimentée par les
+// MÊMES données que les deux listes ci-dessus (aucun nouvel endpoint, aucun
+// changement de structure sur les RDV/tâches, visibilité par rôle
+// inchangée). Clic sur un créneau → même formulaire de création de RDV que
+// le bouton "Nouveau RDV" (date/heure pré-remplies) ; clic sur un événement
+// → son détail (réutilise renderRdvCard, compte rendu compris) et l'accès à
+// la fiche client. Les listes "Rendez-vous" et "Tâches" restent disponibles
+// telles quelles (compte rendu, cases à cocher, création de tâche).
 export default function Agenda() {
   const { t, locale } = useI18n();
   const { user } = useAuth();
   const navigate = useNavigate();
   const isPrivileged = user.role === "FRONT_DESK" || user.role === "DIRECTEUR";
-  const [subview, setSubview] = useState("rdv");
+  const [subview, setSubview] = useState("calendar");
+  // Détail ouvert depuis le calendrier : { kind: "rdv" | "task", id }.
+  const [detail, setDetail] = useState(null);
+  const [slotModalOpen, setSlotModalOpen] = useState(false);
 
   const [rdvList, setRdvList] = useState([]);
   const [loadingRdv, setLoadingRdv] = useState(true);
@@ -178,6 +196,7 @@ export default function Agenda() {
 
   function closeNewRdvForm() {
     setNewRdvOpen(false);
+    setSlotModalOpen(false);
     setRdvCreateError(null);
     setNewRdvAccountId("");
     setNewRdvTitle("");
@@ -216,6 +235,46 @@ export default function Agenda() {
     }
   }
 
+  // Créneau cliqué dans le calendrier : ouvre le formulaire de création de
+  // RDV avec la date et l'heure du créneau déjà renseignées.
+  function openSlot(date) {
+    setNewRdvAccountId("");
+    setNewRdvTitle("");
+    setNewRdvType("");
+    setNewRdvDate(`${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`);
+    setNewRdvTime(`${pad2(date.getHours())}:${pad2(date.getMinutes())}`);
+    setRdvCreateError(null);
+    setNewRdvOpen(false);
+    setSlotModalOpen(true);
+  }
+
+  // Événements du calendrier : tous les RDV datés (passés et à venir) et
+  // toutes les tâches ayant une échéance (faites comprises, affichées
+  // atténuées). Les éléments sans date n'ont pas de place dans un
+  // calendrier et restent visibles dans les listes.
+  const calendarEvents = useMemo(
+    () => [
+      ...rdvList
+        .filter((ev) => ev.dueDate)
+        .map((ev) => ({ id: `rdv-${ev.id}`, refId: ev.id, kind: "rdv", start: new Date(ev.dueDate), title: ev.title, accountName: ev.accountName, done: false })),
+      ...taskList
+        .filter((tk) => tk.dueDate)
+        .map((tk) => ({
+          id: `task-${tk.id}`,
+          refId: tk.id,
+          kind: "task",
+          start: new Date(tk.dueDate),
+          title: tk.title,
+          accountName: tk.accountId ? accountName(tk.accountId) : null,
+          done: tk.done,
+        })),
+    ],
+    [rdvList, taskList, accountName]
+  );
+
+  const detailRdv = detail?.kind === "rdv" ? rdvList.find((ev) => ev.id === detail.id) : null;
+  const detailTask = detail?.kind === "task" ? taskList.find((tk) => tk.id === detail.id) : null;
+
   const pendingTasks = taskList.filter((tk) => !tk.done);
   const doneTasks = taskList.filter((tk) => tk.done);
 
@@ -230,6 +289,57 @@ export default function Agenda() {
   const now = Date.now();
   const upcomingRdvList = rdvList.filter((ev) => !ev.dueDate || new Date(ev.dueDate).getTime() >= now);
   const pastRdvList = rdvList.filter((ev) => ev.dueDate && new Date(ev.dueDate).getTime() < now);
+
+  // Formulaire de création de RDV — partagé entre le bouton "Nouveau RDV" de
+  // la liste et le clic sur un créneau du calendrier (même champs, même
+  // validation, même endpoint).
+  function renderRdvForm() {
+    return (
+      <form onSubmit={handleCreateRdv}>
+        <div className="field">
+          <label>{t("agenda.newRdvClientLabel")}</label>
+          <ClientSearchPicker accounts={accounts} value={newRdvAccountId} onChange={setNewRdvAccountId} />
+        </div>
+        <div className="field">
+          <input
+            placeholder={t("account.planTitlePlaceholder")}
+            value={newRdvTitle}
+            onChange={(e) => setNewRdvTitle(e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label>{t("account.planTypeLabel")}</label>
+          <select value={newRdvType} onChange={(e) => setNewRdvType(e.target.value)}>
+            <option value="">{t("directeurDashboard.objectiveRepChoose")}</option>
+            {INTERACTION_TYPES.map((ty) => (
+              <option key={ty} value={ty}>
+                {t(`interactionType.${ty}`)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-row">
+          <div className="field">
+            <label>{t("account.planDate")}</label>
+            <input type="date" value={newRdvDate} onChange={(e) => setNewRdvDate(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>{t("account.planTime")}</label>
+            <input type="time" value={newRdvTime} onChange={(e) => setNewRdvTime(e.target.value)} />
+          </div>
+        </div>
+        {rdvCreateError && <p className="error-text">{rdvCreateError}</p>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn primary" type="submit" disabled={savingRdv}>
+            {savingRdv ? t("account.planSaving") : t("account.planSubmit")}
+          </button>
+          <button className="btn outline" type="button" onClick={closeNewRdvForm}>
+            {t("agenda.newRdvCancel")}
+          </button>
+        </div>
+      </form>
+    );
+  }
 
   function renderRdvCard(ev, archived = false) {
     const isOwn = ev.assigneeId === user.id;
@@ -293,6 +403,9 @@ export default function Agenda() {
       <p className="page-sub">{t("agenda.subtitle")}</p>
 
       <div className="cat-tabs">
+        <button className={`cat-tab ${subview === "calendar" ? "active" : ""}`} onClick={() => setSubview("calendar")}>
+          {t("agenda.tabCalendar")}
+        </button>
         <button className={`cat-tab ${subview === "rdv" ? "active" : ""}`} onClick={() => setSubview("rdv")}>
           {t("agenda.tabRdv")}
         </button>
@@ -302,6 +415,85 @@ export default function Agenda() {
         </button>
       </div>
 
+      {subview === "calendar" && (
+        <>
+          {(rdvError || tasksError) && <p className="error-text">{rdvError || tasksError}</p>}
+          <AgendaCalendar
+            events={calendarEvents}
+            onSlotClick={openSlot}
+            onEventClick={(ev) => setDetail({ kind: ev.kind, id: ev.refId })}
+            t={t}
+            locale={locale}
+          />
+        </>
+      )}
+
+      {slotModalOpen && (
+        <div className="modal-overlay" onClick={closeNewRdvForm}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>{t("agenda.newRdvButton")}</h3>
+            {renderRdvForm()}
+          </div>
+        </div>
+      )}
+
+      {(detailRdv || detailTask) && (
+        <div className="modal-overlay" onClick={() => setDetail(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>{detailRdv ? t("agenda.calLegendRdv") : t("agenda.calLegendTask")}</h3>
+            {detailRdv && (
+              <>
+                {detailRdv.rdvSubtype && (
+                  <p className="page-sub" style={{ marginTop: 0 }}>
+                    {t(`interactionType.${detailRdv.rdvSubtype}`)}
+                  </p>
+                )}
+                {renderRdvCard(detailRdv, detailRdv.dueDate && new Date(detailRdv.dueDate).getTime() < Date.now())}
+              </>
+            )}
+            {detailTask && (
+              <div className="panel">
+                {(() => {
+                  const canEdit = detailTask.assigneeId === user.id || isPrivileged;
+                  return (
+                    <div className="task-row" style={{ border: "none" }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={detailTask.done}
+                          disabled={!canEdit}
+                          onChange={() => canEdit && toggleTaskDone(detailTask)}
+                        />
+                        <span style={detailTask.done ? { textDecoration: "line-through" } : undefined}>{detailTask.title}</span>
+                        {detailTask.assigneeId !== user.id && (detailTask.assigneeFirstName || detailTask.assigneeLastName) && (
+                          <span className="typology-badge">
+                            {detailTask.assigneeFirstName} {detailTask.assigneeLastName}
+                          </span>
+                        )}
+                      </span>
+                      <span>{detailTask.dueDate ? shortDate(detailTask.dueDate, locale) : "—"}</span>
+                    </div>
+                  );
+                })()}
+                {detailTask.accountId && accountName(detailTask.accountId) && (
+                  <p style={{ fontSize: 13, margin: "6px 0 0" }}>{accountName(detailTask.accountId)}</p>
+                )}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button className="btn outline" onClick={() => setDetail(null)}>
+                {t("agenda.calClose")}
+              </button>
+              {(detailRdv?.accountId || detailTask?.accountId) && (
+                <button className="btn primary" onClick={() => navigate(`/clients/${detailRdv?.accountId || detailTask?.accountId}`)}>
+                  {t("agenda.calOpenAccount")}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {subview === "rdv" && (
         <>
           <div className="panel">
@@ -310,49 +502,7 @@ export default function Agenda() {
                 {t("agenda.newRdvButton")}
               </button>
             ) : (
-              <form onSubmit={handleCreateRdv}>
-                <div className="field">
-                  <label>{t("agenda.newRdvClientLabel")}</label>
-                  <ClientSearchPicker accounts={accounts} value={newRdvAccountId} onChange={setNewRdvAccountId} />
-                </div>
-                <div className="field">
-                  <input
-                    placeholder={t("account.planTitlePlaceholder")}
-                    value={newRdvTitle}
-                    onChange={(e) => setNewRdvTitle(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label>{t("account.planTypeLabel")}</label>
-                  <select value={newRdvType} onChange={(e) => setNewRdvType(e.target.value)}>
-                    <option value="">{t("directeurDashboard.objectiveRepChoose")}</option>
-                    {INTERACTION_TYPES.map((ty) => (
-                      <option key={ty} value={ty}>
-                        {t(`interactionType.${ty}`)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-row">
-                  <div className="field">
-                    <label>{t("account.planDate")}</label>
-                    <input type="date" value={newRdvDate} onChange={(e) => setNewRdvDate(e.target.value)} />
-                  </div>
-                  <div className="field">
-                    <label>{t("account.planTime")}</label>
-                    <input type="time" value={newRdvTime} onChange={(e) => setNewRdvTime(e.target.value)} />
-                  </div>
-                </div>
-                {rdvCreateError && <p className="error-text">{rdvCreateError}</p>}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn primary" type="submit" disabled={savingRdv}>
-                    {savingRdv ? t("account.planSaving") : t("account.planSubmit")}
-                  </button>
-                  <button className="btn outline" type="button" onClick={closeNewRdvForm}>
-                    {t("agenda.newRdvCancel")}
-                  </button>
-                </div>
-              </form>
+              renderRdvForm()
             )}
           </div>
 
