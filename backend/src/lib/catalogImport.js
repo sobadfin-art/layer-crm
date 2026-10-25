@@ -238,7 +238,22 @@ export async function summarizeImport(classified) {
   const newCount = validRefs.filter((ref) => !existingRefs.has(ref)).length;
   const updateCount = validRefs.filter((ref) => existingRefs.has(ref)).length;
 
-  return { total: classified.length, newCount, updateCount, errorCount, ...extractErrorDetails(classified) };
+  // Point 7 : la colonne Prix Suisse est lue en CHF (jamais convertie) —
+  // compteurs affichés dans le résumé pour que l'administrateur voie combien
+  // de références resteront non commandables pour un client suisse.
+  const valid = classified.filter((r) => !r.error);
+  const swissPriceCount = valid.filter((r) => r.fields?.price_ch !== null && r.fields?.price_ch !== undefined).length;
+
+  return {
+    total: classified.length,
+    newCount,
+    updateCount,
+    errorCount,
+    swissPriceCurrency: "CHF",
+    swissPriceCount,
+    swissPriceMissingCount: valid.length - swissPriceCount,
+    ...extractErrorDetails(classified),
+  };
 }
 
 const COLUMN_FOR_FIELD = {

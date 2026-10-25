@@ -2165,3 +2165,16 @@ body {
     font-size: 11.5px;
   }
 }
+
+/* Point 7 : repère "prix Suisse manquant" (Catalogue) et "Suisse" (Config). */
+.typology-badge.swiss-missing {
+  margin-left: 6px;
+  background: var(--danger-soft, #fde8e8);
+  color: var(--danger, #c0392b);
+}
+
+.typology-badge.swiss {
+  background: #c0392b;
+  color: white;
+  font-weight: 800;
+}

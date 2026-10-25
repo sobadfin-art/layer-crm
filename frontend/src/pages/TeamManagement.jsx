@@ -3,6 +3,8 @@ import { Trash2 } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate } from "../lib/format.js";
+import { primaryTotals } from "../lib/objectiveTotals.js";
+import ObjectiveAmounts from "../components/ObjectiveAmounts.jsx";
 import { useObjectiveForm } from "../hooks/useObjectiveForm.jsx";
 
 // Mêmes helpers que DirecteurDashboard.jsx (objectifs actifs + somme
@@ -14,14 +16,11 @@ function isActivePeriod(o) {
   return new Date(o.periodStart).getTime() <= now && now <= new Date(o.periodEnd).getTime();
 }
 
+// Point 7 : totaux par devise (cf. lib/objectiveTotals.js) — `list` est
+// conservée pour l'affichage ligne par ligne EUR / CHF (ObjectiveAmounts),
+// le pourcentage de progression porte sur la devise principale seule.
 function sumTargetAchieved(list) {
-  return list.reduce(
-    (acc, o) => ({
-      target: acc.target + Number(o.targetAmount),
-      achieved: acc.achieved + (o.progress ? Number(o.progress.achievedAmount) : 0),
-    }),
-    { target: 0, achieved: 0 }
-  );
+  return { ...primaryTotals(list), list };
 }
 
 // "Mon équipe" du Master Rep (Equipe.jsx) est un écran de SUIVI en lecture
@@ -367,8 +366,7 @@ export default function TeamManagement() {
         <div style={{ textAlign: "right", fontSize: 12 }}>
           {caObjectives.length > 0 ? (
             <div style={{ fontWeight: 700 }}>
-              {money(repCa.achieved, locale)}
-              <span style={{ color: "var(--ink-soft)", fontWeight: 400 }}> / {money(repCa.target, locale)}</span>
+              <ObjectiveAmounts objectives={repCa.list} locale={locale} targetStyle={{ color: "var(--ink-soft)", fontWeight: 400 }} />
             </div>
           ) : (
             <span style={{ color: "var(--ink-soft)" }}>{t("teamManagement.noActiveObjective")}</span>
@@ -627,7 +625,7 @@ export default function TeamManagement() {
                   {shortDate(o.periodStart, locale)} → {shortDate(o.periodEnd, locale)}
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ color: "var(--ink-soft)" }}>{money(o.targetAmount, locale)}</span>
+                  <span style={{ color: "var(--ink-soft)" }}>{money(o.targetAmount, locale, o.currency)}</span>
                   <button
                     type="button"
                     className="icon-btn"

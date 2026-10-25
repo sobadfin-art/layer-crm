@@ -24,7 +24,7 @@ const FIELD_LABELS = {
   category: "Catégorie",
   priceFR: "Prix France",
   priceExport: "Prix Export",
-  priceCH: "Prix Suisse",
+  priceCH: "Prix Suisse (CHF)",
   rrp: "Prix conseillé (RRP)",
   qty: "Quantité en stock",
   dolibarrRef: "ID Dolibarr",
@@ -96,6 +96,9 @@ export default function CatalogueAdmin() {
   const [stockFilter, setStockFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [noPhotoOnly, setNoPhotoOnly] = useState(false);
+  // Point 7 : références sans prix Suisse (CHF) — non commandables pour un
+  // client suisse tant qu'il n'est pas saisi.
+  const [noSwissPriceOnly, setNoSwissPriceOnly] = useState(false);
   const [page, setPage] = useState(1);
 
   // Galerie photo (jusqu'à 5 par référence, fiche corrective V2
@@ -439,10 +442,16 @@ export default function CatalogueAdmin() {
       if (stockFilter !== "all" && p.stockStatus !== stockFilter) return false;
       if (statusFilter !== "all" && p.productStatus !== statusFilter) return false;
       if (noPhotoOnly && p.photoUrl) return false;
+      if (noSwissPriceOnly && p.priceCh !== null && p.priceCh !== undefined) return false;
       if (!q) return true;
       return [p.ref, p.label, p.model, p.color].filter(Boolean).join(" ").toLowerCase().includes(q);
     });
-  }, [products, search, categoryFilter, stockFilter, statusFilter, noPhotoOnly]);
+  }, [products, search, categoryFilter, stockFilter, statusFilter, noPhotoOnly, noSwissPriceOnly]);
+
+  const swissPriceMissingCount = useMemo(
+    () => products.filter((p) => p.priceCh === null || p.priceCh === undefined).length,
+    [products]
+  );
 
   const pageCount = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -517,6 +526,16 @@ export default function CatalogueAdmin() {
           <ImportWizard
             fieldLabels={FIELD_LABELS}
             requiredFields={REQUIRED_FIELDS}
+            renderSummaryExtra={(summary) =>
+              summary.swissPriceCurrency ? (
+                <p className="convert-warning" style={{ marginTop: 10 }}>
+                  {t("catalogueAdmin.importSwissPriceNote", {
+                    count: summary.swissPriceCount,
+                    missing: summary.swissPriceMissingCount,
+                  })}
+                </p>
+              ) : null
+            }
             allowSheetSelection
             onDownloadTemplate={() => downloadFile("/catalogs/import-template", "modele-import-catalogue.xlsx")}
             onPreview={async (file, sheetName) => {
@@ -744,7 +763,16 @@ export default function CatalogueAdmin() {
                 <input type="checkbox" checked={noPhotoOnly} onChange={(e) => setNoPhotoOnly(e.target.checked)} />
                 {t("catalogueAdmin.filterNoPhoto")}
               </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
+                <input type="checkbox" checked={noSwissPriceOnly} onChange={(e) => setNoSwissPriceOnly(e.target.checked)} />
+                {t("catalogueAdmin.filterNoSwissPrice", { count: swissPriceMissingCount })}
+              </label>
             </div>
+            {swissPriceMissingCount > 0 && (
+              <p className="convert-warning" style={{ margin: "4px 0 10px" }}>
+                {t("catalogueAdmin.swissPriceMissingWarning", { count: swissPriceMissingCount })}
+              </p>
+            )}
             <p style={{ fontSize: 11, color: "var(--ink-soft)", margin: "4px 0 10px" }}>
               {t("catalogueAdmin.uploadPhotoHint")}
             </p>
@@ -825,7 +853,14 @@ export default function CatalogueAdmin() {
                             )}
                           </div>
                         </td>
-                        <td>{p.ref}</td>
+                        <td>
+                          {p.ref}
+                          {(p.priceCh === null || p.priceCh === undefined) && (
+                            <span className="typology-badge swiss-missing" title={t("catalogueAdmin.swissPriceMissingBadgeTitle")}>
+                              {t("catalogueAdmin.swissPriceMissingBadge")}
+                            </span>
+                          )}
+                        </td>
                         <td>{p.label}</td>
                         <td>{[p.model, p.color].filter(Boolean).join(" / ") || "—"}</td>
                         <td>{t(`category.${p.category}`) || p.category}</td>

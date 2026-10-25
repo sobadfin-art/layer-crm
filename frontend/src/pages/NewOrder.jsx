@@ -4,7 +4,7 @@ import { ArrowLeft, Search, Plus, Minus, ShoppingCart } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
-import { money, shortDate } from "../lib/format.js";
+import { currencyForCountry, money, shortDate } from "../lib/format.js";
 import ProductPhotoCarousel from "../components/ProductPhotoCarousel.jsx";
 import OrderDraftsPanel from "../components/OrderDraftsPanel.jsx";
 import { deleteDraft, getDraft, listDrafts, newDraftId, saveDraft } from "../lib/orderDrafts.js";
@@ -41,10 +41,29 @@ function stockLine(p, t, locale) {
 // Ceci reste un APERÇU (cf. commentaire plus bas) — le serveur recalcule
 // toujours le prix réel à l'enregistrement, jamais fait confiance à ce calcul
 // client.
+//
+// Point 7 (2026-10-25) : client suisse → prix Suisse en CHF EXCLUSIVEMENT.
+// Un prix Suisse vide renvoie `null` (jamais 0, jamais le prix en euros) : la
+// référence n'est alors pas ajoutable au panier ("prix suisse non
+// renseigné"), et le serveur la refuse de toute façon.
 function unitPriceFor(product, countryCode) {
   if (countryCode === "FR") return Number(product.priceFr) || 0;
-  if (countryCode === "CH") return Number(product.priceCh) || 0;
+  if (countryCode === "CH") return product.priceCh === null || product.priceCh === undefined ? null : Number(product.priceCh);
   return Number(product.priceExport) || 0;
+}
+
+function isSwissPriceMissing(product, countryCode) {
+  return countryCode === "CH" && (product.priceCh === null || product.priceCh === undefined);
+}
+
+// Même choix de règle de frais de port que le serveur (lib/pricing.js,
+// pickShippingRule) : une commande en CHF ne retient qu'une règle "Pays :
+// Suisse" (montants en CHF) ; une commande en EUR ne la retient jamais.
+function pickShippingRule(rules, currency) {
+  const active = rules.filter((r) => r.type === "FRAIS_DE_PORT" && r.active);
+  const isSwiss = (r) => r.scope === "PAYS" && r.countryCode === "CH";
+  if (currency === "CHF") return active.find(isSwiss) || null;
+  return active.find((r) => !isSwiss(r)) || null;
 }
 
 // Choisit la règle de remise catégorie la plus spécifique (Représentant >
@@ -469,6 +488,7 @@ function NewOrderScreen() {
     // vide dans ce cas, donc ce chemin ne devrait normalement pas être
     // atteint depuis l'UI.
     if (selectedCatalogIds.length === 0) return;
+    if (delta > 0 && blockedForSwissPrice(productId)) return;
     setCart((prev) => {
       const next = new Map(prev);
       const current = next.get(productId) || { qty: 0, isGift: false };
@@ -487,6 +507,7 @@ function NewOrderScreen() {
   function setQtyDirect(productId, rawValue) {
     if (selectedCatalogIds.length === 0) return;
     const parsed = Math.max(0, Math.floor(Number(rawValue) || 0));
+    if (parsed > 0 && blockedForSwissPrice(productId)) return;
     setCart((prev) => {
       const next = new Map(prev);
       if (parsed === 0) {
@@ -497,6 +518,13 @@ function NewOrderScreen() {
       }
       return next;
     });
+  }
+
+  // Point 7 : garde-fou d'ajout — une référence sans prix Suisse ne peut pas
+  // entrer dans le panier d'un client suisse.
+  function blockedForSwissPrice(productId) {
+    const product = productsById.get(productId) || products.find((p) => p.id === productId);
+    return Boolean(product && account && isSwissPriceMissing(product, account.countryCode));
   }
 
   // Modification de quantité depuis le récapitulatif (point 2) — volontairement
@@ -532,7 +560,7 @@ function NewOrderScreen() {
         // catalogue quitté restent visibles au panier / récapitulatif.
         const product = productsById.get(productId) || productById.get(productId);
         if (!product) return null;
-        const unitPrice = account ? unitPriceFor(product, account.countryCode) : 0;
+        const unitPrice = account ? unitPriceFor(product, account.countryCode) ?? 0 : 0;
         return { productId, product, ...entry, unitPrice };
       })
       .filter(Boolean);
@@ -557,9 +585,17 @@ function NewOrderScreen() {
     return rule ? Number(rule.ratePct) || 0 : 0;
   }
 
-  const shippingRule = rules.find((r) => r.type === "FRAIS_DE_PORT" && r.active);
-  const shippingAmount = shippingRule?.flatAmount != null ? Number(shippingRule.flatAmount) : 9.6;
-  const shippingThreshold = shippingRule?.threshold != null ? Number(shippingRule.threshold) : null;
+  // Point 7 : devise de la commande (pays du compte). Tous les montants de cet
+  // écran sont formatés dans cette devise — aucun symbole € sur une commande
+  // suisse.
+  const currency = account ? currencyForCountry(account.countryCode) : "EUR";
+  const fmt = (n) => money(n, locale, currency);
+  const shippingRule = pickShippingRule(rules, currency);
+  // Client suisse sans règle de frais de port Suisse : port "à définir" —
+  // aucun montant inventé (jamais les 9,60 € par défaut renommés en CHF).
+  const shippingToDefine = currency === "CHF" && (!shippingRule || shippingRule.flatAmount == null);
+  const shippingAmount = shippingToDefine ? 0 : shippingRule?.flatAmount != null ? Number(shippingRule.flatAmount) : 9.6;
+  const shippingThreshold = shippingToDefine ? null : shippingRule?.threshold != null ? Number(shippingRule.threshold) : null;
 
   const totalAmount = cartItems.reduce((s, i) => {
     if (i.isGift) return s;
@@ -568,6 +604,12 @@ function NewOrderScreen() {
   }, 0);
   const shippingAutoEligible = shippingThreshold !== null && totalAmount >= shippingThreshold;
   const grandTotal = shippingOffered || shippingAutoEligible ? totalAmount : totalAmount + shippingAmount;
+  const shippingLabel =
+    shippingOffered || shippingAutoEligible
+      ? t("newOrder.shippingOffered")
+      : shippingToDefine
+      ? t("newOrder.shippingToDefine")
+      : fmt(shippingAmount);
 
   async function handleSubmit() {
     if (cartItems.length === 0) return;
@@ -721,6 +763,7 @@ function NewOrderScreen() {
             {selectedCatalogIds.length > 0 && !productsLoading && filtered.map((p) => {
               const entry = cart.get(p.id);
               const price = account ? unitPriceFor(p, account.countryCode) : null;
+              const swissMissing = account ? isSwissPriceMissing(p, account.countryCode) : false;
               const stock = stockLine(p, t, locale);
               return (
                 <div className="product-card" key={p.id}>
@@ -728,7 +771,15 @@ function NewOrderScreen() {
                   <div className="product-body">
                     <div className="product-ref">{p.ref}</div>
                     <div className="product-name">{p.label}</div>
-                    <div className="product-price">{price ? money(price, locale) : t("catalogue.priceUnset")}</div>
+                    <div className="product-price">
+                      {swissMissing ? (
+                        <span style={{ color: "var(--danger)" }}>{t("newOrder.swissPriceMissing")}</span>
+                      ) : price ? (
+                        fmt(price)
+                      ) : (
+                        t("catalogue.priceUnset")
+                      )}
+                    </div>
                     <div className="product-stock" style={{ color: stock.color }}>
                       {stock.text}
                     </div>
@@ -743,10 +794,11 @@ function NewOrderScreen() {
                         className="qty-input"
                         aria-label={t("newOrder.qtyInputLabel")}
                         value={entry?.qty || 0}
+                        disabled={swissMissing && !entry}
                         onChange={(e) => setQtyDirect(p.id, e.target.value)}
                         onFocus={(e) => e.target.select()}
                       />
-                      <button type="button" onClick={() => changeQty(p.id, 1)}>
+                      <button type="button" disabled={swissMissing} onClick={() => changeQty(p.id, 1)}>
                         <Plus size={13} />
                       </button>
                     </div>
@@ -805,7 +857,7 @@ function NewOrderScreen() {
                       <div className="toggle" onClick={() => toggleGift(i.productId)}>
                         {t("newOrder.giftLabel")} <div className={`switch gold ${i.isGift ? "on" : ""}`} />
                       </div>
-                      <span>{i.isGift ? money(0, locale) : money(i.unitPrice * i.qty, locale)}</span>
+                      <span>{i.isGift ? fmt(0) : fmt(i.unitPrice * i.qty)}</span>
                     </div>
                   </div>
                 ))}
@@ -815,7 +867,7 @@ function NewOrderScreen() {
                       ? t("newOrder.subtotalDiscounted", { qty: g.items.reduce((s, i) => s + i.qty, 0) })
                       : t("newOrder.subtotalGross", { qty: g.items.reduce((s, i) => s + i.qty, 0) })}
                   </span>
-                  <span>{money(applied ? g.subtotal * (1 - rate / 100) : g.subtotal, locale)}</span>
+                  <span>{fmt(applied ? g.subtotal * (1 - rate / 100) : g.subtotal)}</span>
                 </div>
               </div>
             );
@@ -833,15 +885,15 @@ function NewOrderScreen() {
                 <span>
                   {t("newOrder.shippingSection")} {shippingOffered && <span className="offert-badge">{t("newOrder.shippingOffered")}</span>}
                 </span>
-                <span>{shippingOffered || shippingAutoEligible ? t("newOrder.shippingOffered") : money(shippingAmount, locale)}</span>
+                <span>{shippingLabel}</span>
               </div>
               {shippingThreshold !== null && !shippingOffered && (
                 <p style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 6 }}>
                   {shippingAutoEligible
-                    ? t("newOrder.shippingHintEligible", { amount: money(shippingThreshold, locale) })
+                    ? t("newOrder.shippingHintEligible", { amount: fmt(shippingThreshold) })
                     : t("newOrder.shippingHintMissing", {
-                        amount: money(shippingThreshold, locale),
-                        remaining: money(Math.max(0, shippingThreshold - totalAmount), locale),
+                        amount: fmt(shippingThreshold),
+                        remaining: fmt(Math.max(0, shippingThreshold - totalAmount)),
                       })}
                 </p>
               )}
@@ -857,15 +909,15 @@ function NewOrderScreen() {
               </div>
               <div className="task-row">
                 <span>{t("newOrder.totalAmount")}</span>
-                <span>{money(totalAmount, locale)}</span>
+                <span>{fmt(totalAmount)}</span>
               </div>
               <div className="task-row">
                 <span>{t("newOrder.totalShipping")}</span>
-                <span>{shippingOffered || shippingAutoEligible ? t("newOrder.shippingOffered") : money(shippingAmount, locale)}</span>
+                <span>{shippingLabel}</span>
               </div>
               <div className="task-row" style={{ fontWeight: 800, borderTop: "1px dashed var(--line)", paddingTop: 8, marginTop: 4 }}>
                 <span>{t("newOrder.totalOrder")}</span>
-                <span>{money(grandTotal, locale)}</span>
+                <span>{fmt(grandTotal)}</span>
               </div>
             </div>
           )}
@@ -907,11 +959,17 @@ function NewOrderScreen() {
 
           {submitError && <p className="error-text">{submitError}</p>}
 
+          {cartItems.length > 0 && shippingToDefine && !shippingOffered && (
+            <p className="convert-warning" style={{ marginBottom: 10 }}>
+              {t("newOrder.shippingToDefineWarning")}
+            </p>
+          )}
+
           {cartItems.length > 0 && (
             <>
               <div className="grand-total">
                 <span>{t("newOrder.totalOrder")}</span>
-                <span>{money(grandTotal, locale)}</span>
+                <span>{fmt(grandTotal)}</span>
               </div>
               <button className="btn primary" disabled={submitting} onClick={handleSubmit}>
                 {submitting ? t("newOrder.submitting") : t("newOrder.submit")}

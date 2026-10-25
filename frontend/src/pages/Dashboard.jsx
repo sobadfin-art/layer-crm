@@ -171,10 +171,10 @@ export default function Dashboard() {
                   {t(`dashboard.objectiveType.${o.type}`)} · {shortDate(o.periodStart, locale)} – {shortDate(o.periodEnd, locale)}
                 </div>
                 <div className="stat-value">
-                  {o.progress ? money(o.progress.achievedAmount, locale) : "—"}
+                  {o.progress ? money(o.progress.achievedAmount, locale, o.currency) : "—"}
                   <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}>
                     {" "}
-                    / {money(o.targetAmount, locale)}
+                    / {money(o.targetAmount, locale, o.currency)}
                   </span>
                 </div>
                 <div className="progress-track">

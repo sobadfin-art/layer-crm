@@ -34,6 +34,9 @@ const emptyForm = {
   periodStart: "",
   periodEnd: "",
   targetAmount: "",
+  // Point 7 : objectif en EUR (défaut) ou objectif CHF à part, pour un
+  // représentant qui vend en Suisse. Ne compte que les commandes de sa devise.
+  currency: "EUR",
 };
 
 export function useObjectiveForm({ masterReps, reps, onCreated }) {
@@ -71,6 +74,7 @@ export function useObjectiveForm({ masterReps, reps, onCreated }) {
         periodStart: new Date(form.periodStart).toISOString(),
         periodEnd: new Date(form.periodEnd).toISOString(),
         targetAmount: Number(form.targetAmount),
+        currency: form.currency,
       });
       setForm(emptyForm);
       setShow(false);
@@ -127,15 +131,24 @@ export function useObjectiveForm({ masterReps, reps, onCreated }) {
             <input type="date" value={form.periodEnd} onChange={(e) => setForm((f) => ({ ...f, periodEnd: e.target.value }))} />
           </div>
         </div>
-        <div className="field">
-          <label>{t("directeurDashboard.objectiveTarget")}</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.targetAmount}
-            onChange={(e) => setForm((f) => ({ ...f, targetAmount: e.target.value }))}
-          />
+        <div className="form-row">
+          <div className="field">
+            <label>{t("directeurDashboard.objectiveTarget")}</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.targetAmount}
+              onChange={(e) => setForm((f) => ({ ...f, targetAmount: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label>{t("directeurDashboard.objectiveCurrency")}</label>
+            <select value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}>
+              <option value="EUR">{t("directeurDashboard.objectiveCurrencyEUR")}</option>
+              <option value="CHF">{t("directeurDashboard.objectiveCurrencyCHF")}</option>
+            </select>
+          </div>
         </div>
         <div className="field">
           <label>{t("directeurDashboard.objectiveTypologies")}</label>

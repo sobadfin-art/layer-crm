@@ -4,6 +4,8 @@ import { ArrowLeft } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money, shortDate, dateTime } from "../lib/format.js";
+import { primaryTotals } from "../lib/objectiveTotals.js";
+import ObjectiveAmounts from "../components/ObjectiveAmounts.jsx";
 
 function isActivePeriod(o) {
   const now = Date.now();
@@ -95,13 +97,8 @@ export default function RepProfile() {
   if (!rep) return <p className="error-text">{t("repProfile.notFound")}</p>;
 
   const caObjectives = objectives.filter((o) => o.type === "CHIFFRE_AFFAIRES" && isActivePeriod(o));
-  const caTotals = caObjectives.reduce(
-    (acc, o) => ({
-      target: acc.target + Number(o.targetAmount),
-      achieved: acc.achieved + (o.progress ? Number(o.progress.achievedAmount) : 0),
-    }),
-    { target: 0, achieved: 0 }
-  );
+  // Point 7 : totaux par devise, jamais EUR + CHF additionnés.
+  const caTotals = { ...primaryTotals(caObjectives), list: caObjectives };
   const caPct = caTotals.target > 0 ? Math.min(100, Math.round((caTotals.achieved / caTotals.target) * 100)) : 0;
 
   const overdueCount = tasks.filter((tk) => !tk.done && tk.dueDate && new Date(tk.dueDate).getTime() < Date.now()).length;
@@ -123,8 +120,7 @@ export default function RepProfile() {
           <div className="stat-value">
             {caObjectives.length > 0 ? (
               <>
-                {money(caTotals.achieved, locale)}
-                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}> / {money(caTotals.target, locale)}</span>
+                <ObjectiveAmounts objectives={caTotals.list} locale={locale} targetStyle={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }} />
               </>
             ) : (
               <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>{t("equipe.noActiveObjective")}</span>
@@ -162,7 +158,7 @@ export default function RepProfile() {
                 {shortDate(o.periodStart, locale)} – {shortDate(o.periodEnd, locale)}
               </span>
               <span style={{ textAlign: "right" }}>
-                {o.progress ? money(o.progress.achievedAmount, locale) : "—"} / {money(o.targetAmount, locale)}
+                {o.progress ? money(o.progress.achievedAmount, locale, o.currency) : "—"} / {money(o.targetAmount, locale, o.currency)}
                 <div className="progress-track" style={{ width: 100, marginTop: 4 }}>
                   <div className="progress-fill" style={{ width: `${pct}%` }} />
                 </div>

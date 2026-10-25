@@ -6,8 +6,18 @@ export function intlLocale(locale) {
   return locale === "en" ? "en-GB" : locale === "es" ? "es-ES" : "fr-FR";
 }
 
-export function money(n, locale) {
-  return Number(n || 0).toLocaleString(intlLocale(locale), { style: "currency", currency: "EUR" });
+// Point 7 (2026-10-25) : `currency` = devise du montant affiché (EUR par
+// défaut — tous les appels existants restent en euros). Une commande suisse
+// passe "CHF" : jamais de symbole € sur un montant en francs suisses, et
+// aucune conversion n'est faite ici (formatage seul).
+export function money(n, locale, currency = "EUR") {
+  return Number(n || 0).toLocaleString(intlLocale(locale), { style: "currency", currency: currency || "EUR" });
+}
+
+// Devise d'une commande selon le pays du compte — même règle que le serveur
+// (backend/src/lib/currency.js) : seule la Suisse est en CHF.
+export function currencyForCountry(countryCode) {
+  return countryCode === "CH" ? "CHF" : "EUR";
 }
 
 export function shortDate(value, locale) {

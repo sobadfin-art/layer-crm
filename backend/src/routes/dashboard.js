@@ -8,6 +8,7 @@ import { getManagedRepUserIds } from "../lib/managedReps.js";
 import { COUNTED_STATUSES, LINE_AMOUNT_SQL } from "../lib/objectiveProgress.js";
 import { toCamelList } from "../lib/serialize.js";
 import { fiscalYearBounds, currentFiscalYearStart } from "../lib/fiscalYear.js";
+import { requestedCurrency } from "../lib/currency.js";
 
 export const dashboardRouter = Router();
 
@@ -43,8 +44,11 @@ function buildBestsellersFilters(req, effectiveRepIds, { validatedFrom, validate
   // restait comptée (COUNTED_STATUSES ne filtre que le statut de la
   // commande, jamais celui du compte). Ne change rien pour un compte
   // ACTIF/INACTIF, seulement pour un compte explicitement archivé.
-  const clauses = ["o.status::text = ANY($1::text[])", "ol.is_gift = FALSE", "a.status != 'ARCHIVE'"];
-  const params = [COUNTED_STATUSES];
+  // Point 7 : une seule devise par requête (?currency=EUR|CHF, EUR par
+  // défaut = comportement inchangé) — jamais d'addition d'euros et de francs
+  // suisses dans un même total.
+  const clauses = ["o.status::text = ANY($1::text[])", "ol.is_gift = FALSE", "a.status != 'ARCHIVE'", "o.currency = $2"];
+  const params = [COUNTED_STATUSES, requestedCurrency(req)];
 
   if (effectiveRepIds !== null) {
     params.push(effectiveRepIds);
@@ -217,6 +221,7 @@ dashboardRouter.get(
       periodEnd.toISOString(),
       prevStart.toISOString(),
       prevEnd.toISOString(),
+      requestedCurrency(req),
     ];
     let repClause = "TRUE";
     if (repIds !== null) {
@@ -239,7 +244,7 @@ dashboardRouter.get(
                            THEN ${LINE_AMOUNT_SQL} ELSE 0 END), 0)::numeric(12,2) AS ca_annee_precedente,
          COUNT(DISTINCT CASE WHEN o.validated_at >= $2 AND o.validated_at <= $3 THEN o.id END)::int AS order_count
        FROM accounts a
-       LEFT JOIN orders o ON o.account_id = a.id AND o.status::text = ANY($1::text[])
+       LEFT JOIN orders o ON o.account_id = a.id AND o.status::text = ANY($1::text[]) AND o.currency = $6
        LEFT JOIN order_lines ol ON ol.order_id = o.id
        WHERE ${repClause.replace("o.rep_id", "a.owner_rep_id")}
        GROUP BY a.id, a.name, a.pipeline_stage
@@ -270,8 +275,9 @@ async function analyticsBaseFilters(req) {
   // Même correctif que buildBestsellersFilters ci-dessus (demande directe,
   // 2026-09-16) : exclure les commandes rattachées à un compte archivé des
   // totaux CA de l'onglet Analytics.
-  const clauses = ["o.status::text = ANY($1::text[])", "a.status != 'ARCHIVE'"];
-  const params = [COUNTED_STATUSES];
+  // Point 7 : une seule devise par requête (cf. buildBestsellersFilters).
+  const clauses = ["o.status::text = ANY($1::text[])", "a.status != 'ARCHIVE'", "o.currency = $2"];
+  const params = [COUNTED_STATUSES, requestedCurrency(req)];
 
   // Représentants explicites + représentants gérés par les Master Reps
   // sélectionnés (union) — un Master Rep sélectionné sans rep explicite doit
@@ -503,7 +509,7 @@ dashboardRouter.get("/extract.xlsx", requireAuth, requireRole(ROLES.DIRECTEUR), 
             o.created_at, o.validated_at, o.desired_delivery_date,
             a.name AS compte, a.typology, c.code AS pays,
             u.first_name AS rep_prenom, u.last_name AS rep_nom,
-            o.shipping_fee_ht, o.shipping_offered, o.note
+            o.currency AS devise, o.shipping_fee_ht, o.shipping_offered, o.shipping_to_define AS port_a_definir, o.note
      FROM orders o
      JOIN accounts a ON a.id = o.account_id
      JOIN countries c ON c.id = a.country_id
@@ -518,7 +524,8 @@ dashboardRouter.get("/extract.xlsx", requireAuth, requireRole(ROLES.DIRECTEUR), 
             p.ref AS produit_ref, p.category AS categorie,
             ol.qty AS quantite, ol.unit_price_ht AS prix_unitaire_ht,
             ol.discount_pct AS remise_pct, ol.is_gift AS offert, ol.is_reliquat AS reliquat,
-            (ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100))::numeric(12,2) AS montant_ligne
+            (ol.qty * ol.unit_price_ht * (1 - COALESCE(ol.discount_pct,0)/100))::numeric(12,2) AS montant_ligne,
+            o.currency AS devise
      FROM order_lines ol
      JOIN orders o ON o.id = ol.order_id
      JOIN accounts a ON a.id = o.account_id

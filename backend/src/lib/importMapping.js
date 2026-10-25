@@ -21,7 +21,7 @@ const PATTERNS = {
   category: ["category", "categorie", "catégorie"],
   priceFR: ["frprice", "pricefr", "prixfrance", "franceprice"],
   priceExport: ["exportprice", "priceexport", "prixexport"],
-  priceCH: ["swissprice", "chprice", "prixsuisse"],
+  priceCH: ["swissprice", "chprice", "prixsuisse", "prixsuissechf", "swisspricechf", "chpricechf"],
   rrp: ["rrp", "prixconseille", "recommendedretailprice"],
   qty: ["stock", "qty", "quantite", "quantité"],
   // Correspondance produit CRM <-> Dolibarr. Historiquement une colonne de

@@ -46,7 +46,27 @@ function pickRule(rules, { type, category, repId, countryId }) {
 // Règle confirmée : plus aucune notion de remise Combo — uniquement des remises
 // par catégorie (REMISE_CATEGORIE). Retiré après revue (il n'y a donc plus de
 // question de priorité entre Combo et Catégorie, la question ne se pose plus).
-export function computeOrderTotals({ lines, businessRules, repId, countryId }) {
+//
+// Point 7 (2026-10-25) — commande en CHF (client suisse) : les remises
+// catégorie sont des POURCENTAGES (sans unité) et suivent la priorité
+// habituelle Représentant > Pays (Suisse) > Global. Les frais de port, eux,
+// sont des MONTANTS : une règle globale est exprimée en euros et ne
+// s'applique jamais à une commande en CHF. Seule une règle FRAIS_DE_PORT de
+// portée "Pays : Suisse" (montants saisis en CHF) est retenue ; sans elle, le
+// port est "à définir" (shippingToDefine) — jamais les 9,60 € par défaut.
+// Réciproquement, une règle de port "Pays : Suisse" n'est jamais appliquée à
+// une commande en EUR.
+export function isSwissRule(rule) {
+  return rule.scope === "PAYS" && rule.country_code === "CH";
+}
+
+export function pickShippingRule(businessRules, { currency }) {
+  const active = businessRules.filter((r) => r.type === "FRAIS_DE_PORT" && r.active);
+  if (currency === "CHF") return active.find(isSwissRule) || null;
+  return active.find((r) => !isSwissRule(r)) || null;
+}
+
+export function computeOrderTotals({ lines, businessRules, repId, countryId, currency = "EUR" }) {
   const computedLines = lines.map((line) => {
     if (line.isGift) {
       return { ...line, discountPct: 100, lineTotal: 0 };
@@ -79,12 +99,19 @@ export function computeOrderTotals({ lines, businessRules, repId, countryId }) {
     byCategory[key].amount += l.lineTotal;
   }
 
-  const shippingRule = businessRules.find((r) => r.type === "FRAIS_DE_PORT" && r.active);
-  const shippingFeeHt = shippingRule?.flat_amount != null ? Number(shippingRule.flat_amount) : DEFAULT_SHIPPING_FEE;
+  const shippingRule = pickShippingRule(businessRules, { currency });
+  const shippingToDefine = currency === "CHF" && (!shippingRule || shippingRule.flat_amount == null);
+  const shippingFeeHt = shippingToDefine
+    ? 0
+    : shippingRule?.flat_amount != null
+    ? Number(shippingRule.flat_amount)
+    : DEFAULT_SHIPPING_FEE;
   const shippingThreshold = shippingRule?.threshold != null ? Number(shippingRule.threshold) : null;
-  const autoOffered = shippingThreshold !== null && merchandiseAmount >= shippingThreshold;
+  const autoOffered = !shippingToDefine && shippingThreshold !== null && merchandiseAmount >= shippingThreshold;
 
   return {
+    currency,
+    shippingToDefine,
     lines: computedLines,
     totalQty,
     merchandiseAmount,

@@ -70,7 +70,8 @@ export async function computeObjectiveProgress(objective) {
        AND ${precommandeFilter}
        AND o.validated_at BETWEEN $3 AND $4
        AND ($5::text[] = '{}' OR p.category::text = ANY($5::text[]))
-       AND ($6::text[] = '{}' OR a.typology::text = ANY($6::text[]))`,
+       AND ($6::text[] = '{}' OR a.typology::text = ANY($6::text[]))
+       AND o.currency = $7`,
     [
       objective.rep_id,
       COUNTED_STATUSES,
@@ -78,6 +79,11 @@ export async function computeObjectiveProgress(objective) {
       objective.period_end,
       categories,
       typologies,
+      // Point 7 : un objectif ne compte que les commandes de SA devise —
+      // jamais d'addition EUR + CHF. `currency` absent (version du code
+      // antérieure à la migration 026) = EUR, comme toutes les commandes
+      // existantes.
+      objective.currency || "EUR",
     ]
   );
 
@@ -85,6 +91,7 @@ export async function computeObjectiveProgress(objective) {
   const target = Number(objective.target_amount);
 
   return {
+    currency: objective.currency || "EUR",
     targetAmount: target,
     achievedAmount: achieved,
     achievedPct: target > 0 ? Math.round((achieved / target) * 1000) / 10 : null,

@@ -537,7 +537,7 @@ export default function AccountDetail() {
         date: o.createdAt,
         kind: "order",
         label: t("account.historyOrderLabel"),
-        text: `${t(`orders.status${o.status}`)} — ${money(o.merchandiseTotal, locale)}`,
+        text: `${t(`orders.status${o.status}`)} — ${money(o.merchandiseTotal, locale, o.currency)}`,
         author: null,
       })),
       ...savTickets.map((s) => ({
@@ -1164,7 +1164,7 @@ export default function AccountDetail() {
                     <Fragment key={o.id}>
                       <tr style={{ cursor: "pointer" }} onClick={() => toggleOrderDetail(o)}>
                         <td>{shortDate(o.createdAt, locale)}</td>
-                        <td>{money(o.merchandiseTotal, locale)}</td>
+                        <td>{money(o.merchandiseTotal, locale, o.currency)}</td>
                         <td>{t(`orders.status${o.status}`)}</td>
                       </tr>
                       {expandedOrderId === o.id && (

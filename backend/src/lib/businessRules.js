@@ -26,7 +26,10 @@ export async function loadActiveBusinessRules() {
             COALESCE(
               (SELECT json_agg(brr.rep_id) FROM business_rule_reps brr WHERE brr.business_rule_id = br.id),
               '[]'::json
-            ) AS rep_ids
+            ) AS rep_ids,
+            -- Point 7 : code pays de la règle (portée PAYS), pour repérer
+            -- les règles "Suisse" (montants en CHF) sans requête annexe.
+            (SELECT c.code FROM countries c WHERE c.id = br.country_id) AS country_code
      FROM business_rules br
      WHERE br.active = TRUE
      ORDER BY br.created_at DESC`
@@ -48,7 +51,10 @@ export async function loadAllBusinessRules() {
             COALESCE(
               (SELECT json_agg(brr.rep_id) FROM business_rule_reps brr WHERE brr.business_rule_id = br.id),
               '[]'::json
-            ) AS rep_ids
+            ) AS rep_ids,
+            -- Point 7 : code pays de la règle (portée PAYS), pour repérer
+            -- les règles "Suisse" (montants en CHF) sans requête annexe.
+            (SELECT c.code FROM countries c WHERE c.id = br.country_id) AS country_code
      FROM business_rules br
      ORDER BY br.active DESC, br.created_at DESC`
   );
