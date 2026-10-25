@@ -45,6 +45,9 @@ export default function BusinessRules() {
   const [rules, setRules] = useState([]);
   const [members, setMembers] = useState([]);
   const [countries, setCountries] = useState([]);
+  // Point 7 : filtre de la liste par portée géographique — "all", "GLOBAL"
+  // (règles sans pays) ou l'id d'un pays (règles "Pays : X").
+  const [countryFilter, setCountryFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
@@ -222,6 +225,19 @@ export default function BusinessRules() {
     return m ? `${m.firstName} ${m.lastName}` : repId.slice(0, 8);
   }
 
+  // Point 7 : une règle "Pays : Suisse" a ses montants en CHF et ne
+  // s'applique qu'aux clients suisses (où elle prime sur la règle globale).
+  const chCountryId = countries.find((c) => c.code === "CH")?.id || null;
+  const isSwissRule = (rule) => rule.scope === "PAYS" && (rule.countryCode === "CH" || (chCountryId && rule.countryId === chCountryId));
+  const formIsSwiss = form.scope === "PAYS" && chCountryId && form.countryId === chCountryId;
+  const formCurrency = formIsSwiss ? "CHF" : "€";
+  const ruleCountryIds = [...new Set(rules.filter((r) => r.scope === "PAYS" && r.countryId).map((r) => r.countryId))];
+  const visibleRules = rules.filter((r) => {
+    if (countryFilter === "all") return true;
+    if (countryFilter === "GLOBAL") return r.scope !== "PAYS";
+    return r.scope === "PAYS" && r.countryId === countryFilter;
+  });
+
   function countryLabel(countryId) {
     const c = countries.find((cc) => cc.id === countryId);
     return c ? c.name : countryId;
@@ -293,6 +309,7 @@ export default function BusinessRules() {
                         </option>
                       ))}
                     </select>
+                    {formIsSwiss && <p className="convert-warning" style={{ marginTop: 6 }}>{t("businessRules.swissScopeHint")}</p>}
                   </div>
                 )}
 
@@ -348,11 +365,11 @@ export default function BusinessRules() {
                 {form.type === "FRAIS_DE_PORT" && (
                   <div className="form-row">
                     <div className="field">
-                      <label>{t("businessRules.flatAmount")}</label>
+                      <label>{t("businessRules.flatAmountIn", { cur: formCurrency })}</label>
                       <input type="number" min="0" step="0.01" value={form.flatAmount} onChange={(e) => setForm((f) => ({ ...f, flatAmount: e.target.value }))} />
                     </div>
                     <div className="field">
-                      <label>{t("businessRules.threshold")}</label>
+                      <label>{t("businessRules.thresholdIn", { cur: formCurrency })}</label>
                       <input type="number" min="0" step="0.01" value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
                     </div>
                   </div>
@@ -374,13 +391,29 @@ export default function BusinessRules() {
           )}
 
           <div className="panel">
+            {rules.length > 0 && (
+              <div className="field" style={{ maxWidth: 280 }}>
+                <label>{t("businessRules.countryFilter")}</label>
+                <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)}>
+                  <option value="all">{t("businessRules.countryFilterAll")}</option>
+                  <option value="GLOBAL">{t("businessRules.countryFilterGlobal")}</option>
+                  {ruleCountryIds.map((cid) => (
+                    <option key={cid} value={cid}>
+                      {countryLabel(cid)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {rules.length === 0 && <p className="empty-state">{t("businessRules.empty")}</p>}
-            {rules.map((rule) => (
+            {rules.length > 0 && visibleRules.length === 0 && <p className="empty-state">{t("businessRules.countryFilterEmpty")}</p>}
+            {visibleRules.map((rule) => (
               <div className="task-row" style={{ alignItems: "flex-start" }} key={rule.id}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <strong>{t(`businessRules.ruleType.${rule.type}`)}</strong>
                     <span className="typology-badge">{t(`businessRules.scope${rule.scope === "GLOBAL" ? "Global" : rule.scope === "PAYS" ? "Pays" : "Representant"}`)}</span>
+                    {isSwissRule(rule) && <span className="typology-badge swiss">{t("businessRules.swissBadge")}</span>}
                     {!rule.active && (
                       <span className="typology-badge" style={{ color: "var(--danger)" }}>
                         {t("teamManagement.inactive")}
@@ -390,8 +423,12 @@ export default function BusinessRules() {
                   <div style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {rule.categories && rule.categories.length > 0 && <span>{rule.categories.join(", ")}</span>}
                     {rule.ratePct != null && <span>{t("businessRules.ratePctValue", { pct: rule.ratePct })}</span>}
-                    {rule.flatAmount != null && <span>{t("businessRules.flatAmountValue", { amount: rule.flatAmount })}</span>}
-                    {rule.threshold != null && <span>{t("businessRules.thresholdValue", { amount: rule.threshold })}</span>}
+                    {rule.flatAmount != null && (
+                      <span>{t(isSwissRule(rule) ? "businessRules.flatAmountValueChf" : "businessRules.flatAmountValue", { amount: rule.flatAmount })}</span>
+                    )}
+                    {rule.threshold != null && (
+                      <span>{t(isSwissRule(rule) ? "businessRules.thresholdValueChf" : "businessRules.thresholdValue", { amount: rule.threshold })}</span>
+                    )}
                     {rule.countryId && <span>{countryLabel(rule.countryId)}</span>}
                     {rule.repIds && rule.repIds.length > 0 && <span>{rule.repIds.map(repLabel).join(", ")}</span>}
                   </div>

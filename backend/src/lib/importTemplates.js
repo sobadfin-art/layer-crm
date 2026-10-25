@@ -19,7 +19,8 @@ export const CATALOG_TEMPLATE_HEADERS = [
   "Catégorie",
   "Prix France",
   "Prix Export",
-  "Prix Suisse",
+  // Point 7 : le prix Suisse est saisi en francs suisses, jamais en euros.
+  "Prix Suisse (CHF)",
   "Prix conseillé (RRP)",
   "Quantité en stock",
   "ID Dolibarr",

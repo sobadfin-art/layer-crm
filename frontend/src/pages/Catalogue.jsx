@@ -27,7 +27,11 @@ export default function Catalogue() {
     Promise.all([api.get("/products"), api.get("/business-rules")])
       .then(([productsData, rulesData]) => {
         setProducts(productsData);
-        setShippingRule(rulesData.find((r) => r.type === "FRAIS_DE_PORT" && r.active) || null);
+        // Point 7 : l'encart "frais de port" de ce catalogue est en euros —
+        // une règle "Pays : Suisse" (montants en CHF) n'y est jamais affichée.
+        setShippingRule(
+          rulesData.find((r) => r.type === "FRAIS_DE_PORT" && r.active && !(r.scope === "PAYS" && r.countryCode === "CH")) || null
+        );
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));

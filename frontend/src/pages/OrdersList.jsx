@@ -183,7 +183,7 @@ export default function OrdersList() {
                 )}
               </div>
               <div style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>
-                {money(order.merchandiseTotal, locale)} · {dateTime(order.createdAt, locale)}
+                {money(order.merchandiseTotal, locale, order.currency)} · {dateTime(order.createdAt, locale)}
               </div>
             </div>
             <span className={`queue-status ${order.status}`}>{t(`orders.${STATUS_KEY[order.status]}`)}</span>

@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { Globe } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
-import { money, shortDate, dateTime } from "../lib/format.js";
+import { shortDate, dateTime } from "../lib/format.js";
+import { primaryTotals } from "../lib/objectiveTotals.js";
+import ObjectiveAmounts from "../components/ObjectiveAmounts.jsx";
 // Chargement paresseux (2026-09-23) — cf. commentaire équivalent dans
 // Dashboard.jsx : mapbox-gl (~1.9 Mo minifié) ne doit jamais peser sur les
 // pages qui ne montrent pas la carte.
@@ -27,14 +29,11 @@ function isActivePeriod(o) {
   return new Date(o.periodStart).getTime() <= now && now <= new Date(o.periodEnd).getTime();
 }
 
+// Point 7 : totaux par devise (cf. lib/objectiveTotals.js) — `list` est
+// conservée pour l'affichage ligne par ligne EUR / CHF (ObjectiveAmounts),
+// le pourcentage de progression porte sur la devise principale seule.
 function sumTargetAchieved(list) {
-  return list.reduce(
-    (acc, o) => ({
-      target: acc.target + Number(o.targetAmount),
-      achieved: acc.achieved + (o.progress ? Number(o.progress.achievedAmount) : 0),
-    }),
-    { target: 0, achieved: 0 }
-  );
+  return { ...primaryTotals(list), list };
 }
 
 // Tableau de bord global du Directeur (section 3 : "vision globale sur toute
@@ -233,8 +232,7 @@ export default function DirecteurDashboard() {
         <div style={{ textAlign: "right", fontSize: 12 }}>
           {caObjectives.length > 0 ? (
             <div style={{ fontWeight: 700 }}>
-              {money(repCa.achieved, locale)}
-              <span style={{ color: "var(--ink-soft)", fontWeight: 400 }}> / {money(repCa.target, locale)}</span>
+              <ObjectiveAmounts objectives={repCa.list} locale={locale} targetStyle={{ color: "var(--ink-soft)", fontWeight: 400 }} />
             </div>
           ) : (
             <span style={{ color: "var(--ink-soft)" }}>{t("directeurDashboard.noActiveObjective")}</span>
@@ -279,8 +277,7 @@ export default function DirecteurDashboard() {
               </div>
             </div>
             <div className="stat-value">
-              {money(teamCa.achieved, locale)}
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}> / {money(teamCa.target, locale)}</span>
+              <ObjectiveAmounts objectives={teamCa.list} locale={locale} targetStyle={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }} />
             </div>
             <div className="progress-track">
               <div className="progress-fill" style={{ width: `${teamCaPct}%` }} />
@@ -294,8 +291,7 @@ export default function DirecteurDashboard() {
               </div>
             </div>
             <div className="stat-value" style={{ color: "var(--gold)" }}>
-              {money(teamPrecommande.achieved, locale)}
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}> / {money(teamPrecommande.target, locale)}</span>
+              <ObjectiveAmounts objectives={teamPrecommande.list} locale={locale} targetStyle={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }} />
             </div>
             <div className="progress-track">
               <div className="progress-fill" style={{ width: `${teamPrecommandePct}%`, background: "var(--gold)" }} />

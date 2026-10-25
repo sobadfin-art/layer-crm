@@ -9,6 +9,7 @@ import { getManagedRepUserIds } from "../lib/managedReps.js";
 import { computeObjectiveProgress } from "../lib/objectiveProgress.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
+import { CURRENCIES } from "../lib/currency.js";
 
 export const objectivesRouter = Router();
 
@@ -76,7 +77,11 @@ const objectiveFields = z.object({
   targetAmount: z.number().positive(),
 });
 
-const createSchema = objectiveFields.refine(
+// Point 7 : devise de l'objectif, fixée à la création (EUR par défaut —
+// comportement inchangé pour les écrans existants ; CHF pour un objectif
+// suisse à part). Non modifiable ensuite par PATCH : changer la devise d'un
+// objectif changerait la nature de son réalisé.
+const createSchema = objectiveFields.extend({ currency: z.enum(CURRENCIES).default("EUR") }).refine(
   (d) => new Date(d.periodEnd) > new Date(d.periodStart),
   { message: "La date de fin doit être postérieure à la date de début.", path: ["periodEnd"] }
 );
@@ -88,9 +93,9 @@ objectivesRouter.post("/", requireAuth, requireRole(ROLES.DIRECTEUR), async (req
   const d = parsed.data;
 
   const { rows } = await query(
-    `INSERT INTO objectives (rep_id, type, typologies, categories, period_start, period_end, target_amount)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [d.repId, d.type, d.typologies, d.categories, d.periodStart, d.periodEnd, d.targetAmount]
+    `INSERT INTO objectives (rep_id, type, typologies, categories, period_start, period_end, target_amount, currency)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [d.repId, d.type, d.typologies, d.categories, d.periodStart, d.periodEnd, d.targetAmount, d.currency]
   );
 
   await logAudit({
@@ -98,7 +103,7 @@ objectivesRouter.post("/", requireAuth, requireRole(ROLES.DIRECTEUR), async (req
     action: "OBJECTIVE_CREATED",
     entity: "objectives",
     entityId: rows[0].id,
-    details: { repId: d.repId, type: d.type, targetAmount: d.targetAmount, periodStart: d.periodStart, periodEnd: d.periodEnd },
+    details: { repId: d.repId, type: d.type, targetAmount: d.targetAmount, currency: d.currency, periodStart: d.periodStart, periodEnd: d.periodEnd },
   });
 
   res.status(201).json(toCamel(rows[0]));

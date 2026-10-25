@@ -11,6 +11,7 @@ import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
 import { notifyUser, notifyUsers, userIdsWithRoles } from "../lib/notifications.js";
 import { sendFrontOfficeOrderAlert } from "../lib/mailer.js";
+import { currencyForCountry } from "../lib/currency.js";
 
 export const ordersRouter = Router();
 
@@ -274,6 +275,24 @@ ordersRouter.post("/", requireAuth, requireRole(...ORDER_CREATE_ROLES), async (r
     }
   }
 
+  // Point 7 : devise de la commande selon le pays du compte. Client suisse →
+  // CHF, prix exclusivement `price_ch` : une référence sans prix Suisse est
+  // refusée explicitement, jamais tarifée à 0 ni au prix en euros.
+  const currency = currencyForCountry(account.country_code);
+  if (currency === "CHF") {
+    const missing = data.lines
+      .map((line) => productById.get(line.productId))
+      .filter((p) => p.price_ch === null || p.price_ch === undefined)
+      .map((p) => p.ref);
+    if (missing.length) {
+      return res.status(400).json({
+        error: `Prix suisse non renseigné : ${missing.join(", ")}. Ces références ne peuvent pas être commandées pour un client suisse tant que leur prix CHF n'est pas saisi au catalogue.`,
+        code: "SWISS_PRICE_MISSING",
+        refs: missing,
+      });
+    }
+  }
+
   const businessRules = await loadActiveBusinessRules();
 
   const linesForPricing = data.lines.map((line) => {
@@ -294,6 +313,7 @@ ordersRouter.post("/", requireAuth, requireRole(...ORDER_CREATE_ROLES), async (r
     businessRules,
     repId: account.owner_rep_id,
     countryId: account.country_id,
+    currency,
   });
 
   const shippingOffered = Boolean(data.shippingOffered) || totals.shippingAutoOffered;
@@ -303,8 +323,9 @@ ordersRouter.post("/", requireAuth, requireRole(...ORDER_CREATE_ROLES), async (r
     await client.query("BEGIN");
 
     const { rows: orderRows } = await client.query(
-      `INSERT INTO orders (account_id, rep_id, is_precommande, desired_delivery_date, note, shipping_fee_ht, shipping_offered)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      `INSERT INTO orders (account_id, rep_id, is_precommande, desired_delivery_date, note, shipping_fee_ht, shipping_offered,
+                           currency, shipping_to_define)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [
         account.id,
         account.owner_rep_id, // la commande est toujours attribuée au rep propriétaire du compte
@@ -313,6 +334,8 @@ ordersRouter.post("/", requireAuth, requireRole(...ORDER_CREATE_ROLES), async (r
         data.note ?? null,
         totals.shippingFeeHt,
         shippingOffered,
+        currency,
+        totals.shippingToDefine,
       ]
     );
     const order = orderRows[0];
@@ -343,6 +366,8 @@ ordersRouter.post("/", requireAuth, requireRole(...ORDER_CREATE_ROLES), async (r
         merchandiseAmount: totals.merchandiseAmount,
         shippingFeeHt: totals.shippingFeeHt,
         shippingOffered,
+        currency,
+        shippingToDefine: totals.shippingToDefine,
         orderTotal: shippingOffered ? totals.merchandiseAmount : totals.merchandiseAmount + totals.shippingFeeHt,
         byCategory: totals.byCategory,
       },

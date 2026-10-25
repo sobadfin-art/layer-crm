@@ -9,6 +9,7 @@ import { getManagedRepUserIds } from "../lib/managedReps.js";
 import { toCamel, toCamelList } from "../lib/serialize.js";
 import { logAudit } from "../lib/audit.js";
 import { notifyUsers, userIdsWithRoles } from "../lib/notifications.js";
+import { BankKeyMissingError, canSeeBankData, decryptBankValue, encryptBankValue, presentAccountRow } from "../lib/bankData.js";
 import {
   geocodeAndStoreAccount,
   GEOCODING_TRIGGER_FIELDS,
@@ -75,7 +76,21 @@ const financialFields = {
   regimeFiscal: z.enum(REGIMES_FISCAUX).optional(),
 };
 
-const createSchema = z.object({
+// Point 1 : agence bancaire et titulaire du compte — volontairement HORS de
+// financialFields : ils sont chiffrés au repos (lib/bankData.js) et ne doivent
+// jamais passer par l'écriture générique en clair du PATCH (simpleFields).
+const bankFields = {
+  bankName: z.string().optional().nullable(),
+  accountHolder: z.string().optional().nullable(),
+};
+
+const HOLDER_REQUIRED_MESSAGE =
+  "Le titulaire du compte est obligatoire dès qu'un IBAN est renseigné (prélèvements SEPA).";
+
+const isFilled = (v) => v !== null && v !== undefined && String(v).trim() !== "";
+const BANK_INPUT_FIELDS = ["iban", "bic", "bankName", "accountHolder"];
+
+const createFields = z.object({
   type: z.enum(["CLIENT", "PROSPECT"]),
   name: z.string().min(1),
   // "Nom alternatif" dans l'export Dolibarr — nom du magasin, distinct du nom
@@ -88,6 +103,7 @@ const createSchema = z.object({
   ...addressFields,
   ...contactFields,
   ...financialFields,
+  ...bankFields,
   // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 5) : SIRET/identifiant
   // d'entreprise et adresse de facturation deviennent obligatoires à la
   // CRÉATION uniquement — ces trois lignes surchargent volontairement les
@@ -102,7 +118,11 @@ const createSchema = z.object({
   billingStreet: z.string().min(1, "L'adresse de facturation (rue) est obligatoire."),
   billingZip: z.string().min(1, "L'adresse de facturation (code postal) est obligatoire."),
   billingCity: z.string().min(1, "L'adresse de facturation (ville) est obligatoire."),
-  taxId: z.string().min(1, "Le SIRET / identifiant d'entreprise est obligatoire."),
+  //
+  // Point 5 (2026-10-25) : le SIRET/identifiant n'est plus exigé que pour la
+  // création d'un CLIENT — facultatif pour un PROSPECT (vérifié dans
+  // `createSchema` ci-dessous, la règle dépendant du type).
+  taxId: z.string().optional().nullable(),
   // Note / instructions de livraison — champ dédié, distinct de tout autre
   // champ existant, jamais obligatoire (cf. migration
   // 022_accounts_delivery_note.sql et fiche "UPDATE CRM" évolution 1).
@@ -114,7 +134,18 @@ const createSchema = z.object({
   nomCommercial: z.string().optional().nullable(),
 });
 
-const updateSchema = createSchema.partial().extend({
+const TAX_ID_REQUIRED_MESSAGE = "Le SIRET / identifiant d'entreprise est obligatoire.";
+
+const createSchema = createFields.superRefine((data, ctx) => {
+  if (data.type === "CLIENT" && !data.taxId?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["taxId"], message: TAX_ID_REQUIRED_MESSAGE });
+  }
+});
+
+const updateSchema = createFields.partial().extend({
+  // SIRET au PATCH : règle appliquée dans la route (dépend de la fiche
+  // existante), cf. PATCH /:id ci-dessous.
+  taxId: z.string().optional().nullable(),
   // le type et la typologie restent modifiables indépendamment de la création.
   // ownerRepId accepte explicitement `null` ici (jamais à la création,
   // ci-dessus) — un compte peut désormais arriver sans représentant assigné
@@ -168,7 +199,7 @@ accountsRouter.get(
        ORDER BY a.created_at DESC`,
       params
     );
-    res.json(toCamelList(rows));
+    res.json(toCamelList(rows.map((r) => presentAccountRow(r, req.user.role))));
   }
 );
 
@@ -294,7 +325,7 @@ accountsRouter.get(
     if (!(await canAccessAccount(req.user, account))) {
       return res.status(403).json({ error: "Accès refusé à ce compte." });
     }
-    res.json(toCamel(account));
+    res.json(toCamel(presentAccountRow(account, req.user.role)));
   }
 );
 
@@ -311,6 +342,22 @@ accountsRouter.post(
       return res.status(400).json({ error: parsed.error.flatten() });
     }
     const data = parsed.data;
+
+    // Point 1 : titulaire obligatoire dès qu'un IBAN est saisi (jamais pour
+    // un prospect sans coordonnées bancaires).
+    if (isFilled(data.iban) && !isFilled(data.accountHolder)) {
+      return res.status(400).json({ error: HOLDER_REQUIRED_MESSAGE, code: "ACCOUNT_HOLDER_REQUIRED" });
+    }
+    let encryptedBank;
+    try {
+      encryptedBank = {
+        bankName: encryptBankValue(isFilled(data.bankName) ? data.bankName.trim() : null),
+        accountHolder: encryptBankValue(isFilled(data.accountHolder) ? data.accountHolder.trim() : null),
+      };
+    } catch (err) {
+      if (err instanceof BankKeyMissingError) return res.status(503).json({ error: err.message, code: err.code });
+      throw err;
+    }
 
     const countryId = await resolveCountryId(data.countryCode);
     if (!countryId) {
@@ -377,7 +424,8 @@ accountsRouter.post(
         contact_name, phone, phone_country_code, mobile, mobile_country_code, email,
         tax_id, vat_number, iban, bic, sepa_mandate_status, regime_fiscal,
         delivery_note, nom_commercial,
-        pipeline_stage, owner_rep_id, master_rep_id
+        pipeline_stage, owner_rep_id, master_rep_id,
+        bank_name, account_holder
       ) VALUES (
         $1, $2, $3, $4, $5, $6,
         $7, $8, $9,
@@ -385,7 +433,8 @@ accountsRouter.post(
         $13, $14, $15, $16, $17, $18,
         $19, $20, $21, $22, $23, $24,
         $25, $26,
-        'Nouveau', $27, $28
+        'Nouveau', $27, $28,
+        $29, $30
       ) RETURNING *`,
       [
         data.type,
@@ -416,6 +465,8 @@ accountsRouter.post(
         data.nomCommercial ?? null,
         ownerRepId,
         masterRepId,
+        encryptedBank.bankName,
+        encryptedBank.accountHolder,
       ]
     );
 
@@ -454,7 +505,7 @@ accountsRouter.post(
     rows[0].latitude = coords?.latitude ?? null;
     rows[0].longitude = coords?.longitude ?? null;
 
-    res.status(201).json(toCamel(rows[0]));
+    res.status(201).json(toCamel(presentAccountRow(rows[0], req.user.role)));
   }
 );
 
@@ -479,6 +530,59 @@ accountsRouter.patch(
     if (!existing) return res.status(404).json({ error: "Compte introuvable." });
     if (!(await canAccessAccount(req.user, existing))) {
       return res.status(403).json({ error: "Accès refusé à ce compte." });
+    }
+
+    // Point 5 : un SIRET vide envoyé par le formulaire ne bloque plus la
+    // modification d'une fiche qui n'en a pas (prospect, ou client passé en
+    // client sans SIRET — avertissement, jamais blocage). Seul l'effacement
+    // d'un SIRET déjà renseigné sur un client reste refusé, comme avant.
+    if (data.taxId !== undefined && !data.taxId?.trim()) {
+      const resultingType = data.type ?? existing.type;
+      if (existing.tax_id?.trim() && resultingType === "CLIENT") {
+        return res.status(400).json({ error: TAX_ID_REQUIRED_MESSAGE });
+      }
+      if (existing.tax_id?.trim()) data.taxId = null;
+      else delete data.taxId;
+    }
+
+    // Point 1 — bloc bancaire (IBAN, BIC, agence, titulaire).
+    //  - Représentant / Master Rep ne voient pas les valeurs enregistrées :
+    //    un champ vide envoyé par leur formulaire signifie "inchangé", jamais
+    //    "effacer" (ils ne peuvent que saisir une nouvelle valeur).
+    //  - Seuls les champs réellement modifiés sont réécrits.
+    //  - Titulaire obligatoire uniquement si le bloc bancaire est modifié et
+    //    qu'un IBAN reste renseigné : une fiche existante avec IBAN sans
+    //    titulaire reste modifiable pour tout le reste (signalée "titulaire à
+    //    compléter", jamais bloquée).
+    const normBank = (v) => (isFilled(v) ? String(v).trim() : null);
+    if (!canSeeBankData(req.user.role)) {
+      for (const f of BANK_INPUT_FIELDS) if (data[f] !== undefined && !isFilled(data[f])) delete data[f];
+    }
+    const currentBank = {
+      iban: existing.iban,
+      bic: existing.bic,
+      bankName: decryptBankValue(existing.bank_name),
+      accountHolder: decryptBankValue(existing.account_holder),
+    };
+    const bankTouched = BANK_INPUT_FIELDS.filter(
+      (f) => data[f] !== undefined && normBank(data[f]) !== normBank(currentBank[f])
+    );
+    for (const f of BANK_INPUT_FIELDS) if (data[f] !== undefined && !bankTouched.includes(f)) delete data[f];
+    if (bankTouched.length > 0) {
+      const resultingIban = data.iban !== undefined ? normBank(data.iban) : normBank(existing.iban);
+      const resultingHolder =
+        data.accountHolder !== undefined ? normBank(data.accountHolder) : isFilled(existing.account_holder);
+      if (resultingIban && !resultingHolder) {
+        return res.status(400).json({ error: HOLDER_REQUIRED_MESSAGE, code: "ACCOUNT_HOLDER_REQUIRED" });
+      }
+    }
+    let encryptedBank = {};
+    try {
+      if (data.bankName !== undefined) encryptedBank.bank_name = encryptBankValue(normBank(data.bankName));
+      if (data.accountHolder !== undefined) encryptedBank.account_holder = encryptBankValue(normBank(data.accountHolder));
+    } catch (err) {
+      if (err instanceof BankKeyMissingError) return res.status(503).json({ error: err.message, code: err.code });
+      throw err;
     }
 
     if (
@@ -513,6 +617,10 @@ accountsRouter.patch(
         sets.push(`${columnFor(field)} = $${i++}`);
         params.push(data[field]);
       }
+    }
+    for (const [column, value] of Object.entries(encryptedBank)) {
+      sets.push(`${column} = $${i++}`);
+      params.push(value);
     }
 
     if (data.typology !== undefined) {
@@ -574,7 +682,80 @@ accountsRouter.patch(
       rows[0].longitude = coords?.longitude ?? null;
     }
 
-    res.json(toCamel(rows[0]));
+    res.json(toCamel(presentAccountRow(rows[0], req.user.role)));
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/accounts/:id/convert-to-client — point 5 (2026-10-25) : passage
+// explicite d'un prospect en client. Autorisés : le représentant
+// propriétaire, le front desk et le directeur — jamais le Master Rep (ni
+// l'administrateur, non listé par la demande). Les informations manquantes
+// (SIRET, adresse de facturation, coordonnées bancaires) sont signalées par
+// l'interface en avertissement, jamais bloquantes ici.
+// `won_date` est posée seulement si elle est encore vide (COALESCE) : une
+// date déjà enregistrée par le pipeline ("Gagné") n'est jamais écrasée.
+// ---------------------------------------------------------------------------
+const CONVERT_ROLES = [ROLES.REPRESENTANT, ROLES.FRONT_DESK, ROLES.DIRECTEUR];
+
+accountsRouter.post(
+  "/:id/convert-to-client",
+  requireAuth,
+  requireRole(...CONVERT_ROLES),
+  async (req, res) => {
+    const { rows: existingRows } = await query("SELECT * FROM accounts WHERE id = $1", [
+      req.params.id,
+    ]);
+    const existing = existingRows[0];
+    if (!existing) return res.status(404).json({ error: "Compte introuvable." });
+    if (req.user.role === ROLES.REPRESENTANT && existing.owner_rep_id !== req.user.id) {
+      return res.status(403).json({ error: "Seul le représentant propriétaire peut passer ce prospect en client." });
+    }
+    if (existing.type !== "PROSPECT") {
+      return res.status(409).json({ error: "Ce compte est déjà un client." });
+    }
+
+    const { rows } = await query(
+      `UPDATE accounts
+       SET type = 'CLIENT', won_date = COALESCE(won_date, now()), updated_at = now()
+       WHERE id = $1 AND type = 'PROSPECT'
+       RETURNING *`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(409).json({ error: "Ce compte est déjà un client." });
+
+    const { rows: authorRows } = await query("SELECT first_name, last_name FROM users WHERE id = $1", [
+      req.user.id,
+    ]);
+    const authorName = `${authorRows[0]?.first_name || ""} ${authorRows[0]?.last_name || ""}`.trim();
+
+    // Trace dans l'historique de la fiche (même mécanisme que les traces
+    // automatiques de RDV, cf. routes/tasks.js) : qui (author_id) et quand
+    // (created_at).
+    await query(
+      `INSERT INTO interactions (account_id, author_id, note)
+       VALUES ($1, $2, $3)`,
+      [req.params.id, req.user.id, `Prospect passé en client par ${authorName || req.user.email}.`]
+    );
+
+    await logAudit({
+      userId: req.user.id,
+      action: "ACCOUNT_CONVERTED_TO_CLIENT",
+      entity: "accounts",
+      entityId: req.params.id,
+      details: { from: "PROSPECT", to: "CLIENT", wonDate: rows[0].won_date },
+    });
+
+    const recipients = (await userIdsWithRoles([ROLES.FRONT_DESK])).filter((uid) => uid !== req.user.id);
+    await notifyUsers(recipients, {
+      type: "ACCOUNT_CONVERTED_TO_CLIENT",
+      title: "Prospect passé en client",
+      body: rows[0].name,
+      entity: "accounts",
+      entityId: rows[0].id,
+    });
+
+    res.json(toCamel(presentAccountRow(rows[0], req.user.role)));
   }
 );
 
@@ -631,7 +812,7 @@ accountsRouter.patch(
       details: { from: existing.pipeline_stage, to: stage },
     });
 
-    res.json(toCamel(rows[0]));
+    res.json(toCamel(presentAccountRow(rows[0], req.user.role)));
   }
 );
 
@@ -694,6 +875,6 @@ accountsRouter.patch(
       details: { from: existing.status, to: target },
     });
 
-    res.json(toCamel(rows[0]));
+    res.json(toCamel(presentAccountRow(rows[0], req.user.role)));
   }
 );

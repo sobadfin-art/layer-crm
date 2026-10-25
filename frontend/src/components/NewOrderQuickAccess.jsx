@@ -6,6 +6,8 @@ import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import AccountFormFields, { accountPayloadFromForm, emptyAccountForm } from "./AccountFormFields.jsx";
 import { filterAccountsBySearch } from "../lib/clientSearch.js";
+import OrderDraftsPanel from "./OrderDraftsPanel.jsx";
+import { deleteDraft, listDrafts } from "../lib/orderDrafts.js";
 
 // Parcours C — "Accès rapide depuis le dashboard" (fiche corrective Parcours
 // de création de commande, 2026-09-16) : bouton "Nouvelle commande" visible
@@ -29,7 +31,7 @@ import { filterAccountsBySearch } from "../lib/clientSearch.js";
 // catalogue du compte fraîchement créé — exactement comme la sélection d'un
 // compte existant, cf. pick() plus bas.
 export default function NewOrderQuickAccess() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -39,6 +41,9 @@ export default function NewOrderQuickAccess() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
+  // Brouillons de commande locaux (point 8) : listés en tête de la modale
+  // pour pouvoir reprendre une commande interrompue sans rechercher le client.
+  const [drafts, setDrafts] = useState([]);
 
   const [createForm, setCreateForm] = useState(emptyAccountForm());
   const setCreateField = (key, value) => setCreateForm((f) => ({ ...f, [key]: value }));
@@ -61,6 +66,7 @@ export default function NewOrderQuickAccess() {
     setError(null);
     setCreateError(null);
     setCreateForm(emptyAccountForm());
+    setDrafts(listDrafts(user.id));
     setLoading(true);
     api
       .get("/accounts")
@@ -90,6 +96,16 @@ export default function NewOrderQuickAccess() {
   // (Agenda.jsx, point 3) — comportement strictement identique à avant.
   const filtered = useMemo(() => filterAccountsBySearch(accounts, search), [accounts, search]);
 
+  function resumeDraft(draft) {
+    setOpen(false);
+    navigate(`/clients/${draft.accountId}/commande?draft=${encodeURIComponent(draft.draftId)}`);
+  }
+
+  function removeDraft(draft) {
+    deleteDraft(user.id, draft.draftId);
+    setDrafts(listDrafts(user.id));
+  }
+
   function pick(account) {
     setOpen(false);
     navigate(`/clients/${account.id}/commande`);
@@ -106,13 +122,18 @@ export default function NewOrderQuickAccess() {
     // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 5) : mêmes règles
     // que ClientsList.jsx — SIRET/identifiant et adresse de facturation
     // obligatoires, avec indication combinée si les deux manquent.
-    const missingTaxId = !createForm.taxId.trim();
+    // Point 5 : SIRET facultatif pour un prospect, toujours requis pour un client.
+    const missingTaxId = createForm.type !== "PROSPECT" && !createForm.taxId.trim();
     const missingBilling =
       !createForm.billingStreet.trim() || !createForm.billingZip.trim() || !createForm.billingCity.trim();
-    if (missingTaxId || missingBilling) {
+    // Point 1 : titulaire obligatoire dès qu'un IBAN est saisi (vérifié aussi
+    // côté serveur).
+    const missingHolder = createForm.iban.trim() !== "" && !createForm.accountHolder.trim();
+    if (missingTaxId || missingBilling || missingHolder) {
       const messages = [];
       if (missingTaxId) messages.push(t("clients.newAccountMissingTaxId"));
       if (missingBilling) messages.push(t("clients.newAccountMissingBilling"));
+      if (missingHolder) messages.push(t("account.accountHolderRequired"));
       setCreateError(messages.join(" "));
       return;
     }
@@ -151,6 +172,7 @@ export default function NewOrderQuickAccess() {
                 <p className="page-sub" style={{ marginTop: 0 }}>
                   {t("newOrderQuickAccess.subtitle")}
                 </p>
+                <OrderDraftsPanel drafts={drafts} onResume={resumeDraft} onDelete={removeDraft} t={t} locale={locale} />
                 <div className="search-bar">
                   <Search size={15} color="#8892a0" />
                   <input

@@ -296,7 +296,7 @@ export default function FrontDesk() {
                   )}
                 </div>
                 <div style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>
-                  {t("frontDesk.by")} {order.repFirstName} {order.repLastName} · {money(order.merchandiseTotal, locale)} ·{" "}
+                  {t("frontDesk.by")} {order.repFirstName} {order.repLastName} · {money(order.merchandiseTotal, locale, order.currency)} ·{" "}
                   {new Date(order.createdAt).toLocaleDateString(locale)}
                 </div>
               </div>

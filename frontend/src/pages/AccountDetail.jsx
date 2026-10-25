@@ -16,6 +16,7 @@ import {
   LifeBuoy,
   Trash2,
   Camera,
+  UserCheck,
 } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
@@ -172,6 +173,11 @@ export default function AccountDetail() {
 
   const [toast, setToast] = useState(null);
 
+  // Point 5 (2026-10-25) : passage explicite prospect -> client.
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [converting, setConverting] = useState(false);
+  const [convertError, setConvertError] = useState(null);
+
   const loadAccount = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -300,6 +306,21 @@ export default function AccountDetail() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  async function handleConvertToClient() {
+    setConverting(true);
+    setConvertError(null);
+    try {
+      await api.post(`/accounts/${id}/convert-to-client`);
+      setConvertOpen(false);
+      setToast(t("account.convertDone"));
+      await Promise.all([loadAccount(), loadHistory()]);
+    } catch (err) {
+      setConvertError(err.message);
+    } finally {
+      setConverting(false);
+    }
+  }
+
   function startEdit() {
     setEditError(null);
     setEditForm({
@@ -323,6 +344,8 @@ export default function AccountDetail() {
       vatNumber: account.vatNumber || "",
       iban: account.iban || "",
       bic: account.bic || "",
+      bankName: account.bankName || "",
+      accountHolder: account.accountHolder || "",
       sepaMandateStatus: account.sepaMandateStatus || "NON_RENSEIGNE",
       deliveryNote: account.deliveryNote || "",
     });
@@ -516,7 +539,7 @@ export default function AccountDetail() {
         date: o.createdAt,
         kind: "order",
         label: t("account.historyOrderLabel"),
-        text: `${t(`orders.status${o.status}`)} — ${money(o.merchandiseTotal, locale)}`,
+        text: `${t(`orders.status${o.status}`)} — ${money(o.merchandiseTotal, locale, o.currency)}`,
         author: null,
       })),
       ...savTickets.map((s) => ({
@@ -536,6 +559,30 @@ export default function AccountDetail() {
   if (loading) return <p className="empty-state">{t("account.loading")}</p>;
   if (error) return <p className="error-text">{error}</p>;
   if (!account) return <p className="error-text">{t("account.notFound")}</p>;
+
+  // Point 5 : représentant propriétaire, front desk, directeur — jamais le
+  // Master Rep (même règle vérifiée côté serveur, POST /convert-to-client).
+  const canConvertToClient =
+    account.type === "PROSPECT" &&
+    (user.role === "FRONT_DESK" ||
+      user.role === "DIRECTEUR" ||
+      (user.role === "REPRESENTANT" && account.ownerRepId === user.id));
+  // Informations attendues pour un client, signalées en avertissement dans
+  // la confirmation — jamais bloquantes.
+  const convertMissing = [
+    !account.taxId?.trim() && (account.taxIdLabel || t("account.taxIdGeneric")),
+    !(account.billingStreet?.trim() && account.billingZip?.trim() && account.billingCity?.trim()) &&
+      t("account.convertMissingBilling"),
+    !(account.hasIban && account.hasBic) && t("account.convertMissingBank"),
+  ].filter(Boolean);
+
+  // Point 1 : coordonnées bancaires masquées par le serveur pour le
+  // représentant et le Master Rep (bankDataMasked) — seul l'indicateur
+  // "renseigné" leur parvient, jamais la valeur.
+  const bankMasked = Boolean(account.bankDataMasked);
+  const bankValue = (value, has) =>
+    bankMasked ? (has ? t("account.bankMaskedValue") : t("account.noValue")) : value || t("account.noValue");
+  const bankPlaceholder = (has) => (bankMasked && has ? t("account.bankMaskedPlaceholder") : undefined);
 
   const billing = fullAddress(account.billingStreet, account.billingZip, account.billingCity, account.countryName);
   const shipping = fullAddress(account.shippingStreet, account.shippingZip, account.shippingCity, account.countryName);
@@ -589,6 +636,11 @@ export default function AccountDetail() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {canConvertToClient && (
+            <button className="btn convert" onClick={() => { setConvertError(null); setConvertOpen(true); }}>
+              <UserCheck size={15} /> {t("account.convertButton")}
+            </button>
+          )}
           {account.status !== "ARCHIVE" && (
             <button className="btn outline" disabled={statusBusy} onClick={handleToggleStatus}>
               {statusBusy
@@ -858,7 +910,8 @@ export default function AccountDetail() {
                 <div className="field">
                   <label>
                     {account.taxIdLabel || "N° fiscal"}
-                    {t("account.taxIdRequiredSuffix")}
+                    {/* Point 5 : facultatif pour un prospect. */}
+                    {account.type !== "PROSPECT" && t("account.taxIdRequiredSuffix")}
                   </label>
                   <input value={editForm.taxId} onChange={(e) => setEditForm((f) => ({ ...f, taxId: e.target.value }))} />
                 </div>
@@ -874,16 +927,31 @@ export default function AccountDetail() {
         <div className="panel">
           <h3>
             <CreditCard size={14} /> {t("account.sectionBank")}
+            {account.holderMissing && (
+              <span className="typology-badge swiss-missing" style={{ marginLeft: 8 }}>
+                {t("account.holderMissingBadge")}
+              </span>
+            )}
           </h3>
+          {bankMasked && <p style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 0 }}>{t("account.bankMaskedHint")}</p>}
+          {account.bankDataUnreadable && <p className="error-text">{t("account.bankUnreadable")}</p>}
           {!editMode ? (
             <>
               <div className="task-row">
                 <span>{t("account.iban")}</span>
-                <span>{account.iban || t("account.noValue")}</span>
+                <span>{bankValue(account.iban, account.hasIban)}</span>
               </div>
               <div className="task-row">
                 <span>{t("account.bic")}</span>
-                <span>{account.bic || t("account.noValue")}</span>
+                <span>{bankValue(account.bic, account.hasBic)}</span>
+              </div>
+              <div className="task-row">
+                <span>{t("account.bankName")}</span>
+                <span>{bankValue(account.bankName, account.hasBankName)}</span>
+              </div>
+              <div className="task-row">
+                <span>{t("account.accountHolder")}</span>
+                <span>{bankValue(account.accountHolder, account.hasAccountHolder)}</span>
               </div>
               <div className="task-row">
                 <span>{t("account.sepaStatusLabel")}</span>
@@ -895,11 +963,40 @@ export default function AccountDetail() {
               <div className="form-row">
                 <div className="field">
                   <label>{t("account.iban")}</label>
-                  <input value={editForm.iban} onChange={(e) => setEditForm((f) => ({ ...f, iban: e.target.value }))} />
+                  <input
+                    value={editForm.iban}
+                    placeholder={bankPlaceholder(account.hasIban)}
+                    onChange={(e) => setEditForm((f) => ({ ...f, iban: e.target.value }))}
+                  />
                 </div>
                 <div className="field">
                   <label>{t("account.bic")}</label>
-                  <input value={editForm.bic} onChange={(e) => setEditForm((f) => ({ ...f, bic: e.target.value }))} />
+                  <input
+                    value={editForm.bic}
+                    placeholder={bankPlaceholder(account.hasBic)}
+                    onChange={(e) => setEditForm((f) => ({ ...f, bic: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label>{t("account.bankName")}</label>
+                  <input
+                    value={editForm.bankName}
+                    placeholder={bankPlaceholder(account.hasBankName)}
+                    onChange={(e) => setEditForm((f) => ({ ...f, bankName: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label>
+                    {t("account.accountHolder")}
+                    {(editForm.iban.trim() || (bankMasked && account.hasIban)) && t("account.taxIdRequiredSuffix")}
+                  </label>
+                  <input
+                    value={editForm.accountHolder}
+                    placeholder={bankPlaceholder(account.hasAccountHolder) || t("account.accountHolderPlaceholder")}
+                    onChange={(e) => setEditForm((f) => ({ ...f, accountHolder: e.target.value }))}
+                  />
                 </div>
               </div>
               <div className="field">
@@ -1121,7 +1218,7 @@ export default function AccountDetail() {
                     <Fragment key={o.id}>
                       <tr style={{ cursor: "pointer" }} onClick={() => toggleOrderDetail(o)}>
                         <td>{shortDate(o.createdAt, locale)}</td>
-                        <td>{money(o.merchandiseTotal, locale)}</td>
+                        <td>{money(o.merchandiseTotal, locale, o.currency)}</td>
                         <td>{t(`orders.status${o.status}`)}</td>
                       </tr>
                       {expandedOrderId === o.id && (
@@ -1174,6 +1271,37 @@ export default function AccountDetail() {
           </div>
         ))}
       </div>
+
+      {convertOpen && (
+        <div className="modal-overlay" onClick={() => !converting && setConvertOpen(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>{t("account.convertTitle", { name: account.name })}</h3>
+            <p className="page-sub" style={{ marginTop: 0 }}>{t("account.convertIntro")}</p>
+            {convertMissing.length > 0 ? (
+              <div className="convert-warning">
+                <strong>{t("account.convertMissingTitle")}</strong>
+                <ul>
+                  {convertMissing.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
+                </ul>
+                <span>{t("account.convertMissingHint")}</span>
+              </div>
+            ) : (
+              <p style={{ fontSize: 13 }}>{t("account.convertNothingMissing")}</p>
+            )}
+            {convertError && <p className="error-text">{convertError}</p>}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14, flexWrap: "wrap" }}>
+              <button className="btn outline" disabled={converting} onClick={() => setConvertOpen(false)}>
+                {t("teamManagement.cancel")}
+              </button>
+              <button className="btn convert" disabled={converting} onClick={handleConvertToClient}>
+                {converting ? t("account.convertSaving") : t("account.convertConfirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && <div className="toast">{toast}</div>}
     </>

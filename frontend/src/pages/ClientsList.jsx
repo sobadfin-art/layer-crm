@@ -122,13 +122,20 @@ export default function ClientsList() {
   // — partagée avec NewOrderQuickAccess.jsx et le nouveau ClientSearchPicker
   // (réutilisé depuis Agenda.jsx, point 3). Le filtre type/représentant reste
   // ici, propre à cet écran.
+  // Point 1 : fiches avec IBAN sans titulaire — signalées au front desk (et
+  // à la direction / l'administration, seuls rôles à qui le serveur envoie
+  // `holderMissing`), jamais bloquées.
+  const [holderMissingOnly, setHolderMissingOnly] = useState(false);
+  const holderMissingCount = useMemo(() => accounts.filter((a) => a.holderMissing).length, [accounts]);
+
   const filtered = useMemo(() => {
     return filterAccountsBySearch(accounts, search).filter((a) => {
+      if (holderMissingOnly && !a.holderMissing) return false;
       if (typeFilter !== "all" && a.type !== typeFilter) return false;
       if (repFilter !== "all" && a.ownerRepId !== repFilter && a.masterRepId !== repFilter) return false;
       return true;
     });
-  }, [accounts, search, typeFilter, repFilter]);
+  }, [accounts, search, typeFilter, repFilter, holderMissingOnly]);
 
   async function handleCreateAccount(e) {
     e.preventDefault();
@@ -143,13 +150,18 @@ export default function ClientsList() {
     // création — les deux messages sont combinés si les deux informations
     // manquent, pour que le commercial voie tout ce qu'il lui manque en une
     // fois (cf. cahier de tests section 8, scénario "les deux absents").
-    const missingTaxId = !newAccountForm.taxId.trim();
+    // Point 5 : SIRET facultatif pour un prospect, toujours requis pour un client.
+    const missingTaxId = newAccountForm.type !== "PROSPECT" && !newAccountForm.taxId.trim();
     const missingBilling =
       !newAccountForm.billingStreet.trim() || !newAccountForm.billingZip.trim() || !newAccountForm.billingCity.trim();
-    if (missingTaxId || missingBilling) {
+    // Point 1 : titulaire obligatoire dès qu'un IBAN est saisi (vérifié aussi
+    // côté serveur).
+    const missingHolder = newAccountForm.iban.trim() !== "" && !newAccountForm.accountHolder.trim();
+    if (missingTaxId || missingBilling || missingHolder) {
       const messages = [];
       if (missingTaxId) messages.push(t("clients.newAccountMissingTaxId"));
       if (missingBilling) messages.push(t("clients.newAccountMissingBilling"));
+      if (missingHolder) messages.push(t("account.accountHolderRequired"));
       setNewAccountError(messages.join(" "));
       return;
     }
@@ -253,6 +265,12 @@ export default function ClientsList() {
             ))}
           </select>
         )}
+        {holderMissingCount > 0 && (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
+            <input type="checkbox" checked={holderMissingOnly} onChange={(e) => setHolderMissingOnly(e.target.checked)} />
+            {t("clients.holderMissingFilter", { count: holderMissingCount })}
+          </label>
+        )}
       </div>
 
       {loading && <p className="empty-state">{t("clients.loading")}</p>}
@@ -282,6 +300,7 @@ export default function ClientsList() {
               <div className="account-meta">
                 <MapPin size={11} /> {a.countryName || a.countryCode}
                 <span className="typology-badge">{t(`typology.${a.typology}`)}</span>
+                {a.holderMissing && <span className="typology-badge swiss-missing">{t("account.holderMissingBadge")}</span>}
                 {/* Nom du représentant propriétaire — utile au Master Rep, qui voit
                     ici les comptes de plusieurs représentants de son équipe en plus
                     des siens propres (cf. accountsScopeClause), et au directeur qui

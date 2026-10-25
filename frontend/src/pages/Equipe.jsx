@@ -4,7 +4,8 @@ import { Globe } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useI18n } from "../i18n/I18nContext.jsx";
-import { money } from "../lib/format.js";
+import { primaryTotals } from "../lib/objectiveTotals.js";
+import ObjectiveAmounts from "../components/ObjectiveAmounts.jsx";
 
 // Un objectif est "actif" si la date du jour tombe dans sa période — même
 // règle que Dashboard.jsx (le Master Rep veut voir la progression de la
@@ -72,14 +73,11 @@ export default function Equipe() {
     return objectivesWithProgress.filter((o) => o.repId === repId && o.type === type);
   }
 
+  // Point 7 : totaux par devise (cf. lib/objectiveTotals.js) — `list` est
+  // conservée pour l'affichage ligne par ligne EUR / CHF (ObjectiveAmounts),
+  // le pourcentage de progression porte sur la devise principale seule.
   function sumTargetAchieved(list) {
-    return list.reduce(
-      (acc, o) => ({
-        target: acc.target + Number(o.targetAmount),
-        achieved: acc.achieved + (o.progress ? Number(o.progress.achievedAmount) : 0),
-      }),
-      { target: 0, achieved: 0 }
-    );
+    return { ...primaryTotals(list), list };
   }
 
   const teamCa = sumTargetAchieved(objectivesWithProgress.filter((o) => o.type === "CHIFFRE_AFFAIRES"));
@@ -99,8 +97,7 @@ export default function Equipe() {
           <div className="stat-card">
             <div className="stat-label">{t("equipe.statCa")}</div>
             <div className="stat-value">
-              {money(teamCa.achieved, locale)}
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}> / {money(teamCa.target, locale)}</span>
+              <ObjectiveAmounts objectives={teamCa.list} locale={locale} targetStyle={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }} />
             </div>
             <div className="progress-track">
               <div className="progress-fill" style={{ width: `${teamCaPct}%` }} />
@@ -109,8 +106,7 @@ export default function Equipe() {
           <div className="stat-card">
             <div className="stat-label">{t("equipe.statPrecommande")}</div>
             <div className="stat-value" style={{ color: "var(--gold)" }}>
-              {money(teamPrecommande.achieved, locale)}
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }}> / {money(teamPrecommande.target, locale)}</span>
+              <ObjectiveAmounts objectives={teamPrecommande.list} locale={locale} targetStyle={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)" }} />
             </div>
           </div>
           <div className="stat-card">
@@ -146,8 +142,7 @@ export default function Equipe() {
                 <div style={{ textAlign: "right", fontSize: 12 }}>
                   {caObjectives.length > 0 ? (
                     <div style={{ fontWeight: 700 }}>
-                      {money(repCa.achieved, locale)}
-                      <span style={{ color: "var(--ink-soft)", fontWeight: 400 }}> / {money(repCa.target, locale)}</span>
+                      <ObjectiveAmounts objectives={repCa.list} locale={locale} targetStyle={{ color: "var(--ink-soft)", fontWeight: 400 }} />
                     </div>
                   ) : (
                     <span style={{ color: "var(--ink-soft)" }}>{t("equipe.noActiveObjective")}</span>

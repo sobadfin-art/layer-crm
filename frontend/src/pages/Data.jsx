@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money } from "../lib/format.js";
+import CurrencySwitch from "../components/CurrencySwitch.jsx";
 
 const TYPOLOGIES = [
   "OPTICIEN", "SURF_SHOP", "FASHION_STORE", "SKATE_SHOP", "SKI_SHOP",
@@ -26,6 +27,9 @@ const ORDER_TYPES = ["ALL", "FERME", "PRECOMMANDE"];
 export default function Data() {
   const { t, locale } = useI18n();
   const [tab, setTab] = useState("bestsellers");
+  // Point 7 : une devise à la fois (EUR par défaut), jamais EUR + CHF.
+  const [currency, setCurrency] = useState("EUR");
+  const currencyFirstRun = useRef(true);
 
   const [bestsellers, setBestsellers] = useState(null);
   const [analytics, setAnalytics] = useState(null);
@@ -77,13 +81,14 @@ export default function Data() {
       if (bsFilters.repIds.length) params.set("repIds", bsFilters.repIds.join(","));
       if (bsFilters.typologies.length) params.set("typologies", bsFilters.typologies.join(","));
       if (bsFilters.categories.length) params.set("categories", bsFilters.categories.join(","));
+      params.set("currency", currency);
       setBestsellers(await api.get(`/dashboard/bestsellers?${params.toString()}`));
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [bsFilters]);
+  }, [bsFilters, currency]);
 
   const loadAnalytics = useCallback(async () => {
     setAnalyticsLoading(true);
@@ -101,13 +106,32 @@ export default function Data() {
       if (anFilters.categories.length) params.set("categories", anFilters.categories.join(","));
       if (anFilters.typologies.length) params.set("typologies", anFilters.typologies.join(","));
       if (anFilters.accountId) params.set("accountId", anFilters.accountId);
+      params.set("currency", currency);
       setAnalytics(await api.get(`/dashboard/analytics?${params.toString()}`));
     } catch (err) {
       setAnalyticsError(err.message);
     } finally {
       setAnalyticsLoading(false);
     }
-  }, [anFilters]);
+  }, [anFilters, currency]);
+
+  // Changement de devise : recharge l'onglet affiché (et invalide l'autre,
+  // pour qu'il soit rechargé dans la bonne devise à sa prochaine ouverture).
+  useEffect(() => {
+    if (currencyFirstRun.current) {
+      currencyFirstRun.current = false;
+      return;
+    }
+    if (tab === "bestsellers") {
+      setAnalytics(null);
+      loadBestsellers();
+    } else if (tab === "analytics") {
+      loadAnalytics();
+    } else {
+      setAnalytics(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency]);
 
   useEffect(() => {
     if (tab === "bestsellers") loadBestsellers();
@@ -165,15 +189,15 @@ export default function Data() {
       <div className="cards-row">
         <div className="stat-card">
           <div className="stat-label">{label}</div>
-          <div className="stat-value">{money(period.totals.total, locale)}</div>
+          <div className="stat-value">{money(period.totals.total, locale, currency)}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">{t("data.totalFerme")}</div>
-          <div className="stat-value">{money(period.totals.ferme, locale)}</div>
+          <div className="stat-value">{money(period.totals.ferme, locale, currency)}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">{t("data.totalPrecommande")}</div>
-          <div className="stat-value" style={{ color: "var(--gold)" }}>{money(period.totals.precommande, locale)}</div>
+          <div className="stat-value" style={{ color: "var(--gold)" }}>{money(period.totals.precommande, locale, currency)}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">{t("data.fermeShare")}</div>
@@ -200,7 +224,7 @@ export default function Data() {
                   {row.isPrecommande ? t("data.precommande") : t("data.ferme")}
                 </span>
               </span>
-              <span>{money(row.amount, locale)}</span>
+              <span>{money(row.amount, locale, currency)}</span>
             </div>
           ))}
         </div>
@@ -216,7 +240,7 @@ export default function Data() {
                   {row.isPrecommande ? t("data.precommande") : t("data.ferme")}
                 </span>
               </span>
-              <span>{money(row.amount, locale)}</span>
+              <span>{money(row.amount, locale, currency)}</span>
             </div>
           ))}
         </div>
@@ -232,7 +256,7 @@ export default function Data() {
                   {row.isPrecommande ? t("data.precommande") : t("data.ferme")}
                 </span>
               </span>
-              <span>{money(row.amount, locale)}</span>
+              <span>{money(row.amount, locale, currency)}</span>
             </div>
           ))}
         </div>
@@ -255,6 +279,8 @@ export default function Data() {
           </button>
         ))}
       </div>
+
+      {(tab === "bestsellers" || tab === "analytics") && <CurrencySwitch value={currency} onChange={setCurrency} t={t} />}
 
       {tab === "bestsellers" && (
         <>
@@ -361,8 +387,8 @@ export default function Data() {
                           <td>{typologyLabels}</td>
                           <td>{repLabels}</td>
                           <td>{row.totalQty}</td>
-                          <td>{money(row.totalAmount, locale)}</td>
-                          <td>{row.prevAmount !== null ? money(row.prevAmount, locale) : "—"}</td>
+                          <td>{money(row.totalAmount, locale, currency)}</td>
+                          <td>{row.prevAmount !== null ? money(row.prevAmount, locale, currency) : "—"}</td>
                           <td>{evolution !== null ? `${evolution > 0 ? "+" : ""}${evolution}%` : "—"}</td>
                         </tr>
                       );

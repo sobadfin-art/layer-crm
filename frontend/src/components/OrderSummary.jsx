@@ -99,7 +99,7 @@ export default function OrderSummary({ order, actions, emptyLabel }) {
                   <span style={{ color: "var(--ink-soft)", fontSize: 11 }}>
                     ({line.ref}
                     {line.catalogNames?.length > 0 ? ` · ${line.catalogNames.join(", ")}` : ""} ·{" "}
-                    {money(line.unitPriceHt, locale)} {t("orderSummary.perUnit")})
+                    {money(line.unitPriceHt, locale, order.currency)} {t("orderSummary.perUnit")})
                   </span>
                   {line.isGift && <span className="offert-badge">{t("newOrder.giftLabel")}</span>}
                   {line.isReliquat && (
@@ -109,13 +109,13 @@ export default function OrderSummary({ order, actions, emptyLabel }) {
                     </span>
                   )}
                 </span>
-                <span>{money(lineAmount, locale)}</span>
+                <span>{money(lineAmount, locale, order.currency)}</span>
               </div>
             );
           })}
           <div className="cat-subtotal">
             <span>{t("newOrder.totalQtyValue", { qty: cat.qty })}</span>
-            <span>{money(cat.subtotal, locale)}</span>
+            <span>{money(cat.subtotal, locale, order.currency)}</span>
           </div>
         </div>
       ))}
@@ -130,7 +130,11 @@ export default function OrderSummary({ order, actions, emptyLabel }) {
               {t("newOrder.shippingSection")}{" "}
               {order.shippingOffered && <span className="offert-badge">{t("newOrder.shippingOffered")}</span>}
             </span>
-            <span>{order.shippingOffered ? t("newOrder.shippingOffered") : money(order.shippingFeeHt, locale)}</span>
+            <span>{order.shippingOffered
+              ? t("newOrder.shippingOffered")
+              : order.shippingToDefine
+              ? t("newOrder.shippingToDefine")
+              : money(order.shippingFeeHt, locale, order.currency)}</span>
           </div>
         </div>
       )}
@@ -144,15 +148,19 @@ export default function OrderSummary({ order, actions, emptyLabel }) {
           </div>
           <div className="task-row">
             <span>{t("newOrder.totalAmount")}</span>
-            <span>{money(totals.merchandiseAmount, locale)}</span>
+            <span>{money(totals.merchandiseAmount, locale, order.currency)}</span>
           </div>
           <div className="task-row">
             <span>{t("newOrder.totalShipping")}</span>
-            <span>{order.shippingOffered ? t("newOrder.shippingOffered") : money(order.shippingFeeHt, locale)}</span>
+            <span>{order.shippingOffered
+              ? t("newOrder.shippingOffered")
+              : order.shippingToDefine
+              ? t("newOrder.shippingToDefine")
+              : money(order.shippingFeeHt, locale, order.currency)}</span>
           </div>
           <div className="task-row" style={{ fontWeight: 800, borderTop: "1px dashed var(--line)", paddingTop: 8, marginTop: 4 }}>
             <span>{t("newOrder.totalOrder")}</span>
-            <span>{money(totals.orderTotal, locale)}</span>
+            <span>{money(totals.orderTotal, locale, order.currency)}</span>
           </div>
         </div>
       )}

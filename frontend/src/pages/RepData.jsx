@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useI18n } from "../i18n/I18nContext.jsx";
 import { money } from "../lib/format.js";
+import CurrencySwitch from "../components/CurrencySwitch.jsx";
 import { fiscalYearBounds, fiscalYearLabel } from "../lib/fiscalYear.js";
 
 // Data — profil Représentant (PDF section 9) : périmètre volontairement plus
@@ -14,6 +15,8 @@ const TABS = ["bestsellers", "customers"];
 export default function RepData() {
   const { t, locale } = useI18n();
   const [tab, setTab] = useState("bestsellers");
+  // Point 7 : une devise à la fois (EUR par défaut), jamais EUR + CHF.
+  const [currency, setCurrency] = useState("EUR");
   const [accounts, setAccounts] = useState([]);
 
   const [year, setYear] = useState(String(new Date().getFullYear()));
@@ -39,11 +42,11 @@ export default function RepData() {
     api.get("/accounts").then(setAccounts).catch(() => {});
   }, []);
 
-  const loadCustomerPerformance = useCallback((yr) => {
+  const loadCustomerPerformance = useCallback((yr, cur = "EUR") => {
     setCustLoading(true);
     setCustError(null);
     api
-      .get(`/dashboard/customer-performance?year=${yr}`)
+      .get(`/dashboard/customer-performance?year=${yr}&currency=${cur}`)
       .then(setCustomers)
       .catch((err) => setCustError(err.message))
       .finally(() => setCustLoading(false));
@@ -51,9 +54,17 @@ export default function RepData() {
 
   useEffect(() => {
     if (tab !== "customers" || customers) return;
-    loadCustomerPerformance(custYear);
+    loadCustomerPerformance(custYear, currency);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, customers]);
+
+  // Changement de devise : les deux onglets sont recalculés dans la nouvelle
+  // devise (Bestsellers seulement s'il avait déjà été généré).
+  function changeCurrency(next) {
+    setCurrency(next);
+    setCustomers(null);
+    if (generated) handleGenerate(next);
+  }
 
   // Contribution au portefeuille (part du CA de l'année sélectionnée) —
   // critère demandé par la fiche corrective V2 section 8 ("contribution au
@@ -61,7 +72,7 @@ export default function RepData() {
   // client à partir du classement déjà renvoyé par le serveur.
   const portfolioTotal = (customers || []).reduce((s, r) => s + Number(r.caAnneeCourante || 0), 0);
 
-  async function handleGenerate() {
+  async function handleGenerate(cur = currency) {
     setBsLoading(true);
     setBsError(null);
     try {
@@ -69,6 +80,7 @@ export default function RepData() {
       params.set("dateFrom", `${year}-01-01T00:00:00.000Z`);
       params.set("dateTo", `${year}-12-31T23:59:59.999Z`);
       if (accountId !== "all") params.set("accountId", accountId);
+      params.set("currency", cur);
       setBestsellers(await api.get(`/dashboard/bestsellers?${params.toString()}`));
       setGenerated(true);
     } catch (err) {
@@ -97,6 +109,8 @@ export default function RepData() {
         ))}
       </div>
 
+      <CurrencySwitch value={currency} onChange={changeCurrency} t={t} />
+
       {tab === "bestsellers" && (
         <>
           <div className="panel">
@@ -119,7 +133,7 @@ export default function RepData() {
                 </select>
               </div>
             </div>
-            <button className="btn primary" onClick={handleGenerate} disabled={bsLoading}>
+            <button className="btn primary" onClick={() => handleGenerate()} disabled={bsLoading}>
               {bsLoading ? t("data.generating") : t("data.generate")}
             </button>
           </div>
@@ -148,7 +162,7 @@ export default function RepData() {
                           <td>{row.label}</td>
                           <td>{row.category}</td>
                           <td>{row.totalQty}</td>
-                          <td>{money(row.totalAmount, locale)}</td>
+                          <td>{money(row.totalAmount, locale, currency)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -173,7 +187,7 @@ export default function RepData() {
                 </select>
               </div>
             </div>
-            <button className="btn primary" onClick={() => loadCustomerPerformance(custYear)} disabled={custLoading}>
+            <button className="btn primary" onClick={() => loadCustomerPerformance(custYear, currency)} disabled={custLoading}>
               {custLoading ? t("data.generating") : t("data.generate")}
             </button>
           </div>
@@ -208,8 +222,8 @@ export default function RepData() {
                           <td>{idx + 1}</td>
                           <td>{row.accountName}</td>
                           <td>{row.pipelineStage}</td>
-                          <td>{money(current, locale)}</td>
-                          <td>{money(previous, locale)}</td>
+                          <td>{money(current, locale, currency)}</td>
+                          <td>{money(previous, locale, currency)}</td>
                           <td>{evolution === null ? "—" : `${evolution >= 0 ? "+" : ""}${evolution.toFixed(0)}%`}</td>
                           <td>{row.orderCount ?? 0}</td>
                           <td>{contribution.toFixed(0)}%</td>

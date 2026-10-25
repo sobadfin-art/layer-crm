@@ -46,6 +46,9 @@ const PATTERNS = {
   taxId: ["identifiantfiscal", "siret", "nif", "taxid"],
   iban: ["iban"],
   bic: ["bic", "swift"],
+  // Point 1 (2026-10-25) : colonnes optionnelles, chiffrées à l'import.
+  bankName: ["banque", "agence", "agencebancaire", "nomdelagence", "nomdelabanque", "bankname", "domiciliation"],
+  accountHolder: ["titulaire", "titulaireducompte", "nomdutitulaire", "accountholder"],
   sepaMandateStatus: ["mandatsepa", "statutmandatsepa", "sepastatus"],
   regimeFiscal: ["regimefiscal", "taxregime"],
 };

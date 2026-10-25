@@ -41,6 +41,7 @@ import ImportPhotosBulk from "./pages/ImportPhotosBulk.jsx";
 import GeocodeRetroactive from "./pages/GeocodeRetroactive.jsx";
 import CatalogueConsult from "./pages/CatalogueConsult.jsx";
 import AccountsImportAdmin from "./pages/AccountsImportAdmin.jsx";
+import TeamMembersAdmin from "./pages/TeamMembersAdmin.jsx";
 import SavQueue from "./pages/SavQueue.jsx";
 import MasterRepDashboard from "./pages/MasterRepDashboard.jsx";
 import RepData from "./pages/RepData.jsx";
@@ -205,6 +206,8 @@ export default function App() {
       { to: "/geocodage", label: t("nav.geocodage"), icon: MapPin },
       { to: "/import-clients", label: t("nav.importClients"), icon: FileUp },
       { to: "/clients", label: t("nav.clients"), icon: Users },
+      // Point 6 : modification du nom et des zones des membres d'équipe.
+      { to: "/membres", label: t("nav.teamMembersAdmin"), icon: UserCog },
     ];
     homePath = "/catalogue";
   }
@@ -282,6 +285,7 @@ export default function App() {
               <Route path="/import-clients" element={<AccountsImportAdmin />} />
               <Route path="/clients" element={<ClientsList />} />
               <Route path="/clients/:id" element={<AccountDetail />} />
+              <Route path="/membres" element={<TeamMembersAdmin />} />
             </>
           )}
           {!canSeeFrontDesk && !isRepresentant && !isMasterRep && !isDirecteur && !isAdministrateur && (

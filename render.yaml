@@ -3,14 +3,13 @@ services:
     name: moken-crm
     runtime: node
     plan: free
-    # Migrations + seed intégrées au build (pas en preDeployCommand) : cette
+    # Migrations intégrées au build (pas en preDeployCommand) : cette
     # commande n'est pas supportée sur la formule gratuite des services web
     # Render ("pre-deploy command is not supported for free tier services").
-    # ALLOW_SEED=true : seed.js refuse par défaut de tourner si NODE_ENV=production
-    # (garde-fou anti comptes de démo en vraie prod, cf. README "Environnement de
-    # développement vs production") — volontairement contourné ici puisque ce
-    # déploiement Render gratuit EST un environnement de démo/recette, pas une
-    # vraie mise en production avec de vraies données client.
+    # Plus de seed au build (2026-10-20) : la base contient de vraies données,
+    # et seed.js recréait à chaque déploiement les comptes de démo absents
+    # (ex. directeur@moken.demo, renommé le 16/09) avec le mot de passe public
+    # "moken1234". Le seed reste disponible en local uniquement (npm run seed).
     # --include=dev sur le frontend : NODE_ENV=production (défini plus bas) est
     # déjà actif pendant CETTE étape de build sur Render, or npm saute par
     # défaut les devDependencies quand NODE_ENV=production — ce qui a fait
@@ -18,7 +17,7 @@ services:
     # devDependency, un outil de build, jamais utile à l'exécution). On force
     # donc leur installation explicitement, uniquement pour construire le
     # frontend ; le backend n'a besoin d'aucune devDependency pour tourner.
-    buildCommand: "cd backend && npm install && npm run migrate && ALLOW_SEED=true npm run seed && cd ../frontend && npm install --include=dev && npm run build"
+    buildCommand: "cd backend && npm install && npm run migrate && cd ../frontend && npm install --include=dev && npm run build"
     startCommand: "cd backend && npm start"
     healthCheckPath: /api/health
     envVars:
