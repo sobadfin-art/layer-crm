@@ -445,7 +445,12 @@ dashboardRouter.get("/analytics", requireAuth, requireRole(ROLES.DIRECTEUR), asy
 // recalé sur le fuseau de l'équipe plutôt que celui du serveur.
 dashboardRouter.get("/rdv", requireAuth, requireRole(...DATA_ROLES), async (req, res) => {
   const todayOnly = req.query.today === "true";
-  const todayClause = todayOnly ? "AND t.due_date::date = CURRENT_DATE" : "";
+  // RDV annulés (migration 028) exclus par défaut — donc retirés des "RDV du
+  // jour", du badge Agenda et du compteur "RDV à venir" (décision client du
+  // 2026-10-27). L'onglet "Rendez-vous" de l'Agenda les demande explicitement
+  // (?includeCancelled=true) pour les afficher avec un badge "Annulé".
+  const cancelledClause = req.query.includeCancelled === "true" ? "" : "AND t.status <> 'ANNULE'";
+  const todayClause = `${todayOnly ? "AND t.due_date::date = CURRENT_DATE" : ""} ${cancelledClause}`;
 
   let sql;
   let params;
@@ -600,7 +605,7 @@ dashboardRouter.get("/extract.xlsx", requireAuth, requireRole(ROLES.DIRECTEUR), 
   // Historique d'activité (agenda) — RDV et tâches, avec compte-rendu pour
   // les RDV réalisés (cf. migration 012_rdv_compte_rendu).
   const { rows: agenda } = await query(
-    `SELECT t.type, t.title AS titre, t.due_date, t.done, a.name AS compte,
+    `SELECT t.type, t.title AS titre, t.due_date, t.done, t.status AS statut, t.cancelled_at AS annule_le, a.name AS compte,
             u.first_name AS titulaire_prenom, u.last_name AS titulaire_nom,
             t.compte_rendu, t.created_at
      FROM tasks t
