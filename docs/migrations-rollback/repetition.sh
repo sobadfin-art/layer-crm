@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Répétition des migrations 026 (Suisse/CHF) et 027 (agence + titulaire) sur
-# une COPIE LOCALE de la base de production, restaurée depuis l'export Render
+# Répétition des migrations en attente (celles du dépôt pas encore appliquées
+# à la base) sur une COPIE LOCALE de la base de production, restaurée depuis l'export Render
 # (fichier *.dir.tar.gz, onglet Recovery → Create export).
 #
 # Ce script ne se connecte JAMAIS à la production : il crée une base locale
@@ -47,15 +47,26 @@ echo "3/8  Comptages AVANT migration…"
 count > "$OUT/1-avant.txt"
 psql "$LOCAL_URL" -tA -F' | ' -c "SELECT ref, label FROM products WHERE price_ch IS NULL ORDER BY ref" > "$OUT/references-sans-prix-suisse.txt"
 
-echo "4/8  Migrations 026 et 027…"
+echo "4/8  Migrations en attente…"
+applied() { psql "$LOCAL_URL" -tA -c "SELECT name FROM schema_migrations ORDER BY name"; }
+applied > "$OUT/migrations-avant.txt"
 ( cd "$REPO/backend" && DATABASE_URL="$LOCAL_URL" npm run migrate ) | tee "$OUT/migration.log"
+# Migrations appliquées par CETTE exécution, de la plus récente à la plus
+# ancienne : ce sont les seules dont le retour arrière est testé ensuite.
+NEW_MIGRATIONS="$(applied | comm -13 "$OUT/migrations-avant.txt" - | sort -r)"
+if [ -z "$NEW_MIGRATIONS" ]; then
+  echo "  (aucune migration en attente : rien à répéter)"
+fi
 
 echo "5/8  Comptages APRÈS migration…"
 count > "$OUT/2-apres.txt"
 
-echo "6/8  Test du retour arrière (027 puis 026)…"
-psql "$LOCAL_URL" -q -v ON_ERROR_STOP=1 -f "$HERE/027_accounts_bank_name_holder.rollback.sql"
-psql "$LOCAL_URL" -q -v ON_ERROR_STOP=1 -f "$HERE/026_suisse_chf.rollback.sql"
+echo "6/8  Test du retour arrière ($(echo $NEW_MIGRATIONS | tr '\n' ' '))…"
+for m in $NEW_MIGRATIONS; do
+  RB="$HERE/${m%.sql}.rollback.sql"
+  [ -f "$RB" ] || { echo "✗ Procédure de retour arrière introuvable pour $m ($RB)"; exit 1; }
+  psql "$LOCAL_URL" -q -v ON_ERROR_STOP=1 -f "$RB"
+done
 count > "$OUT/3-apres-retour-arriere.txt"
 
 echo "7/8  Ré-application des migrations…"

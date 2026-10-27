@@ -61,6 +61,12 @@ export default function Agenda() {
   // Détail ouvert depuis le calendrier : { kind: "rdv" | "task", id }.
   const [detail, setDetail] = useState(null);
   const [slotModalOpen, setSlotModalOpen] = useState(false);
+  // Modification d'un RDV existant depuis son détail (2026-10-27) : null hors
+  // édition, sinon le formulaire { accountId, title, type, date, time }.
+  const [rdvEditForm, setRdvEditForm] = useState(null);
+  const [savingRdvEdit, setSavingRdvEdit] = useState(false);
+  const [rdvEditError, setRdvEditError] = useState(null);
+  const [cancellingRdv, setCancellingRdv] = useState(false);
 
   const [rdvList, setRdvList] = useState([]);
   const [loadingRdv, setLoadingRdv] = useState(true);
@@ -96,7 +102,9 @@ export default function Agenda() {
     setLoadingRdv(true);
     setRdvError(null);
     try {
-      const data = await api.get("/dashboard/rdv");
+      // includeCancelled : les RDV annulés restent consultables dans l'onglet
+      // "Rendez-vous" (section "Annulés") ; le calendrier, lui, les écarte.
+      const data = await api.get("/dashboard/rdv?includeCancelled=true");
       data.sort((a, b) => {
         const at = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
         const bt = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
@@ -255,7 +263,7 @@ export default function Agenda() {
   const calendarEvents = useMemo(
     () => [
       ...rdvList
-        .filter((ev) => ev.dueDate)
+        .filter((ev) => ev.dueDate && ev.status !== "ANNULE")
         .map((ev) => ({ id: `rdv-${ev.id}`, refId: ev.id, kind: "rdv", start: new Date(ev.dueDate), title: ev.title, accountName: ev.accountName, done: false })),
       ...taskList
         .filter((tk) => tk.dueDate)
@@ -287,8 +295,88 @@ export default function Agenda() {
   // à venir, les RDV passés restent consultables (et le compte rendu reste
   // saisissable) dans une section séparée, jamais supprimés.
   const now = Date.now();
-  const upcomingRdvList = rdvList.filter((ev) => !ev.dueDate || new Date(ev.dueDate).getTime() >= now);
-  const pastRdvList = rdvList.filter((ev) => ev.dueDate && new Date(ev.dueDate).getTime() < now);
+  // RDV annulés : jamais supprimés, regroupés à part (badge "Annulé").
+  const activeRdvList = rdvList.filter((ev) => ev.status !== "ANNULE");
+  const cancelledRdvList = rdvList.filter((ev) => ev.status === "ANNULE");
+  const upcomingRdvList = activeRdvList.filter((ev) => !ev.dueDate || new Date(ev.dueDate).getTime() >= now);
+  const pastRdvList = activeRdvList.filter((ev) => ev.dueDate && new Date(ev.dueDate).getTime() < now);
+
+  function closeDetail() {
+    setDetail(null);
+    setRdvEditForm(null);
+    setRdvEditError(null);
+  }
+
+  function startRdvEdit(ev) {
+    const d = new Date(ev.dueDate);
+    setRdvEditError(null);
+    setRdvEditForm({
+      accountId: ev.accountId || "",
+      title: ev.title || "",
+      type: ev.rdvSubtype || "",
+      date: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+      time: `${pad2(d.getHours())}:${pad2(d.getMinutes())}`,
+    });
+  }
+
+  // Mêmes règles qu'à la création (handleCreateRdv) : client, objet et date
+  // obligatoires ; seuls les champs réellement changés sont envoyés. Le
+  // serveur revérifie tout (droits, fiche accessible, date valide).
+  async function handleSaveRdvEdit(e, ev) {
+    e.preventDefault();
+    const f = rdvEditForm;
+    if (!f.accountId) {
+      setRdvEditError(t("agenda.newRdvClientRequired"));
+      return;
+    }
+    if (!f.title.trim() || !f.date) {
+      setRdvEditError(t("account.planMissing"));
+      return;
+    }
+    const dueDate = new Date(`${f.date}T${f.time || "09:00"}:00`);
+    if (Number.isNaN(dueDate.getTime())) {
+      setRdvEditError(t("agenda.editRdvInvalidDate"));
+      return;
+    }
+    const body = {};
+    if (f.title.trim() !== ev.title) body.title = f.title.trim();
+    if (dueDate.getTime() !== new Date(ev.dueDate).getTime()) body.dueDate = dueDate.toISOString();
+    if (f.accountId !== ev.accountId) body.accountId = f.accountId;
+    if ((f.type || null) !== (ev.rdvSubtype || null)) body.rdvSubtype = f.type || null;
+    if (Object.keys(body).length === 0) {
+      setRdvEditError(t("agenda.editRdvNoChange"));
+      return;
+    }
+    setSavingRdvEdit(true);
+    setRdvEditError(null);
+    try {
+      await api.patch(`/tasks/${ev.id}/rdv`, body);
+      setRdvEditForm(null);
+      await loadRdv();
+    } catch (err) {
+      setRdvEditError(err.message);
+    } finally {
+      setSavingRdvEdit(false);
+    }
+  }
+
+  // Annulation : confirmation obligatoire, puis statut "Annulé" côté serveur
+  // (jamais de suppression) — le RDV sort du calendrier et reste dans
+  // l'historique de la fiche client.
+  async function handleCancelRdv(ev) {
+    if (!window.confirm(t("agenda.cancelRdvConfirm", { title: ev.title, date: dateTime(ev.dueDate, locale) }))) return;
+    setCancellingRdv(true);
+    setRdvEditError(null);
+    try {
+      await api.post(`/tasks/${ev.id}/cancel`);
+      closeDetail();
+      await loadRdv();
+    } catch (err) {
+      setRdvEditError(err.message);
+    } finally {
+      setCancellingRdv(false);
+    }
+  }
 
   // Formulaire de création de RDV — partagé entre le bouton "Nouveau RDV" de
   // la liste et le clic sur un créneau du calendrier (même champs, même
@@ -343,7 +431,8 @@ export default function Agenda() {
 
   function renderRdvCard(ev, archived = false) {
     const isOwn = ev.assigneeId === user.id;
-    const canEdit = isOwn || isPrivileged;
+    const isCancelled = ev.status === "ANNULE";
+    const canEdit = (isOwn || isPrivileged) && !isCancelled;
     return (
       <div className="panel" key={ev.id} style={archived ? { opacity: 0.75 } : undefined}>
         <div className="task-row" style={{ border: "none", padding: "0 0 4px" }}>
@@ -363,6 +452,14 @@ export default function Agenda() {
           </span>
           <span>{ev.dueDate ? dateTime(ev.dueDate, locale) : "—"}</span>
         </div>
+        {isCancelled && (
+          <p style={{ margin: "4px 0 0", fontSize: 12 }}>
+            <span className="typology-badge swiss-missing" style={{ marginLeft: 0 }}>
+              {t("agenda.cancelledBadge")}
+            </span>{" "}
+            {ev.cancelledAt && t("agenda.cancelledOn", { date: dateTime(ev.cancelledAt, locale) })}
+          </p>
+        )}
 
         {ev.compteRendu ? (
           <p style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 8 }}>
@@ -438,10 +535,61 @@ export default function Agenda() {
       )}
 
       {(detailRdv || detailTask) && (
-        <div className="modal-overlay" onClick={() => setDetail(null)}>
+        <div className="modal-overlay" onClick={closeDetail}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>{detailRdv ? t("agenda.calLegendRdv") : t("agenda.calLegendTask")}</h3>
-            {detailRdv && (
+            <h3 style={{ marginTop: 0 }}>
+              {detailRdv ? (rdvEditForm ? t("agenda.editRdvTitle") : t("agenda.calLegendRdv")) : t("agenda.calLegendTask")}
+            </h3>
+            {detailRdv && rdvEditForm && (
+              <form onSubmit={(e) => handleSaveRdvEdit(e, detailRdv)}>
+                <div className="field">
+                  <label>{t("agenda.newRdvClientLabel")}</label>
+                  <ClientSearchPicker
+                    accounts={accounts}
+                    value={rdvEditForm.accountId}
+                    onChange={(v) => setRdvEditForm((f) => ({ ...f, accountId: v }))}
+                  />
+                </div>
+                <div className="field">
+                  <input
+                    placeholder={t("account.planTitlePlaceholder")}
+                    value={rdvEditForm.title}
+                    onChange={(e) => setRdvEditForm((f) => ({ ...f, title: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label>{t("account.planTypeLabel")}</label>
+                  <select value={rdvEditForm.type} onChange={(e) => setRdvEditForm((f) => ({ ...f, type: e.target.value }))}>
+                    <option value="">{t("directeurDashboard.objectiveRepChoose")}</option>
+                    {INTERACTION_TYPES.map((ty) => (
+                      <option key={ty} value={ty}>
+                        {t(`interactionType.${ty}`)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <div className="field">
+                    <label>{t("account.planDate")}</label>
+                    <input type="date" value={rdvEditForm.date} onChange={(e) => setRdvEditForm((f) => ({ ...f, date: e.target.value }))} />
+                  </div>
+                  <div className="field">
+                    <label>{t("account.planTime")}</label>
+                    <input type="time" value={rdvEditForm.time} onChange={(e) => setRdvEditForm((f) => ({ ...f, time: e.target.value }))} />
+                  </div>
+                </div>
+                {rdvEditError && <p className="error-text">{rdvEditError}</p>}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                  <button className="btn primary" type="submit" disabled={savingRdvEdit}>
+                    {savingRdvEdit ? t("account.planSaving") : t("agenda.editRdvSave")}
+                  </button>
+                  <button className="btn outline" type="button" disabled={savingRdvEdit} onClick={() => setRdvEditForm(null)}>
+                    {t("agenda.editRdvDiscard")}
+                  </button>
+                </div>
+              </form>
+            )}
+            {detailRdv && !rdvEditForm && (
               <>
                 {detailRdv.rdvSubtype && (
                   <p className="page-sub" style={{ marginTop: 0 }}>
@@ -449,6 +597,17 @@ export default function Agenda() {
                   </p>
                 )}
                 {renderRdvCard(detailRdv, detailRdv.dueDate && new Date(detailRdv.dueDate).getTime() < Date.now())}
+                {(detailRdv.assigneeId === user.id || isPrivileged) && detailRdv.status !== "ANNULE" && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                    <button className="btn outline" type="button" onClick={() => startRdvEdit(detailRdv)}>
+                      {t("agenda.editRdvButton")}
+                    </button>
+                    <button className="btn danger-outline" type="button" disabled={cancellingRdv} onClick={() => handleCancelRdv(detailRdv)}>
+                      {cancellingRdv ? t("agenda.cancellingRdv") : t("agenda.cancelRdvButton")}
+                    </button>
+                  </div>
+                )}
+                {rdvEditError && <p className="error-text">{rdvEditError}</p>}
               </>
             )}
             {detailTask && (
@@ -481,7 +640,7 @@ export default function Agenda() {
               </div>
             )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-              <button className="btn outline" onClick={() => setDetail(null)}>
+              <button className="btn outline" onClick={closeDetail}>
                 {t("agenda.calClose")}
               </button>
               {(detailRdv?.accountId || detailTask?.accountId) && (
@@ -521,6 +680,13 @@ export default function Agenda() {
             <>
               <h3 style={{ margin: "18px 0 8px" }}>{t("agenda.pastTitle")}</h3>
               {pastRdvList.map((ev) => renderRdvCard(ev, true))}
+            </>
+          )}
+
+          {cancelledRdvList.length > 0 && (
+            <>
+              <h3 style={{ margin: "18px 0 8px" }}>{t("agenda.cancelledTitle")}</h3>
+              {cancelledRdvList.map((ev) => renderRdvCard(ev, true))}
             </>
           )}
         </>
