@@ -247,6 +247,12 @@ function NewOrderScreen() {
   const pendingDraftRef = useRef(null);
   const draftTimerRef = useRef(null);
   const submittedRef = useRef(false);
+  // Anti-doublon : commande déjà créée côté serveur (POST /orders réussi) mais
+  // pas encore envoyée au front desk — { id, signature } où signature est le
+  // contenu exact envoyé. Mémorisée aussi dans le brouillon local pour
+  // survivre à un refresh. Un nouvel essai d'envoi réutilise cette commande au
+  // lieu d'en créer une seconde.
+  const serverOrderRef = useRef(null);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [drafts, setDrafts] = useState([]);
 
@@ -358,6 +364,7 @@ function NewOrderScreen() {
     setCategory(draft.category || "all");
     setSubview(draft.subview === "cart" ? "cart" : "browse");
     draftIdRef.current = draft.draftId;
+    serverOrderRef.current = draft.serverOrder || null;
   }
 
   // Restauration automatique du brouillon désigné par ?draft=… une fois le
@@ -415,6 +422,7 @@ function NewOrderScreen() {
           search,
           category,
           subview,
+          serverOrder: serverOrderRef.current,
         }
       : { draftId: draftIdRef.current, empty: true };
     clearTimeout(draftTimerRef.current);
@@ -458,8 +466,15 @@ function NewOrderScreen() {
     refreshDrafts();
   }
 
+  // Commande serveur non envoyée liée à un brouillon supprimé (envoi échoué) :
+  // supprimée aussi, pour ne pas laisser d'orphelin dans "Mes commandes".
+  function discardServerOrder(draft) {
+    if (draft.serverOrder?.id) api.del(`/orders/${draft.serverOrder.id}`).catch(() => {});
+  }
+
   function removeDraft(draft) {
     deleteDraft(user?.id, draft.draftId);
+    discardServerOrder(draft);
     refreshDrafts();
   }
 
@@ -611,6 +626,15 @@ function NewOrderScreen() {
       ? t("newOrder.shippingToDefine")
       : fmt(shippingAmount);
 
+  // Mémorise (ou oublie) la commande serveur non envoyée, dans la ref et
+  // immédiatement dans le brouillon local (sans attendre le débounce).
+  function rememberServerOrder(serverOrder) {
+    serverOrderRef.current = serverOrder;
+    if (pendingDraftRef.current && !pendingDraftRef.current.empty) pendingDraftRef.current.serverOrder = serverOrder;
+    const current = getDraft(user?.id, draftIdRef.current);
+    if (current) saveDraft(user?.id, { ...current, serverOrder });
+  }
+
   async function handleSubmit() {
     if (cartItems.length === 0) return;
     // Correctif 2026-09-18 (fiche "UPDATE CRM" évolution 3) : date de
@@ -636,16 +660,52 @@ function NewOrderScreen() {
         };
       });
 
-      const order = await api.post("/orders", {
+      const payload = {
         accountId: id,
         isPrecommande,
         desiredDeliveryDate: desiredDeliveryDate ? new Date(`${desiredDeliveryDate}T00:00:00`).toISOString() : null,
         note: note.trim() || null,
         shippingOffered,
         lines,
-      });
+      };
+      const signature = JSON.stringify(payload);
 
-      await api.post(`/orders/${order.id}/send-to-front-desk`);
+      // Anti-doublon : si un essai précédent a déjà créé la commande mais que
+      // son envoi a échoué, on la réutilise telle quelle (contenu identique)
+      // ou, si le panier a changé depuis, on supprime cette ancienne version
+      // (encore BROUILLON, jamais vue du front desk) avant d'en créer une
+      // nouvelle — jamais deux commandes pour une même saisie.
+      let orderId = null;
+      const previous = serverOrderRef.current;
+      if (previous && previous.signature === signature) {
+        orderId = previous.id;
+      } else if (previous) {
+        try {
+          await api.del(`/orders/${previous.id}`);
+        } catch (err) {
+          if (err.status === 409) {
+            // L'ancienne version a en fait bien été envoyée (réponse perdue) :
+            // on n'en crée pas une seconde sans que le représentant le sache.
+            rememberServerOrder(null);
+            throw new Error(t("newOrder.previousOrderAlreadySent"));
+          }
+          if (err.status !== 404) throw err;
+        }
+        rememberServerOrder(null);
+      }
+      if (!orderId) {
+        const order = await api.post("/orders", payload);
+        orderId = order.id;
+        rememberServerOrder({ id: orderId, signature });
+      }
+
+      try {
+        await api.post(`/orders/${orderId}/send-to-front-desk`);
+      } catch (err) {
+        // 409 = déjà envoyée : un essai précédent a abouti côté serveur mais
+        // sa réponse s'est perdue — la commande est bien chez le front desk.
+        if (err.status !== 409) throw err;
+      }
 
       // Point 8 : le brouillon local n'est supprimé qu'ici, une fois la
       // commande créée ET envoyée avec succès — jamais avant, pour qu'un

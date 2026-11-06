@@ -180,6 +180,10 @@ ARCHIVE` (bascule `ACTIF ↔ INACTIF` ouverte aux rôles habituels de gestion du
   `FRAIS_DE_PORT`, ou offre manuelle via `shippingOffered`.
 - `GET  /api/orders`, `GET /api/orders/:id` — cloisonnement par `rep_id` (représentant propriétaire
   du compte), étendu aux reps affectés pour un Master Rep, ouvert pour front desk/directeur.
+- `DELETE /api/orders/:id` — supprime une commande restée `BROUILLON` (jamais envoyée), `409`
+  pour tout autre statut. Utilisée par l'anti-doublon de `NewOrder.jsx` (après un envoi échoué, un
+  nouvel essai réutilise la commande déjà créée ; si le panier a changé, l'ancienne version est
+  supprimée avant d'en créer une nouvelle) et par le bouton « Supprimer » de « Mes commandes ».
 - `POST /api/orders/:id/send-to-front-desk` — transition `BROUILLON` → `ENVOYEE_FRONT_DESK` +
   entrée dans `audit_logs`. La vraie notification temps réel (push/websocket) est un item explicite
   du **Lot 6** ; cette entrée d'audit sert de point d'accroche pour la brancher plus tard.

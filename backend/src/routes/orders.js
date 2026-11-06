@@ -514,6 +514,47 @@ ordersRouter.patch(
   }
 );
 
+// DELETE /api/orders/:id — suppression d'une commande restée BROUILLON
+// (création réussie mais envoi au front desk jamais abouti). Sert à éviter les
+// doublons : quand le représentant modifie son panier après un envoi échoué,
+// NewOrder.jsx supprime l'ancienne version avant d'en créer une nouvelle, et
+// "Mes commandes" permet de retirer un brouillon serveur orphelin. Strictement
+// limité au statut BROUILLON (condition dans le DELETE lui-même, donc atomique
+// face à un envoi concurrent) : une commande envoyée, validée ou exportée
+// n'est jamais supprimable par cette route.
+ordersRouter.delete("/:id", requireAuth, requireRole(...ORDER_CREATE_ROLES), async (req, res) => {
+  const { rows } = await query("SELECT * FROM orders WHERE id = $1", [req.params.id]);
+  const order = rows[0];
+  if (!order) return res.status(404).json({ error: "Commande introuvable." });
+  if (!(await canAccessOrder(req.user, order))) {
+    return res.status(403).json({ error: "Accès refusé à cette commande." });
+  }
+  let deleted;
+  try {
+    ({ rows: deleted } = await query(
+      "DELETE FROM orders WHERE id = $1 AND status = 'BROUILLON' RETURNING id",
+      [req.params.id]
+    ));
+  } catch (err) {
+    // Clé étrangère (ex. ticket SAV rattaché) : on refuse plutôt que de casser le lien.
+    if (err.code === "23503") {
+      return res.status(409).json({ error: "Commande liée à d'autres données, suppression impossible." });
+    }
+    throw err;
+  }
+  if (deleted.length === 0) {
+    return res.status(409).json({ error: `Commande déjà au statut ${order.status}.` });
+  }
+  await logAudit({
+    userId: req.user.id,
+    action: "ORDER_DRAFT_DELETED",
+    entity: "orders",
+    entityId: order.id,
+    details: { accountId: order.account_id },
+  });
+  res.status(204).end();
+});
+
 // POST /api/orders/:id/send-to-front-desk — section 6/Lot 3 : "envoi au front desk + notification".
 // La notification temps réel (push/websocket) est désormais branchée (Lot 6, lib/notifications.js) :
 // tous les front desk + le directeur reçoivent une notification à l'envoi d'une commande.

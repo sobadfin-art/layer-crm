@@ -125,6 +125,22 @@ export default function OrdersList() {
     }
   }
 
+  // Supprime une commande restée BROUILLON (envoi au front desk jamais
+  // abouti) — évite qu'elle soit envoyée en doublon d'une commande refaite.
+  async function handleDelete(order) {
+    if (!window.confirm(t("orders.deleteDraftConfirm"))) return;
+    setBusyId(order.id);
+    try {
+      await api.del(`/orders/${order.id}`);
+      setToast(t("orders.deleteDraftSuccess"));
+      await load();
+    } catch (err) {
+      setToast(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleSend(order) {
     setBusyId(order.id);
     try {
@@ -196,6 +212,11 @@ export default function OrdersList() {
             {order.status === "BROUILLON" && (
               <button className="btn primary" disabled={busyId === order.id} onClick={() => handleSend(order)}>
                 {busyId === order.id ? t("orders.sending") : t("orders.sendToFrontDesk")}
+              </button>
+            )}
+            {order.status === "BROUILLON" && canCreateOrder && (
+              <button className="btn outline" disabled={busyId === order.id} onClick={() => handleDelete(order)}>
+                {t("orders.deleteDraft")}
               </button>
             )}
           </div>

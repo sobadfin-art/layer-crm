@@ -103,6 +103,9 @@ export default function NewOrderQuickAccess() {
 
   function removeDraft(draft) {
     deleteDraft(user.id, draft.draftId);
+    // Commande serveur non envoyée liée à ce brouillon (envoi échoué) :
+    // supprimée aussi, pour ne pas laisser d'orphelin dans "Mes commandes".
+    if (draft.serverOrder?.id) api.del(`/orders/${draft.serverOrder.id}`).catch(() => {});
     setDrafts(listDrafts(user.id));
   }
 
